@@ -1,0 +1,150 @@
+# yii3-mcp
+
+MCP (Model Context Protocol) server integration for Yii3 over the official
+mcp/sdk: PSR-15 Streamable HTTP endpoint, DI tool registry, stdio transport.
+
+## Install
+
+```bash
+composer require rasuvaeff/yii3-mcp
+```
+
+## Rules
+
+- The MCP endpoint is trusted-only: route it behind `SharedSecretMiddleware`
+  (empty or wrong secret => explanatory JSON 401/503 — fail-closed) or an explicit network ACL.
+- No protocol structures are invented here: capability attributes
+  (`#[McpTool]`, `#[McpResource]`) and all JSON-RPC handling come from
+  `mcp/sdk` (`~0.6.0`, experimental — tilde pin, minor = breaking).
+- The core registers no tools; the application lists tool FQCNs in params.
+- Default session store is file-based (FPM-safe): MCP sessions span requests,
+  the SDK in-memory default loses them between FPM workers.
+
+## API reference
+
+### Declaring tools (SDK attributes on ordinary Yii3 services)
+
+```php
+use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Attribute\McpResource;
+
+final readonly class OrderTools
+{
+    public function __construct(private OrderRepository $orders) {} // DI works
+
+    #[McpTool(name: 'order.status')]
+    public function status(string $orderId): string { ... }   // schema from signature+DocBlock
+
+    #[McpResource(uri: 'app://health', name: 'health', mimeType: 'text/plain')]
+    public function health(): string { ... }
+
+    #[McpResourceTemplate(uriTemplate: 'app://users/{id}')]
+    public function user(string $id): string { ... }
+
+    #[McpPrompt(name: 'style-guide')]
+    public function styleGuide(): string { ... }
+}
+
+// Markdown prompts (format compatible with / inspired by vjik/my-prompts-mcp):
+// params 'prompts_path' => '/path/to/prompts' — every *.md file becomes a prompt.
+// Frontmatter: name (default: file name), title, description,
+// arguments: [{name, description, required} | plain-string-name].
+// Body: prompt text with {{argument}} placeholders (missing arg => '',
+// undeclared placeholder stays intact). Broken file/duplicate name =>
+// Prompts\Exception\InvalidPromptFileException at build time.
+
+// Conditional registration: implement Rasuvaeff\Yii3Mcp\ConditionalToolInterface;
+// shouldRegister() false at build time => the whole class is skipped
+// (resolve FeatureFlags etc. through the constructor).
+
+// Testing (in-process, no HTTP):
+use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+$tester = new McpTester($server, $psr17RequestFactory, $psr17ResponseFactory, $psr17StreamFactory);
+$tester->callTool('greet', ['name' => 'Yii']);   // decoded result envelope
+$tester->listTools(); $tester->readResource('app://x'); $tester->request('prompts/list');
+// JSON-RPC error => RuntimeException
+```
+
+### McpServerFactory
+
+```php
+use Rasuvaeff\Yii3Mcp\McpServerFactory;
+
+$factory = new McpServerFactory(
+    container: $psr11Container,        // resolves tool instances lazily
+    sessionStore: $sessionStore,       // Mcp\Server\Session\SessionStoreInterface
+    name: 'my-app',
+    version: '1.0.0',
+    logger: null,                      // ?LoggerInterface
+);
+$server = $factory->create([OrderTools::class]);  // Mcp\Server
+// throws Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException on unknown
+// class or class without capability attributes
+```
+
+### McpAction (PSR-15)
+
+```php
+use Rasuvaeff\Yii3Mcp\McpAction;
+
+new McpAction(server: $server, responseFactory: $psr17, streamFactory: $psr17);
+// handle(ServerRequestInterface): ResponseInterface — Streamable HTTP transport
+// route POST/GET/DELETE/OPTIONS /mcp to it
+```
+
+### SharedSecretMiddleware
+
+```php
+use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
+
+new SharedSecretMiddleware(
+    secret: 's3cret',                  // '' => every request gets 503 + explanation (fail-closed)
+    responseFactory: $psr17,
+    headerName: 'X-Mcp-Secret',        // default
+);
+// wrong/missing header => 401, никогда не пропускает без секрета
+```
+
+### McpServeCommand (stdio, symfony/console)
+
+`mcp:serve` — runs the server on StdioTransport for Claude Code/Desktop.
+
+### OpenAPI bridge (expose an existing REST API)
+
+```php
+use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
+use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
+
+$configurator = new OpenApiServerConfigurator(
+    spec: SpecIndex::fromFile('/path/openapi.json'),   // or fromJson()/new SpecIndex(array)
+    // or over HTTP (auth headers included): (new SpecLoader($psr18, $psr17, $headers))->fromUrl($url)
+    executor: new HttpOperationExecutor(
+        httpClient: $psr18, requestFactory: $psr17, streamFactory: $psr17,
+        baseUrl: 'https://api.example.com',
+        defaultHeaders: ['Authorization' => 'Bearer ...'],
+    ),
+    operations: ['getBlogTags'],   // allow-list of operationIds; empty = nothing
+    safeMethodsOnly: true,         // reject non-GET at build time (read-only bridge)
+);
+$server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
+```
+
+- Tool name = operationId, description = summary/description, inputSchema
+  from path/query parameters (+ `body` argument for application/json
+  requestBody). Local `#/components/...` $refs are resolved inline.
+- Calls are real HTTP requests against the API — its middleware stack
+  (validation, rate limiting, auth) applies. Non-2xx =>
+  `OperationFailedException` => MCP tool error envelope.
+- Unknown operationId => `UnknownOperationException` at build time.
+- Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) / `base_url` / `operations` /
+  `headers` (needs PSR-18/17 services in the container).
+
+### DI (config-plugin)
+
+Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
+(FileSessionStore, dir from `session.dir` param or sys temp), `Server` (via
+factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
+Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
+`endpoint_secret`, `secret_header`, `session.dir`, `session.ttl`,
+`openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.
