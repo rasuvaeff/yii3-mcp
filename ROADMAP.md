@@ -35,12 +35,15 @@ use cases are welcome in [issues](https://github.com/rasuvaeff/yii3-mcp/issues).
    against an agent looping inside one session — not a client quota (a new
    session resets it); client quotas stay an application-level rate-limit
    concern.
-4. **Tenant-scoped MCP** — recipe (and a session-store decorator) for
+4. **Tenant-scoped MCP** *(done, unreleased)* — README recipe for
    [rasuvaeff/yii3-tenancy](https://github.com/rasuvaeff/yii3-tenancy):
-   tenant resolved before `McpAction`, tools see `CurrentTenant`, sessions
-   isolated per tenant.
-5. **Per-session tool visibility** — `ToolVisibilityInterface` filtering
-   `tools/list` and fail-closed checking `tools/call` per session
+   tenant resolved before `McpAction` (header resolver), tools see
+   `CurrentTenant`, sessions isolated per tenant via a per-tenant session
+   store directory. The shared secret stays global; per-tenant secrets are
+   a future extension on demand.
+5. **Per-session tool visibility** *(done, unreleased)* —
+   `Visibility\ToolVisibilityInterface` filtering `tools/list` and
+   fail-closed checking `tools/call` per session
    (`ConditionalToolInterface` is build-time and global; this is the
    per-session complement).
 

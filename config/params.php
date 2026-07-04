@@ -29,6 +29,10 @@ return [
         // applied in order, first = outermost); each implements
         // Interceptor\ToolCallInterceptorInterface
         'interceptors' => [],
+        // per-session tool visibility: FQCN of a Visibility\ToolVisibilityInterface
+        // implementation (resolved through the container). Filters tools/list AND
+        // fail-closed rejects tools/call of invisible tools. Empty = all visible.
+        'tool_visibility' => '',
         // Markdown prompts directory: every *.md file becomes an MCP prompt
         // (YAML frontmatter: name/title/description/arguments; body with
         // {{argument}} placeholders). Format is vjik/my-prompts-mcp compatible.

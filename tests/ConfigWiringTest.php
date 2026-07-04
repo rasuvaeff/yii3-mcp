@@ -13,6 +13,7 @@ use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
@@ -70,6 +71,33 @@ final class ConfigWiringTest
 
         Assert::same($mcp['session']['budget'], 0);
         Assert::same($mcp['interceptors'], []);
+        Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
+    }
+
+    public function serverDefinitionWiresToolVisibility(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+        $params['rasuvaeff/yii3-mcp']['tool_visibility'] = DenyListVisibility::class;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([
+            GreetingTool::class => new GreetingTool(prefix: 'Hi'),
+            DenyListVisibility::class => new DenyListVisibility(hidden: ['explode']),
+        ]);
+        $factory = new McpServerFactory(
+            container: $container,
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        Assert::same(array_column($tester->listTools(), 'name'), ['greet']);
     }
 
     public function serverDefinitionWiresBudgetAndConfiguredInterceptors(): void

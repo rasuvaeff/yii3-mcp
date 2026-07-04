@@ -17,6 +17,7 @@ Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
 `ServerConfiguratorInterface`, `Testing\McpTester`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 SessionBudgetInterceptor, InterceptingReferenceHandler}`,
+`Visibility\{ToolVisibilityInterface; FilteredListToolsHandler is @internal}`,
 `OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator,
 SpecLoader}`, `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in

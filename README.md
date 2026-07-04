@@ -260,6 +260,82 @@ re-initialize starts a fresh counter. Client quotas belong to an
 application-level rate limiter. The budget guard is always the outermost
 interceptor, so it rejects before any other interceptor does work.
 
+### Per-session tool visibility
+
+`ConditionalToolInterface` gates registration globally at build time. When
+different **sessions** must see different tools (admin vs public client,
+tenant plans), implement `Visibility\ToolVisibilityInterface` — the decision
+runs per session, against the handshake data:
+
+```php
+use Mcp\Schema\Tool;
+use Mcp\Server\Session\SessionInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
+
+final readonly class PlanBasedVisibility implements ToolVisibilityInterface
+{
+    public function isVisible(Tool $tool, ?SessionInterface $session): bool
+    {
+        // decide from $session->get('client_info'), tenant data, …
+        return !str_starts_with($tool->name, 'admin.') || $this->isAdmin($session);
+    }
+}
+```
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'tool_visibility' => PlanBasedVisibility::class,   // DI-resolved
+],
+```
+
+The filter applies in two places, consistently: `tools/list` omits invisible
+tools, and `tools/call` **fail-closed** rejects them — a client that guesses
+a hidden name still gets a tool error, and the call never reaches the
+interceptor chain or the tool. This is an early filter, not a replacement
+for application-level ACL.
+
+## Multi-tenant serving (rasuvaeff/yii3-tenancy)
+
+With [rasuvaeff/yii3-tenancy](https://github.com/rasuvaeff/yii3-tenancy) the
+MCP endpoint serves every tenant from one route — tools are ordinary Yii3
+services, so a constructor-injected `CurrentTenant` scopes their data access
+as anywhere else in the application. The recipe is middleware order: resolve
+the tenant **before** the MCP action runs:
+
+```php
+// config/routes.php — secret first (fail-closed), then tenant, then MCP
+Route::methods(['POST', 'GET', 'DELETE', 'OPTIONS'], '/mcp')
+    ->middleware(SharedSecretMiddleware::class)
+    ->middleware(TenantResolutionMiddleware::class)   // e.g. HeaderTenantResolver('X-Tenant-Id')
+    ->action(McpAction::class),
+```
+
+```php
+// an MCP client carries both headers
+"headers": { "X-Mcp-Secret": "...", "X-Tenant-Id": "acme" }
+```
+
+Isolate sessions per tenant so a session id can never cross tenants — bind
+the session store to a per-tenant directory:
+
+```php
+// config/common/di/mcp.php
+SessionStoreInterface::class => static fn (CurrentTenant $tenant) =>
+    new FileSessionStore(
+        directory: sys_get_temp_dir() . '/mcp-sessions/' . $tenant->get()->getId(),
+    ),
+```
+
+Per-tenant tool sets come free with `tool_visibility` (see above): decide
+from the resolved tenant instead of `client_info`.
+
+> **Honest scope:** the shared secret stays global — anyone holding it may
+> present any `X-Tenant-Id`. That fits the trusted-only endpoint model (the
+> secret already grants application access); tenant isolation here protects
+> against accidents, not against a malicious secret holder. Per-tenant
+> secrets (a secret resolver instead of the single-value middleware) are a
+> planned extension — ask if you need it.
+
 ## OpenAPI bridge: expose an existing REST API
 
 If the application already maintains an OpenAPI document, allow-listed
@@ -313,6 +389,7 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
+| `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `OperationFailedException` |
 
@@ -341,6 +418,7 @@ See [examples/](examples/) — every script runs offline.
 | [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools | no |
 | [`interceptors.php`](examples/interceptors.php) | Tracing interceptor + session budget guard | no |
+| [`visibility.php`](examples/visibility.php) | Per-session tool visibility: filtered listing + fail-closed call | no |
 
 ## Testing your tools
 

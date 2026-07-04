@@ -14,10 +14,12 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\AttributelessClass;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ConstructorAttributeTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DualTemplatePromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DualToolResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\InvalidNameTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyPromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
@@ -30,6 +32,7 @@ use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+use Yiisoft\Test\Support\Log\SimpleLogger;
 
 #[Test]
 #[Covers(McpServerFactory::class)]
@@ -181,6 +184,82 @@ final class McpServerFactoryTest
         $result = $this->tester($server)->callTool('greet', ['name' => 'Yii']);
 
         Assert::same($result['content'][0]['text'], 'Hello, Yii!');
+    }
+
+    public function visibilityFiltersTheToolListing(): void
+    {
+        $server = $this->factory()->create([GreetingTool::class], [], [], new DenyListVisibility(hidden: ['explode']));
+
+        // exact listing: visible tools present (the factory-owned registry IS
+        // the builder's registry), hidden ones absent (the filtering handler
+        // actually overrides the SDK's tools/list)
+        Assert::same(array_column($this->tester($server)->listTools(), 'name'), ['greet']);
+    }
+
+    public function protocolLogsFlowThroughTheConfiguredLogger(): void
+    {
+        $logger = new SimpleLogger();
+
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: new InMemorySessionStore(),
+            logger: $logger,
+        ))->create([GreetingTool::class]);
+
+        $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+
+        $executing = array_filter(
+            $logger->getMessages(),
+            static fn(array $message): bool => str_contains((string) $message['message'], 'Executing tool'),
+        );
+
+        Assert::false($executing === []);
+    }
+
+    public function registryWarningsReachTheConfiguredLogger(): void
+    {
+        $logger = new SimpleLogger();
+
+        (new McpServerFactory(
+            container: new SimpleContainer([InvalidNameTool::class => new InvalidNameTool()]),
+            sessionStore: new InMemorySessionStore(),
+            logger: $logger,
+        ))->create([InvalidNameTool::class], [], [], new DenyListVisibility());
+
+        $warnings = array_filter(
+            $logger->getMessages(),
+            static fn(array $message): bool => $message['level'] === 'warning'
+                && str_contains((string) $message['message'], 'is invalid'),
+        );
+
+        Assert::false($warnings === []);
+    }
+
+    public function visibilityAloneEnforcesFailClosedCalls(): void
+    {
+        $server = $this->factory()->create([GreetingTool::class], [], [], new DenyListVisibility(hidden: ['greet']));
+
+        $result = $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::true($result['isError']);
+        Assert::string($result['content'][0]['text'])->contains('not available in this session');
+    }
+
+    public function visibilityAndInterceptorsComposeInOneDecorator(): void
+    {
+        $recording = new RecordingInterceptor();
+
+        $server = $this->factory()->create(
+            [GreetingTool::class],
+            [],
+            [$recording],
+            new DenyListVisibility(hidden: ['explode']),
+        );
+
+        $result = $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][0]['text'], 'Hello, Yii!');
+        Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
     }
 
     private function tester(Server $server): McpTester

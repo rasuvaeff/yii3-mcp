@@ -182,6 +182,31 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // exhausted => tool error "Session tool-call budget of N is exhausted..."
 ```
 
+### Per-session tool visibility
+
+```php
+use Mcp\Schema\Tool;
+use Mcp\Server\Session\SessionInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
+
+final readonly class MyVisibility implements ToolVisibilityInterface
+{
+    public function isVisible(Tool $tool, ?SessionInterface $session): bool { ... }
+}
+// params: 'tool_visibility' => MyVisibility::class  ('' = off, DI-resolved)
+// Applies to tools/list (invisible tools omitted) AND tools/call (fail-closed:
+// calling a hidden tool => tool error "not available in this session";
+// the call never reaches interceptors or the tool).
+// ConditionalToolInterface = build-time global; this = per-session.
+// Manual wiring: $factory->create($tools, $configurators, $interceptors, $visibility).
+
+// Multi-tenant (rasuvaeff/yii3-tenancy): route middleware order
+// SharedSecretMiddleware -> TenantResolutionMiddleware -> McpAction;
+// per-tenant session isolation = bind SessionStoreInterface to a
+// FileSessionStore with a per-tenant directory. Secret stays global
+// (trusted-only endpoint model); per-tenant secrets are a planned extension.
+```
+
 ### DI (config-plugin)
 
 Ships config/di.php + config/params.php. Binds `SessionStoreInterface`

@@ -11,6 +11,7 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
@@ -105,7 +106,15 @@ return [
                 $interceptors[] = $container->get($interceptorClass);
             }
 
-            return $factory->create($tools, $configurators, $interceptors);
+            /** @var class-string<ToolVisibilityInterface>|'' $visibilityClass */
+            $visibilityClass = $params['rasuvaeff/yii3-mcp']['tool_visibility'] ?? '';
+
+            return $factory->create(
+                $tools,
+                $configurators,
+                $interceptors,
+                $visibilityClass === '' ? null : $container->get($visibilityClass),
+            );
         },
     ],
     McpAction::class => [

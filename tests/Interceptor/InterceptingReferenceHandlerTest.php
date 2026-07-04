@@ -11,9 +11,12 @@ use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ShortCircuitInterceptor;
+use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -97,15 +100,62 @@ final class InterceptingReferenceHandlerTest
         Assert::same($result['content'][0]['text'], 'Hello, Yii!');
     }
 
+    public function invisibleToolCannotBeCalledEvenByExactName(): void
+    {
+        $tester = $this->tester([], new DenyListVisibility(hidden: ['greet']));
+
+        $result = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::true($result['isError']);
+        Assert::string($result['content'][0]['text'])->contains('"greet" is not available in this session');
+    }
+
+    public function visibleToolPassesTheVisibilityCheck(): void
+    {
+        $tester = $this->tester([], new DenyListVisibility(hidden: ['explode']));
+
+        $result = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][0]['text'], 'Hello, Yii!');
+    }
+
+    public function toolExecutesExactlyOnceUnderVisibilityWithoutInterceptors(): void
+    {
+        $counting = new CountingTool();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([CountingTool::class => $counting]),
+            sessionStore: new InMemorySessionStore(),
+            name: 'interceptor-suite',
+            version: '1.0.0',
+        ))->create([CountingTool::class], [], [], new DenyListVisibility());
+
+        $factory = new Psr17Factory();
+        $result = (new McpTester($server, $factory, $factory, $factory))->callTool('count.up');
+
+        Assert::same($result['content'][0]['text'], '1');
+        Assert::same($counting->calls, 1);
+    }
+
+    public function deniedCallNeverReachesTheInterceptors(): void
+    {
+        $recording = new RecordingInterceptor();
+        $tester = $this->tester([$recording], new DenyListVisibility(hidden: ['greet']));
+
+        $result = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::true($result['isError']);
+        Assert::same($recording->entries, []);
+    }
+
     /**
      * @param list<ToolCallInterceptorInterface> $interceptors
      */
-    private function tester(array $interceptors): McpTester
+    private function tester(array $interceptors, ?ToolVisibilityInterface $visibility = null): McpTester
     {
         $factory = new Psr17Factory();
 
         return new McpTester(
-            server: $this->server($interceptors),
+            server: $this->server($interceptors, $visibility),
             requestFactory: $factory,
             responseFactory: $factory,
             streamFactory: $factory,
@@ -115,13 +165,13 @@ final class InterceptingReferenceHandlerTest
     /**
      * @param list<ToolCallInterceptorInterface> $interceptors
      */
-    private function server(array $interceptors): Server
+    private function server(array $interceptors, ?ToolVisibilityInterface $visibility): Server
     {
         return (new McpServerFactory(
             container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
             sessionStore: new InMemorySessionStore(),
             name: 'interceptor-suite',
             version: '1.0.0',
-        ))->create([GreetingTool::class], [], $interceptors);
+        ))->create([GreetingTool::class], [], $interceptors, $visibility);
     }
 }

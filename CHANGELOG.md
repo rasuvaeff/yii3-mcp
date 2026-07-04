@@ -15,8 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Interceptor\SessionBudgetInterceptor` — per-session `tools/call` cap
   (`session.budget` param, 0 = unlimited): an agent looping inside one session
   gets an explanatory MCP tool error instead of unlimited calls.
-- `McpServerFactory::create()` accepts an `interceptors` iterable (third
-  argument, backwards-compatible).
+- `Visibility\ToolVisibilityInterface` — per-session tool visibility
+  (`tool_visibility` param): `tools/list` omits invisible tools and
+  `tools/call` fail-closed rejects them before interceptors and the tool run.
+  Complements build-time `ConditionalToolInterface`.
+- Multi-tenant serving recipe (rasuvaeff/yii3-tenancy) in the README:
+  middleware order, per-tenant session-store isolation, tenant-driven
+  visibility; the shared secret stays global (documented trade-off).
+- `McpServerFactory::create()` accepts `interceptors` and `toolVisibility`
+  (third/fourth arguments, backwards-compatible).
 
 ## 1.0.1 — 2026-07-04
 
