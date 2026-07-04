@@ -19,6 +19,7 @@ use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
+use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 
 /** @var array $params */
@@ -85,6 +86,13 @@ return [
                     operations: $openapi['operations'],
                     safeMethodsOnly: $openapi['safe_methods_only'] ?? false,
                 );
+            }
+
+            /** @var list<class-string<ServerConfiguratorInterface>> $configuratorClasses */
+            $configuratorClasses = $params['rasuvaeff/yii3-mcp']['configurators'] ?? [];
+
+            foreach ($configuratorClasses as $configuratorClass) {
+                $configurators[] = $container->get($configuratorClass);
             }
 
             $interceptors = [];

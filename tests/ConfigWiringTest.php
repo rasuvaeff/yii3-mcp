@@ -15,6 +15,7 @@ use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
 use Testo\Codecov\CoversNothing;
@@ -71,6 +72,7 @@ final class ConfigWiringTest
 
         Assert::same($mcp['session']['budget'], 0);
         Assert::same($mcp['interceptors'], []);
+        Assert::same($mcp['configurators'], []);
         Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
     }
 
@@ -129,6 +131,33 @@ final class ConfigWiringTest
         // the configured interceptor actually ran → both budget guard and
         // params-listed interceptors are wired into the chain
         Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
+    }
+
+    public function serverDefinitionWiresConfiguredConfigurators(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+        $params['rasuvaeff/yii3-mcp']['configurators'] = [RecordingConfigurator::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $configurator = new RecordingConfigurator();
+        $container = new SimpleContainer([
+            GreetingTool::class => new GreetingTool(prefix: 'Hi'),
+            RecordingConfigurator::class => $configurator,
+        ]);
+        $factory = new McpServerFactory(
+            container: $container,
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+
+        // the params-listed configurator ran against the builder before build
+        Assert::true($configurator->configured);
+        Assert::instanceOf($server, Server::class);
     }
 
     public function actionDefinitionUsesFqcnKeyAndEmptyAllowedHosts(): void

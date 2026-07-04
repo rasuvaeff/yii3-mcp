@@ -294,6 +294,31 @@ a hidden name still gets a tool error, and the call never reaches the
 interceptor chain or the tool. This is an early filter, not a replacement
 for application-level ACL.
 
+### Server configurators
+
+Beyond the built-in Markdown-prompts and OpenAPI bridge, register your own
+`ServerConfiguratorInterface` implementations (or a companion package's) to
+contribute capabilities to the SDK server builder before it is built. The
+core resolves the FQCNs through the container (after its own configurators)
+and applies them in order:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'configurators' => [MyServerConfigurator::class],   // DI-resolved
+],
+```
+
+```php
+final readonly class MyServerConfigurator implements ServerConfiguratorInterface
+{
+    #[\Override]
+    public function configure(Builder $builder): void
+    {
+        // $builder->addTool(...) / addResource(...) / addPrompt(...) …
+    }
+}
+```
+
 ## Multi-tenant serving (rasuvaeff/yii3-tenancy)
 
 With [rasuvaeff/yii3-tenancy](https://github.com/rasuvaeff/yii3-tenancy) the
@@ -384,7 +409,7 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Testing\McpTester` | in-process test client: initialize/listTools/callTool/readResource |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
-| `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder |
+| `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
 | `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |

@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visibility; the shared secret stays global (documented trade-off).
 - `McpServerFactory::create()` accepts `interceptors` and `toolVisibility`
   (third/fourth arguments, backwards-compatible).
+- `configurators` params list: FQCNs implementing
+  `ServerConfiguratorInterface`, DI-resolved and applied after the core's own
+  prompts/openapi configurators. Generic extension point for companion packages
+  and app-specific server setup (mirrors the `interceptors` params pattern).
 
 ## 1.0.1 — 2026-07-04
 

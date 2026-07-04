@@ -29,6 +29,11 @@ return [
         // applied in order, first = outermost); each implements
         // Interceptor\ToolCallInterceptorInterface
         'interceptors' => [],
+        // server configurator FQCNs (resolved through the container, applied
+        // in order after the core's own prompts/openapi configurators); each
+        // implements ServerConfiguratorInterface. Extension point for
+        // companion packages and app-specific server setup.
+        'configurators' => [],
         // per-session tool visibility: FQCN of a Visibility\ToolVisibilityInterface
         // implementation (resolved through the container). Filters tools/list AND
         // fail-closed rejects tools/call of invisible tools. Empty = all visible.
