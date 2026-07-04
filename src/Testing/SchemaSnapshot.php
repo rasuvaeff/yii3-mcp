@@ -117,11 +117,12 @@ final readonly class SchemaSnapshot
      */
     private static function write(string $path, array $snapshot): void
     {
-        if (!is_dir(dirname($path))) {
+        $json = json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+
+        // a partial write would leave a valid-looking but stale snapshot
+        if (@file_put_contents($path, $json) !== strlen($json)) {
             throw new RuntimeException(sprintf('Cannot write MCP schema snapshot to "%s"', $path));
         }
-
-        file_put_contents($path, json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
     }
 
     /**

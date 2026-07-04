@@ -388,7 +388,14 @@ limiting, auth) — unlike hand-written tools that invoke handlers directly.
 The DI wiring requires PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) in the container.
 Request bodies are passed as a single `body` tool argument; an operationId
-missing from the document throws at server build time (fail-fast).
+missing from the document throws `UnknownOperationException` at server build
+time, a non-GET operation under `safe_methods_only` throws
+`UnsafeOperationException` (fail-fast). Local `#/components/...` `$ref`s are
+resolved inline (up to 32 chained hops); external (URL/file) `$ref`s pass
+through unresolved. Tool arguments are keyed by name, so an operation with a
+path and a query parameter sharing one name — or a parameter named `body`
+alongside a request body — cannot be bridged and throws
+`InvalidSpecException` at build time.
 
 For custom scenarios use the pieces directly: `SpecIndex` +
 `HttpOperationExecutor` + `OpenApiServerConfigurator` (a
@@ -416,7 +423,7 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
-| `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `OperationFailedException` |
+| `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 
 ## Security
 

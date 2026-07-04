@@ -295,19 +295,124 @@ final class SpecIndexTest
         Assert::same($index->get('op')->parameters[0]['schema'], ['type' => 'string']);
     }
 
-    public function refNestingAtTheLimitIsAccepted(): void
+    public function refChainAtTheLimitIsAccepted(): void
     {
         Assert::same(
-            $this->indexWithSchemaOfDepth(31)->get('op')->operationId,
-            'op',
+            $this->indexWithRefChainOfLength(32)->get('op')->parameters[0]['schema'],
+            ['type' => 'string'],
         );
     }
 
-    public function refNestingBeyondTheLimitThrows(): void
+    public function refChainBeyondTheLimitThrows(): void
     {
         Expect::exception(InvalidSpecException::class);
 
-        $this->indexWithSchemaOfDepth(40);
+        $this->indexWithRefChainOfLength(33);
+    }
+
+    public function deepSchemaNestingWithoutRefsIsNotLimited(): void
+    {
+        Assert::same($this->indexWithSchemaOfDepth(40)->get('op')->operationId, 'op');
+    }
+
+    public function circularRefIsReportedAsTooDeepChain(): void
+    {
+        $caught = null;
+
+        try {
+            new SpecIndex([
+                'paths' => [
+                    '/x' => ['get' => [
+                        'operationId' => 'op',
+                        'parameters' => [['name' => 'p', 'in' => 'query', 'schema' => ['$ref' => '#/components/schemas/A']]],
+                    ]],
+                ],
+                'components' => ['schemas' => [
+                    'A' => ['$ref' => '#/components/schemas/B'],
+                    'B' => ['$ref' => '#/components/schemas/A'],
+                ]],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('$ref chain is too deep');
+    }
+
+    public function selfReferencingSchemaThrows(): void
+    {
+        Expect::exception(InvalidSpecException::class);
+
+        new SpecIndex([
+            'paths' => [
+                '/x' => ['post' => [
+                    'operationId' => 'op',
+                    'requestBody' => [
+                        'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]],
+                    ],
+                ]],
+            ],
+            'components' => ['schemas' => ['Node' => [
+                'type' => 'object',
+                'properties' => ['child' => ['$ref' => '#/components/schemas/Node']],
+            ]]],
+        ]);
+    }
+
+    public function refToScalarLeafThrows(): void
+    {
+        $caught = null;
+
+        try {
+            new SpecIndex([
+                'paths' => [
+                    '/x' => ['get' => [
+                        'operationId' => 'op',
+                        'parameters' => [['name' => 'p', 'in' => 'query', 'schema' => ['$ref' => '#/components/schemas/Scalar']]],
+                    ]],
+                ],
+                'components' => ['schemas' => ['Scalar' => 'just-a-string']],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('must point to an object');
+    }
+
+    public function externalRefPassesThroughUnresolved(): void
+    {
+        $index = new SpecIndex([
+            'paths' => [
+                '/x' => ['get' => [
+                    'operationId' => 'op',
+                    'parameters' => [['name' => 'p', 'in' => 'query', 'schema' => ['$ref' => 'https://example.com/schemas.json#/Thing']]],
+                ]],
+            ],
+        ]);
+
+        Assert::same(
+            $index->get('op')->parameters[0]['schema'],
+            ['$ref' => 'https://example.com/schemas.json#/Thing'],
+        );
+    }
+
+    private function indexWithRefChainOfLength(int $length): SpecIndex
+    {
+        $schemas = ['S' . $length => ['type' => 'string']];
+        for ($i = $length - 1; $i >= 1; --$i) {
+            $schemas['S' . $i] = ['$ref' => '#/components/schemas/S' . ($i + 1)];
+        }
+
+        return new SpecIndex([
+            'paths' => [
+                '/x' => ['get' => [
+                    'operationId' => 'op',
+                    'parameters' => [['name' => 'p', 'in' => 'query', 'schema' => ['$ref' => '#/components/schemas/S1']]],
+                ]],
+            ],
+            'components' => ['schemas' => $schemas],
+        ]);
     }
 
     private function indexWithSchemaOfDepth(int $depth): SpecIndex

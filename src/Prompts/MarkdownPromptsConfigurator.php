@@ -17,6 +17,10 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
  * Prompts become content, not code: edited without a deployment and
  * versioned like any other file.
  *
+ * A missing directory throws at build time; a directory without `*.md`
+ * files (or one the process cannot list) registers no prompts — an empty
+ * prompts directory is a valid state, not an error.
+ *
  * The file format is intentionally compatible with — and inspired by —
  * {@link https://github.com/vjik/my-prompts-mcp vjik/my-prompts-mcp}
  * by Sergei Predvoditelev.

@@ -21,7 +21,8 @@ SessionBudgetInterceptor, InterceptingReferenceHandler}`,
 `OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator,
 SpecLoader}`, `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in
-`Exception\`, `OpenApi\Exception\` and `Prompts\Exception\`.
+`Exception\`, `OpenApi\Exception\` and `Prompts\Exception\`
+(`Testing\SseFrame` is @internal).
 
 ## Golden rules
 

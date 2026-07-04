@@ -9,8 +9,10 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
 
 /**
  * Indexes a decoded OpenAPI 3.x document by operationId. Local
- * `#/components/...` schema references are resolved inline; operations
- * without an operationId cannot be bridged and are skipped.
+ * `#/components/...` schema references are resolved inline (chains of up
+ * to 32 `$ref` hops); external references (URL or file `$ref`s) are not
+ * resolved and pass through verbatim into the generated input schema.
+ * Operations without an operationId cannot be bridged and are skipped.
  *
  * @internal
  */
@@ -195,21 +197,22 @@ final readonly class SpecIndex
     }
 
     /**
-     * Inlines local `#/components/...` references, recursively.
+     * Inlines local `#/components/...` references, recursively. The depth
+     * limit counts `$ref` hops along a branch — plain array nesting without
+     * references is unlimited.
      *
      * @param array<array-key, mixed> $node
      *
      * @return array<array-key, mixed>
      */
-    private function resolveRef(array $node, int $depth = 0): array
+    private function resolveRef(array $node, int $refDepth = 0): array
     {
-        if ($depth > self::MAX_REF_DEPTH) {
-            throw new InvalidSpecException('OpenAPI $ref nesting is too deep (possible circular reference)');
-        }
+        while (str_starts_with($this->stringOrEmpty($node['$ref'] ?? null), '#/')) {
+            if (++$refDepth > self::MAX_REF_DEPTH) {
+                throw new InvalidSpecException('OpenAPI $ref chain is too deep (possible circular reference)');
+            }
 
-        $ref = $this->stringOrEmpty($node['$ref'] ?? null);
-
-        if (str_starts_with($ref, '#/')) {
+            $ref = $this->stringOrEmpty($node['$ref'] ?? null);
             $resolved = $this->lookupPointer($ref);
             unset($node['$ref']);
             $node = [...$resolved, ...$node];
@@ -218,7 +221,7 @@ final readonly class SpecIndex
         /** @var mixed $value */
         foreach ($node as $key => $value) {
             if (is_array($value)) {
-                $node[$key] = $this->resolveRef($value, $depth + 1);
+                $node[$key] = $this->resolveRef($value, $refDepth);
             }
         }
 

@@ -14,6 +14,7 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -88,6 +89,23 @@ final class SessionBudgetInterceptorTest
         $interceptor->intercept($context, static fn(): string => 'ok');
 
         Assert::same($session->get('rasuvaeff.yii3-mcp.tool-calls'), 2);
+    }
+
+    public function failedCallStillConsumesTheBudget(): void
+    {
+        $interceptor = new SessionBudgetInterceptor(budget: 5);
+        $session = new FakeSession();
+        $context = new ToolCallContext(toolName: 'x', arguments: [], session: $session);
+
+        $caught = null;
+
+        try {
+            $interceptor->intercept($context, static fn(): string => throw new RuntimeException('downstream failed'));
+        } catch (RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($session->get('rasuvaeff.yii3-mcp.tool-calls'), 1);
     }
 
     #[DataProvider('invalidBudgetProvider')]

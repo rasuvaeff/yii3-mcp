@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- OpenAPI bridge: a non-GET operation under `safe_methods_only` now throws
+  the dedicated `OpenApi\Exception\UnsafeOperationException` instead of the
+  misleading `UnknownOperationException` (the operation IS in the document).
+- OpenAPI bridge: an operation declaring a path and a query parameter with
+  the same name — or a parameter named `body` alongside a request body — now
+  throws `InvalidSpecException` at build time instead of silently collapsing
+  two inputs into one tool argument.
+- OpenAPI bridge: the `$ref` resolution limit now counts `$ref` hops (max 32
+  per chain) instead of plain array nesting — deep schemas without references
+  are no longer rejected; ref-to-ref chains resolve fully.
+- Documented: external (URL/file) `$ref`s pass through unresolved; an empty
+  prompts directory registers no prompts (only a missing one throws).
+- `McpServeCommand` accepts an optional `TransportInterface` (a test seam;
+  defaults to the stdio transport as before).
+- `Testing\McpTester` now joins multi-line SSE `data:` fields per the SSE
+  specification instead of reading only the first line.
+- `Testing\SchemaSnapshot` fails loudly when the snapshot file cannot be
+  fully written (previously a failed or partial write went unnoticed).
 - `Interceptor\ToolCallInterceptorInterface` — public extension point wrapping
   every `tools/call` (attribute tools, OpenAPI bridge, configurators);
   configured via the `interceptors` params list (DI-resolved, first =

@@ -153,6 +153,25 @@ final class SchemaSnapshotTest
         Assert::string($caught->getMessage())->contains('Cannot write MCP schema snapshot');
     }
 
+    public function throwsWhenSnapshotFileCannotBeWritten(): void
+    {
+        // the path is an existing directory: dirname() exists, the write fails
+        $dir = sys_get_temp_dir() . '/yii3-mcp-snapshot-dir-' . bin2hex(random_bytes(8));
+        mkdir($dir);
+
+        $caught = null;
+
+        try {
+            SchemaSnapshot::assert($this->tester(), $dir);
+        } catch (RuntimeException $caught) {
+        } finally {
+            rmdir($dir);
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('Cannot write MCP schema snapshot');
+    }
+
     private function driftMessage(McpTester $tester): string
     {
         $caught = null;

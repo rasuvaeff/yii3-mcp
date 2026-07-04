@@ -6,7 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
 use Mcp\Schema\Tool;
 use Mcp\Server\Builder;
-use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
 use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 
 /**
@@ -17,8 +17,9 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
  * stack (validation, rate limiting, auth).
  *
  * Fail-closed: an empty allow-list exposes nothing; an operationId missing
- * from the document throws at build time; with $safeMethodsOnly a non-GET
- * operation in the allow-list throws instead of being exposed.
+ * from the document throws UnknownOperationException at build time; with
+ * $safeMethodsOnly a non-GET operation in the allow-list throws
+ * UnsafeOperationException instead of being exposed.
  *
  * @api
  */
@@ -45,7 +46,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
             $operation = $this->spec->get($operationId);
 
             if ($this->safeMethodsOnly && $operation->method !== 'GET') {
-                throw new UnknownOperationException(sprintf(
+                throw new UnsafeOperationException(sprintf(
                     'Operation "%s" uses %s but the bridge is configured with safe_methods_only — only GET operations may be exposed',
                     $operation->operationId,
                     $operation->method,

@@ -147,11 +147,17 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 
 - Tool name = operationId, description = summary/description, inputSchema
   from path/query parameters (+ `body` argument for application/json
-  requestBody). Local `#/components/...` $refs are resolved inline.
+  requestBody). Local `#/components/...` $refs are resolved inline (chains
+  of up to 32 hops); external (URL/file) $refs pass through unresolved.
 - Calls are real HTTP requests against the API — its middleware stack
   (validation, rate limiting, auth) applies. Non-2xx =>
   `OperationFailedException` => MCP tool error envelope.
 - Unknown operationId => `UnknownOperationException` at build time.
+- Non-GET operation with `safeMethodsOnly` => `UnsafeOperationException`
+  at build time.
+- A path and a query parameter sharing one name, or a parameter named
+  `body` alongside a request body => `InvalidSpecException` at build time
+  (tool arguments are keyed by name only).
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) / `base_url` / `operations` /
   `headers` (needs PSR-18/17 services in the container).
 
@@ -214,5 +220,10 @@ Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
 factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `secret_header`, `session.dir`, `session.ttl`,
-`session.budget`, `interceptors`,
+`session.budget`, `interceptors`, `configurators`, `tool_visibility`,
+`prompts_path`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.
+
+`configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,
+applied after the core's prompts/openapi configurators — generic extension
+point (companion packages, app-specific server setup).
