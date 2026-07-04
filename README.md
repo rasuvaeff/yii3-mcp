@@ -131,6 +131,22 @@ An MCP client connects with the secret header:
 
 Claude Code config: `claude mcp add my-app -- ./yii mcp:serve`.
 
+### Introspection: what is actually served
+
+`mcp:list` prints every registered tool, resource, resource template and
+prompt — with argument summaries (`name*` = required) — without an MCP client.
+It goes through the same in-process JSON-RPC path a real client uses, so
+attribute tools, OpenAPI-bridged operations and Markdown prompts all show up:
+
+```php
+// add McpListCommand to your console commands
+./yii mcp:list
+```
+
+The command (like `McpTester`) needs PSR-17 factories
+(`ServerRequestFactoryInterface`, `ResponseFactoryInterface`,
+`StreamFactoryInterface`) in the container.
+
 ### Sessions (important for PHP-FPM)
 
 The MCP Streamable HTTP session spans several HTTP requests (`initialize`
@@ -231,9 +247,11 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `McpAction` | PSR-15 handler running the SDK `StreamableHttpTransport` for the current request |
 | `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; an empty secret rejects every request with an explanatory 503 — an unprotected endpoint must be an explicit decision |
 | `McpServeCommand` | `mcp:serve` — stdio transport for local MCP clients |
+| `McpListCommand` | `mcp:list` — console introspection of every served tool/resource/prompt with argument summaries |
 | `Exception\InvalidToolClassException` | configured tool class missing or without capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class opts out of registration at build time (`shouldRegister()`) |
 | `Testing\McpTester` | in-process test client: initialize/listTools/callTool/readResource |
+| `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
@@ -254,11 +272,15 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 
 ## Examples
 
-See [examples/](examples/) for a runnable script.
+See [examples/](examples/) — every script runs offline.
 
 | Script | Shows | Needs server? |
 |--------|-------|:-------------:|
 | [`http-handshake.php`](examples/http-handshake.php) | Full in-process MCP cycle: initialize + tools/call | no |
+| [`stdio-serve.php`](examples/stdio-serve.php) | The stdio transport `mcp:serve` runs, over in-memory streams | no |
+| [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
+| [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
+| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools | no |
 
 ## Testing your tools
 
@@ -276,6 +298,22 @@ $tester->readResource('app://x');     // resource contents
 $tester->request('prompts/list');     // any raw JSON-RPC method
 ```
 
+### Schema snapshot: catch accidental contract drift
+
+A changed method signature silently changes the generated `inputSchema` — and
+breaks agents mid-flight. `Testing\SchemaSnapshot` snapshots every served
+capability definition into a committed JSON file; drift fails the test until
+the snapshot is regenerated deliberately (delete the file and re-run):
+
+```php
+SchemaSnapshot::assert($tester, __DIR__ . '/mcp-schema.json');
+// first run writes the file; a mismatch throws with a per-section summary:
+// "tools: changed [order.status]; prompts: added [code-review]"
+```
+
+When bumping the `mcp/sdk` pin, expect to regenerate: schema serialization
+may legitimately change between SDK minors.
+
 For interactive debugging use the official MCP Inspector:
 
 ```bash
@@ -283,6 +321,11 @@ npx @modelcontextprotocol/inspector
 # transport: Streamable HTTP, URL: https://your-app/rest/mcp,
 # header: X-Mcp-Secret: <secret>
 ```
+
+## Roadmap
+
+Planned direction (tool-call interceptors, AI audit trail, session budgets,
+tenant-scoped serving, per-session tool visibility): see [ROADMAP.md](ROADMAP.md).
 
 ## Development
 
