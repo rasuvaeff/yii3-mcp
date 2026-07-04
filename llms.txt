@@ -63,6 +63,14 @@ $tester = new McpTester($server, $psr17RequestFactory, $psr17ResponseFactory, $p
 $tester->callTool('greet', ['name' => 'Yii']);   // decoded result envelope
 $tester->listTools(); $tester->readResource('app://x'); $tester->request('prompts/list');
 // JSON-RPC error => RuntimeException
+
+// Schema contract canary (drift in served schemas fails the build):
+use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
+SchemaSnapshot::assert($tester, __DIR__ . '/mcp-schema.json');
+// missing file => generated (first run passes); mismatch => RuntimeException
+// with per-section drift summary ("tools: changed [greet]"); regenerate
+// deliberately by deleting the file. SchemaSnapshot::capture($tester) returns
+// the normalized array {tools, resources, resourceTemplates, prompts}.
 ```
 
 ### McpServerFactory
@@ -108,6 +116,13 @@ new SharedSecretMiddleware(
 ### McpServeCommand (stdio, symfony/console)
 
 `mcp:serve` — runs the server on StdioTransport for Claude Code/Desktop.
+
+### McpListCommand (console introspection)
+
+`mcp:list` — prints every served tool/resource/resource-template/prompt with
+argument summaries (`name*` = required) via the in-process JSON-RPC path (no
+MCP client needed). Constructor: Server + PSR-17 ServerRequestFactory/
+ResponseFactory/StreamFactory (must be in the container).
 
 ### OpenAPI bridge (expose an existing REST API)
 

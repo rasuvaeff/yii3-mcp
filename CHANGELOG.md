@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.0.1 — 2026-07-04
+
+- `McpListCommand` (`mcp:list`) — console introspection of every served
+  tool/resource/resource-template/prompt with argument summaries, through the
+  same in-process JSON-RPC path a real client uses.
+- `Testing\SchemaSnapshot` — contract canary: a committed JSON snapshot of all
+  served capability schemas; drift fails the build until the snapshot is
+  regenerated deliberately.
+- `examples/` now covers every mode: stdio transport, conditional
+  registration, Markdown prompts, OpenAPI bridge.
+- `ROADMAP.md` — published post-1.0 direction.
+
 ## 1.0.0 — 2026-07-04
 
 - Initial release: MCP (Model Context Protocol) server integration for Yii3
