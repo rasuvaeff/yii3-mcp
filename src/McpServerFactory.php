@@ -8,12 +8,15 @@ use Mcp\Capability\Attribute\McpPrompt;
 use Mcp\Capability\Attribute\McpResource;
 use Mcp\Capability\Attribute\McpResourceTemplate;
 use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Server;
 use Mcp\Server\Builder;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException;
+use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -42,8 +45,9 @@ final readonly class McpServerFactory
     /**
      * @param list<class-string> $toolClasses
      * @param iterable<ServerConfiguratorInterface> $configurators
+     * @param iterable<ToolCallInterceptorInterface> $interceptors tool-call chain, first = outermost
      */
-    public function create(array $toolClasses, iterable $configurators = []): Server
+    public function create(array $toolClasses, iterable $configurators = [], iterable $interceptors = []): Server
     {
         $builder = Server::builder()
             ->setServerInfo(name: $this->name, version: $this->version)
@@ -60,6 +64,22 @@ final readonly class McpServerFactory
 
         foreach ($configurators as $configurator) {
             $configurator->configure($builder);
+        }
+
+        $interceptorList = [];
+
+        foreach ($interceptors as $interceptor) {
+            $interceptorList[] = $interceptor;
+        }
+
+        if ($interceptorList !== []) {
+            // the interceptor chain wraps EVERY registration path: [class, method]
+            // references, closures and explicit ToolHandlerInterface handlers all
+            // execute through the reference handler
+            $builder->setReferenceHandler(new InterceptingReferenceHandler(
+                inner: new ReferenceHandler($this->container),
+                interceptors: $interceptorList,
+            ));
         }
 
         return $builder->build();

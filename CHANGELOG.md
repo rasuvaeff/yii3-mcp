@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- `Interceptor\ToolCallInterceptorInterface` — public extension point wrapping
+  every `tools/call` (attribute tools, OpenAPI bridge, configurators);
+  configured via the `interceptors` params list (DI-resolved, first =
+  outermost). `Interceptor\ToolCallContext` carries the tool name, arguments
+  and session (`getClientInfo()`).
+- `Interceptor\SessionBudgetInterceptor` — per-session `tools/call` cap
+  (`session.budget` param, 0 = unlimited): an agent looping inside one session
+  gets an explanatory MCP tool error instead of unlimited calls.
+- `McpServerFactory::create()` accepts an `interceptors` iterable (third
+  argument, backwards-compatible).
+
 ## 1.0.1 — 2026-07-04
 
 - `McpListCommand` (`mcp:list`) — console introspection of every served

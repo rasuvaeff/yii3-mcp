@@ -205,6 +205,61 @@ name fail the server build with `Prompts\Exception\InvalidPromptFileException`
 > Predvoditelev: the same prompt file works in a personal stdio prompt
 > manager and on an application server.
 
+## Interceptors: wrap every tools/call
+
+`Interceptor\ToolCallInterceptorInterface` is the package's public extension
+point around tool execution. The chain wraps **every** registration path —
+attribute tools, OpenAPI-bridged operations, configurator-registered
+handlers — so tracing, rate limiting or ACL live in one place, without
+touching the tools:
+
+```php
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+
+final readonly class TracingInterceptor implements ToolCallInterceptorInterface
+{
+    public function __construct(private LoggerInterface $logger) {}
+
+    public function intercept(ToolCallContext $context, callable $next): mixed
+    {
+        // $context->toolName, $context->arguments, $context->session,
+        // $context->getClientInfo() — who is calling what with which input
+        $this->logger->info('tools/call', ['tool' => $context->toolName]);
+
+        return $next();   // skip $next() to short-circuit
+    }
+}
+```
+
+```php
+// config/params.php — resolved through the container, first = outermost
+'rasuvaeff/yii3-mcp' => [
+    'interceptors' => [TracingInterceptor::class],
+],
+```
+
+Throwing `Mcp\Exception\ToolCallException` from an interceptor rejects the
+call with a regular MCP tool-error envelope (the agent sees the reason);
+any other exception becomes an opaque internal error.
+
+### Session budget: stop agent loops
+
+A hard cap on `tools/call` per MCP session (from `initialize` until the TTL
+expires). An agent stuck in a loop burns the budget and gets an explanatory
+tool error instead of hammering the application:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'session' => ['budget' => 50],   // 0 = unlimited (default)
+],
+```
+
+This is loop protection **inside one session**, not a client quota: a
+re-initialize starts a fresh counter. Client quotas belong to an
+application-level rate limiter. The budget guard is always the outermost
+interceptor, so it rejects before any other interceptor does work.
+
 ## OpenAPI bridge: expose an existing REST API
 
 If the application already maintains an OpenAPI document, allow-listed
@@ -254,6 +309,10 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder |
+| `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
+| `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
+| `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
+| `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `OperationFailedException` |
 
@@ -281,6 +340,7 @@ See [examples/](examples/) — every script runs offline.
 | [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
 | [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools | no |
+| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor + session budget guard | no |
 
 ## Testing your tools
 

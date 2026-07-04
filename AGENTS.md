@@ -15,6 +15,8 @@ serves the Streamable HTTP transport; `McpServeCommand` serves stdio;
 Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
 `McpServeCommand`, `McpListCommand`, `ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `Testing\McpTester`, `Testing\SchemaSnapshot`,
+`Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
+SessionBudgetInterceptor, InterceptingReferenceHandler}`,
 `OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator,
 SpecLoader}`, `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in

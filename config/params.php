@@ -21,7 +21,14 @@ return [
             // empty => sys_get_temp_dir() . '/yii3-mcp-sessions'
             'dir' => '',
             'ttl' => 3600,
+            // max tools/call per session (0 = unlimited); anti-loop guard,
+            // NOT a client quota — a new session starts a fresh counter
+            'budget' => 0,
         ],
+        // tool-call interceptor FQCNs (resolved through the container,
+        // applied in order, first = outermost); each implements
+        // Interceptor\ToolCallInterceptorInterface
+        'interceptors' => [],
         // Markdown prompts directory: every *.md file becomes an MCP prompt
         // (YAML frontmatter: name/title/description/arguments; body with
         // {{argument}} placeholders). Format is vjik/my-prompts-mcp compatible.

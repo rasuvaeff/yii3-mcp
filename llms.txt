@@ -155,6 +155,33 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) / `base_url` / `operations` /
   `headers` (needs PSR-18/17 services in the container).
 
+### Tool-call interceptors
+
+```php
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+
+final readonly class MyInterceptor implements ToolCallInterceptorInterface
+{
+    public function intercept(ToolCallContext $context, callable $next): mixed
+    {
+        // $context->toolName; $context->arguments (array<string, mixed>);
+        // $context->session (?SessionInterface); $context->getClientInfo()
+        return $next();   // don't call it to short-circuit
+    }
+}
+// params: 'interceptors' => [MyInterceptor::class]  — DI-resolved, first = outermost.
+// Wraps EVERY tools/call (attribute tools, OpenAPI bridge, configurators);
+// prompts/resources bypass the chain.
+// throw Mcp\Exception\ToolCallException => MCP tool-error envelope (agent sees reason);
+// other exceptions => opaque internal error.
+// Manual wiring: $factory->create($tools, $configurators, $interceptors).
+
+// Session budget (anti-loop, NOT a client quota — new session = new counter):
+// params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
+// exhausted => tool error "Session tool-call budget of N is exhausted..."
+```
+
 ### DI (config-plugin)
 
 Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
@@ -162,4 +189,5 @@ Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
 factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `secret_header`, `session.dir`, `session.ttl`,
+`session.budget`, `interceptors`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.

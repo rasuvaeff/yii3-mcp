@@ -21,6 +21,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyPromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\TrailingHelperTool;
 use Testo\Assert;
@@ -161,6 +162,25 @@ final class McpServerFactoryTest
         $server = $this->factory()->create([], [$configurator]);
 
         Assert::same(array_column($this->tester($server)->listTools(), 'name'), ['configured-tool']);
+    }
+
+    public function interceptorsWrapToolCallsBuiltByTheFactory(): void
+    {
+        $recording = new RecordingInterceptor();
+
+        $server = $this->factory()->create([GreetingTool::class], [], [$recording]);
+        $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
+    }
+
+    public function withoutInterceptorsToolCallsStillWork(): void
+    {
+        $server = $this->factory()->create([GreetingTool::class], [], []);
+
+        $result = $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][0]['text'], 'Hello, Yii!');
     }
 
     private function tester(Server $server): McpTester

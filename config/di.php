@@ -9,6 +9,8 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
@@ -84,7 +86,26 @@ return [
                 );
             }
 
-            return $factory->create($tools, $configurators);
+            $interceptors = [];
+
+            /** @var array{budget?: int} $session */
+            $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
+            $budget = $session['budget'] ?? 0;
+
+            if ($budget > 0) {
+                // budget goes first (outermost): the cheap guard runs before
+                // any application interceptor does work
+                $interceptors[] = new SessionBudgetInterceptor($budget);
+            }
+
+            /** @var list<class-string<ToolCallInterceptorInterface>> $interceptorClasses */
+            $interceptorClasses = $params['rasuvaeff/yii3-mcp']['interceptors'] ?? [];
+
+            foreach ($interceptorClasses as $interceptorClass) {
+                $interceptors[] = $container->get($interceptorClass);
+            }
+
+            return $factory->create($tools, $configurators, $interceptors);
         },
     ],
     McpAction::class => [
