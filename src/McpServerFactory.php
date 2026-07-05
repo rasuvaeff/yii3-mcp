@@ -8,12 +8,19 @@ use Mcp\Capability\Attribute\McpPrompt;
 use Mcp\Capability\Attribute\McpResource;
 use Mcp\Capability\Attribute\McpResourceTemplate;
 use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Registry;
+use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Server;
 use Mcp\Server\Builder;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException;
+use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\FilteredListToolsHandler;
+use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -39,12 +46,20 @@ final readonly class McpServerFactory
         private ?LoggerInterface $logger = null,
     ) {}
 
+    private const int PAGE_SIZE = 50;
+
     /**
      * @param list<class-string> $toolClasses
      * @param iterable<ServerConfiguratorInterface> $configurators
+     * @param iterable<ToolCallInterceptorInterface> $interceptors tool-call chain, first = outermost
+     * @param ToolVisibilityInterface|null $toolVisibility per-session filter for tools/list + fail-closed tools/call
      */
-    public function create(array $toolClasses, iterable $configurators = []): Server
-    {
+    public function create(
+        array $toolClasses,
+        iterable $configurators = [],
+        iterable $interceptors = [],
+        ?ToolVisibilityInterface $toolVisibility = null,
+    ): Server {
         $builder = Server::builder()
             ->setServerInfo(name: $this->name, version: $this->version)
             ->setContainer($this->container)
@@ -60,6 +75,37 @@ final readonly class McpServerFactory
 
         foreach ($configurators as $configurator) {
             $configurator->configure($builder);
+        }
+
+        $interceptorList = [];
+
+        foreach ($interceptors as $interceptor) {
+            $interceptorList[] = $interceptor;
+        }
+
+        if ($interceptorList !== [] || $toolVisibility instanceof ToolVisibilityInterface) {
+            // the decorator wraps EVERY registration path: [class, method]
+            // references, closures and explicit ToolHandlerInterface handlers all
+            // execute through the reference handler
+            $builder->setReferenceHandler(new InterceptingReferenceHandler(
+                inner: new ReferenceHandler($this->container),
+                interceptors: $interceptorList,
+                visibility: $toolVisibility,
+            ));
+        }
+
+        if ($toolVisibility instanceof ToolVisibilityInterface) {
+            // owning the registry lets the filtering tools/list handler read it;
+            // custom request handlers run ahead of the SDK's own
+            $registry = new Registry(logger: $this->logger ?? new NullLogger());
+            $builder->setRegistry($registry);
+            /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+            $listHandler = new FilteredListToolsHandler(
+                registry: $registry,
+                visibility: $toolVisibility,
+                pageSize: self::PAGE_SIZE,
+            );
+            $builder->addRequestHandler($listHandler);
         }
 
         return $builder->build();

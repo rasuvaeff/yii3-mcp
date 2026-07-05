@@ -205,6 +205,162 @@ name fail the server build with `Prompts\Exception\InvalidPromptFileException`
 > Predvoditelev: the same prompt file works in a personal stdio prompt
 > manager and on an application server.
 
+## Interceptors: wrap every tools/call
+
+`Interceptor\ToolCallInterceptorInterface` is the package's public extension
+point around tool execution. The chain wraps **every** registration path —
+attribute tools, OpenAPI-bridged operations, configurator-registered
+handlers — so tracing, rate limiting or ACL live in one place, without
+touching the tools:
+
+```php
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+
+final readonly class TracingInterceptor implements ToolCallInterceptorInterface
+{
+    public function __construct(private LoggerInterface $logger) {}
+
+    public function intercept(ToolCallContext $context, callable $next): mixed
+    {
+        // $context->toolName, $context->arguments, $context->session,
+        // $context->getClientInfo() — who is calling what with which input
+        $this->logger->info('tools/call', ['tool' => $context->toolName]);
+
+        return $next();   // skip $next() to short-circuit
+    }
+}
+```
+
+```php
+// config/params.php — resolved through the container, first = outermost
+'rasuvaeff/yii3-mcp' => [
+    'interceptors' => [TracingInterceptor::class],
+],
+```
+
+Throwing `Mcp\Exception\ToolCallException` from an interceptor rejects the
+call with a regular MCP tool-error envelope (the agent sees the reason);
+any other exception becomes an opaque internal error.
+
+### Session budget: stop agent loops
+
+A hard cap on `tools/call` per MCP session (from `initialize` until the TTL
+expires). An agent stuck in a loop burns the budget and gets an explanatory
+tool error instead of hammering the application:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'session' => ['budget' => 50],   // 0 = unlimited (default)
+],
+```
+
+This is loop protection **inside one session**, not a client quota: a
+re-initialize starts a fresh counter. Client quotas belong to an
+application-level rate limiter. The budget guard is always the outermost
+interceptor, so it rejects before any other interceptor does work.
+
+### Per-session tool visibility
+
+`ConditionalToolInterface` gates registration globally at build time. When
+different **sessions** must see different tools (admin vs public client,
+tenant plans), implement `Visibility\ToolVisibilityInterface` — the decision
+runs per session, against the handshake data:
+
+```php
+use Mcp\Schema\Tool;
+use Mcp\Server\Session\SessionInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
+
+final readonly class PlanBasedVisibility implements ToolVisibilityInterface
+{
+    public function isVisible(Tool $tool, ?SessionInterface $session): bool
+    {
+        // decide from $session->get('client_info'), tenant data, …
+        return !str_starts_with($tool->name, 'admin.') || $this->isAdmin($session);
+    }
+}
+```
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'tool_visibility' => PlanBasedVisibility::class,   // DI-resolved
+],
+```
+
+The filter applies in two places, consistently: `tools/list` omits invisible
+tools, and `tools/call` **fail-closed** rejects them — a client that guesses
+a hidden name still gets a tool error, and the call never reaches the
+interceptor chain or the tool. This is an early filter, not a replacement
+for application-level ACL.
+
+### Server configurators
+
+Beyond the built-in Markdown-prompts and OpenAPI bridge, register your own
+`ServerConfiguratorInterface` implementations (or a companion package's) to
+contribute capabilities to the SDK server builder before it is built. The
+core resolves the FQCNs through the container (after its own configurators)
+and applies them in order:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'configurators' => [MyServerConfigurator::class],   // DI-resolved
+],
+```
+
+```php
+final readonly class MyServerConfigurator implements ServerConfiguratorInterface
+{
+    #[\Override]
+    public function configure(Builder $builder): void
+    {
+        // $builder->addTool(...) / addResource(...) / addPrompt(...) …
+    }
+}
+```
+
+## Multi-tenant serving (rasuvaeff/yii3-tenancy)
+
+With [rasuvaeff/yii3-tenancy](https://github.com/rasuvaeff/yii3-tenancy) the
+MCP endpoint serves every tenant from one route — tools are ordinary Yii3
+services, so a constructor-injected `CurrentTenant` scopes their data access
+as anywhere else in the application. The recipe is middleware order: resolve
+the tenant **before** the MCP action runs:
+
+```php
+// config/routes.php — secret first (fail-closed), then tenant, then MCP
+Route::methods(['POST', 'GET', 'DELETE', 'OPTIONS'], '/mcp')
+    ->middleware(SharedSecretMiddleware::class)
+    ->middleware(TenantResolutionMiddleware::class)   // e.g. HeaderTenantResolver('X-Tenant-Id')
+    ->action(McpAction::class),
+```
+
+```php
+// an MCP client carries both headers
+"headers": { "X-Mcp-Secret": "...", "X-Tenant-Id": "acme" }
+```
+
+Isolate sessions per tenant so a session id can never cross tenants — bind
+the session store to a per-tenant directory:
+
+```php
+// config/common/di/mcp.php
+SessionStoreInterface::class => static fn (CurrentTenant $tenant) =>
+    new FileSessionStore(
+        directory: sys_get_temp_dir() . '/mcp-sessions/' . $tenant->get()->getId(),
+    ),
+```
+
+Per-tenant tool sets come free with `tool_visibility` (see above): decide
+from the resolved tenant instead of `client_info`.
+
+> **Honest scope:** the shared secret stays global — anyone holding it may
+> present any `X-Tenant-Id`. That fits the trusted-only endpoint model (the
+> secret already grants application access); tenant isolation here protects
+> against accidents, not against a malicious secret holder. Per-tenant
+> secrets (a secret resolver instead of the single-value middleware) are a
+> planned extension — ask if you need it.
+
 ## OpenAPI bridge: expose an existing REST API
 
 If the application already maintains an OpenAPI document, allow-listed
@@ -232,7 +388,14 @@ limiting, auth) — unlike hand-written tools that invoke handlers directly.
 The DI wiring requires PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) in the container.
 Request bodies are passed as a single `body` tool argument; an operationId
-missing from the document throws at server build time (fail-fast).
+missing from the document throws `UnknownOperationException` at server build
+time, a non-GET operation under `safe_methods_only` throws
+`UnsafeOperationException` (fail-fast). Local `#/components/...` `$ref`s are
+resolved inline (up to 32 chained hops); external (URL/file) `$ref`s pass
+through unresolved. Tool arguments are keyed by name, so an operation with a
+path and a query parameter sharing one name — or a parameter named `body`
+alongside a request body — cannot be bridged and throws
+`InvalidSpecException` at build time.
 
 For custom scenarios use the pieces directly: `SpecIndex` +
 `HttpOperationExecutor` + `OpenApiServerConfigurator` (a
@@ -253,9 +416,14 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Testing\McpTester` | in-process test client: initialize/listTools/callTool/readResource |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
-| `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder |
+| `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
+| `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
+| `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
+| `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
+| `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
+| `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
-| `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `OperationFailedException` |
+| `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 
 ## Security
 
@@ -281,6 +449,8 @@ See [examples/](examples/) — every script runs offline.
 | [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
 | [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools | no |
+| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor + session budget guard | no |
+| [`visibility.php`](examples/visibility.php) | Per-session tool visibility: filtered listing + fail-closed call | no |
 
 ## Testing your tools
 

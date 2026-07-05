@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\InputSchemaBuilder;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
@@ -86,5 +87,51 @@ final class InputSchemaBuilderTest
 
         Assert::same($schema['properties']['body']['required'], ['email']);
         Assert::same($schema['required'], ['body']);
+    }
+
+    public function samePathAndQueryParameterNameCannotBeBridged(): void
+    {
+        $operation = (new SpecIndex([
+            'paths' => ['/items/{id}' => ['get' => [
+                'operationId' => 'op',
+                'parameters' => [
+                    ['name' => 'id', 'in' => 'path', 'schema' => ['type' => 'integer']],
+                    ['name' => 'id', 'in' => 'query'],
+                ],
+            ]]],
+        ]))->get('op');
+
+        $caught = null;
+
+        try {
+            (new InputSchemaBuilder())->build($operation);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('named "id"');
+    }
+
+    public function parameterNamedBodyCollidesWithRequestBodyArgument(): void
+    {
+        $operation = (new SpecIndex([
+            'paths' => ['/x' => ['post' => [
+                'operationId' => 'op',
+                'parameters' => [['name' => 'body', 'in' => 'query']],
+                'requestBody' => [
+                    'content' => ['application/json' => ['schema' => ['type' => 'object']]],
+                ],
+            ]]],
+        ]))->get('op');
+
+        $caught = null;
+
+        try {
+            (new InputSchemaBuilder())->build($operation);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('request-body argument');
     }
 }

@@ -156,13 +156,8 @@ final class McpTester
      */
     private function result(ResponseInterface $response): array
     {
-        $raw = (string) $response->getBody();
-
         // Streamable HTTP may frame the JSON-RPC message as an SSE event
-        if (str_starts_with(trim($raw), 'event:') || str_starts_with(trim($raw), 'data:')) {
-            preg_match('/^data: (.*)$/m', $raw, $matches);
-            $raw = $matches[1] ?? '';
-        }
+        $raw = SseFrame::payload((string) $response->getBody());
 
         if ($raw === '') {
             return [];

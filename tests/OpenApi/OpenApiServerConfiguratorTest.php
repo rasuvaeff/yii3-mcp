@@ -11,6 +11,7 @@ use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
@@ -91,9 +92,11 @@ final class OpenApiServerConfiguratorTest
 
         try {
             $this->action(new FakeHttpClient(), ['createSubscriber'], safeMethodsOnly: true);
-        } catch (UnknownOperationException $caught) {
+        } catch (UnsafeOperationException $caught) {
         }
 
+        // the dedicated type: the operation IS in the document, so catching
+        // UnknownOperationException for wiring mistakes must not swallow it
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('safe_methods_only');
     }

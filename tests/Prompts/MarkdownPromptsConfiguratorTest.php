@@ -85,6 +85,45 @@ final class MarkdownPromptsConfiguratorTest
         $this->server(\dirname(__DIR__) . '/Support/prompts-invalid');
     }
 
+    public function malformedArgumentEntryThrows(): void
+    {
+        $caught = null;
+
+        try {
+            $this->server(\dirname(__DIR__) . '/Support/prompts-malformed-argument');
+        } catch (InvalidPromptFileException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('malformed argument entry');
+    }
+
+    public function argumentEntryWithoutANameThrows(): void
+    {
+        $caught = null;
+
+        try {
+            $this->server(\dirname(__DIR__) . '/Support/prompts-nameless-argument');
+        } catch (InvalidPromptFileException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('argument without a name');
+    }
+
+    public function emptyDirectoryRegistersNoPrompts(): void
+    {
+        $factory = new Psr17Factory();
+        $tester = new McpTester(
+            server: $this->server(\dirname(__DIR__) . '/Support/prompts-empty'),
+            requestFactory: $factory,
+            responseFactory: $factory,
+            streamFactory: $factory,
+        );
+
+        Assert::same($tester->request('prompts/list')['prompts'] ?? null, []);
+    }
+
     public function duplicatePromptNameThrows(): void
     {
         $caught = null;

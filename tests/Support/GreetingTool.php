@@ -45,10 +45,12 @@ final readonly class GreetingTool
 
     /**
      * Politeness guidelines for greetings.
+     *
+     * @return array{user: string}
      */
     #[McpPrompt(name: 'greeting-style')]
-    public function greetingStyle(): string
+    public function greetingStyle(): array
     {
-        return 'Greet the user warmly and by name.';
+        return ['user' => 'Greet the user warmly and by name.'];
     }
 }

@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.1.0 — 2026-07-05
+
+- OpenAPI bridge: a non-GET operation under `safe_methods_only` now throws
+  the dedicated `OpenApi\Exception\UnsafeOperationException` instead of the
+  misleading `UnknownOperationException` (the operation IS in the document).
+- OpenAPI bridge: an operation declaring a path and a query parameter with
+  the same name — or a parameter named `body` alongside a request body — now
+  throws `InvalidSpecException` at build time instead of silently collapsing
+  two inputs into one tool argument.
+- OpenAPI bridge: the `$ref` resolution limit now counts `$ref` hops (max 32
+  per chain) instead of plain array nesting — deep schemas without references
+  are no longer rejected; ref-to-ref chains resolve fully.
+- Documented: external (URL/file) `$ref`s pass through unresolved; an empty
+  prompts directory registers no prompts (only a missing one throws).
+- `McpServeCommand` accepts an optional `TransportInterface` (a test seam;
+  defaults to the stdio transport as before).
+- `Testing\McpTester` now joins multi-line SSE `data:` fields per the SSE
+  specification instead of reading only the first line.
+- `Testing\SchemaSnapshot` fails loudly when the snapshot file cannot be
+  fully written (previously a failed or partial write went unnoticed).
+- `Interceptor\ToolCallInterceptorInterface` — public extension point wrapping
+  every `tools/call` (attribute tools, OpenAPI bridge, configurators);
+  configured via the `interceptors` params list (DI-resolved, first =
+  outermost). `Interceptor\ToolCallContext` carries the tool name, arguments
+  and session (`getClientInfo()`).
+- `Interceptor\SessionBudgetInterceptor` — per-session `tools/call` cap
+  (`session.budget` param, 0 = unlimited): an agent looping inside one session
+  gets an explanatory MCP tool error instead of unlimited calls.
+- `Visibility\ToolVisibilityInterface` — per-session tool visibility
+  (`tool_visibility` param): `tools/list` omits invisible tools and
+  `tools/call` fail-closed rejects them before interceptors and the tool run.
+  Complements build-time `ConditionalToolInterface`.
+- Multi-tenant serving recipe (rasuvaeff/yii3-tenancy) in the README:
+  middleware order, per-tenant session-store isolation, tenant-driven
+  visibility; the shared secret stays global (documented trade-off).
+- `McpServerFactory::create()` accepts `interceptors` and `toolVisibility`
+  (third/fourth arguments, backwards-compatible).
+- `configurators` params list: FQCNs implementing
+  `ServerConfiguratorInterface`, DI-resolved and applied after the core's own
+  prompts/openapi configurators. Generic extension point for companion packages
+  and app-specific server setup (mirrors the `interceptors` params pattern).
+
 ## 1.0.1 — 2026-07-04
 
 - `McpListCommand` (`mcp:list`) — console introspection of every served
