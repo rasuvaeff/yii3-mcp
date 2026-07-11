@@ -12,6 +12,7 @@ use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -93,6 +94,24 @@ final class SchemaSnapshotTest
     public function captureIsDeterministic(): void
     {
         Assert::same(SchemaSnapshot::capture($this->tester()), SchemaSnapshot::capture($this->tester()));
+    }
+
+    public function captureIncludesToolOutputSchemas(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]),
+            sessionStore: new InMemorySessionStore(),
+            name: 'snapshot-suite',
+            version: '1.0.0',
+        ))->create([StructuredWeatherTool::class]);
+        $tester = new McpTester(server: $server, requestFactory: $factory, responseFactory: $factory, streamFactory: $factory);
+
+        $captured = SchemaSnapshot::capture($tester);
+
+        // outputSchema is part of the tool definition, so the contract canary
+        // guards structured-output drift the same way it guards inputSchema
+        Assert::same($captured['tools'][0]['outputSchema']['required'] ?? null, ['city', 'temperature', 'conditions']);
     }
 
     public function throwsOnAddedCapability(): void

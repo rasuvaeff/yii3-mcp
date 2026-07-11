@@ -9,9 +9,11 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -21,6 +23,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * the same in-process JSON-RPC path a real client uses, so the output shows
  * what is actually served — attribute tools, OpenAPI-bridged operations and
  * Markdown prompts alike.
+ *
+ * `--json` prints the full capability definitions as normalized JSON (the
+ * SchemaSnapshot format: sections keyed, items ordered by identity, object
+ * keys sorted) — stable for CI diffs and external automation.
  *
  * @api
  */
@@ -37,9 +43,26 @@ final class McpListCommand extends Command
     }
 
     #[\Override]
+    protected function configure(): void
+    {
+        $this->addOption(name: 'json', mode: InputOption::VALUE_NONE, description: 'Output full capability definitions as normalized JSON');
+    }
+
+    #[\Override]
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $tester = new McpTester($this->server, $this->requestFactory, $this->responseFactory, $this->streamFactory);
+
+        if ($input->getOption('json') === true) {
+            $json = json_encode(
+                SchemaSnapshot::capture($tester),
+                JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+            );
+            $output->writeln($json, OutputInterface::OUTPUT_RAW);
+
+            return Command::SUCCESS;
+        }
+
         $io = new SymfonyStyle($input, $output);
 
         $this->section($io, 'Tools', $this->rows($tester->request('tools/list'), 'tools'), ['Name', 'Description', 'Arguments'], $this->toolRow(...));

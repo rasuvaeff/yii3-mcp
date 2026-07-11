@@ -35,6 +35,17 @@ final readonly class OrderTools
     #[McpTool(name: 'order.status')]
     public function status(string $orderId): string { ... }   // schema from signature+DocBlock
 
+    // Structured output: declare outputSchema + return an array — the SDK
+    // serves the schema in tools/list and mirrors the return value into the
+    // result's structuredContent (alongside the text content). An array/object
+    // return produces structuredContent even without outputSchema.
+    #[McpTool(name: 'order.details', outputSchema: [
+        'type' => 'object',
+        'properties' => ['status' => ['type' => 'string'], 'total' => ['type' => 'integer']],
+        'required' => ['status', 'total'],
+    ])]
+    public function details(string $orderId): array { ... }
+
     #[McpResource(uri: 'app://health', name: 'health', mimeType: 'text/plain')]
     public function health(): string { ... }
 
@@ -123,6 +134,9 @@ new SharedSecretMiddleware(
 argument summaries (`name*` = required) via the in-process JSON-RPC path (no
 MCP client needed). Constructor: Server + PSR-17 ServerRequestFactory/
 ResponseFactory/StreamFactory (must be in the container).
+`mcp:list --json` — full capability definitions (input/output schemas
+included) as normalized JSON (SchemaSnapshot format: stable item order,
+sorted object keys) for CI diffs and external automation.
 
 ### OpenAPI bridge (expose an existing REST API)
 
@@ -186,11 +200,26 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // Session budget (anti-loop, NOT a client quota — new session = new counter):
 // params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
 // exhausted => tool error "Session tool-call budget of N is exhausted..."
+
+// Masking sensitive arguments before logging/tracing/auditing:
+use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
+$masker = new ArgumentMasker();               // or new ArgumentMasker(['ssn', ...])
+$safe = $masker->mask($context->arguments);   // sensitive keys => '***'
+// defaults: password, secret, token, api_key, credit_card;
+// case-insensitive exact key match, applied at EVERY nesting level;
+// a sensitive key's whole value (array included) becomes '***'.
 ```
 
-### Per-session tool visibility
+### Tool visibility
 
 ```php
+// Declarative (typical case — no code): tool-name patterns, '*' = wildcard.
+// params: 'visibility' => ['deny' => ['admin.*'], 'allow' => []]
+// deny hides matches; non-empty allow hides everything it does not match;
+// deny wins over allow; both empty (default) = all visible.
+// Manual: new Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility(deny: [...], allow: [...])
+
+// Per-session (admin vs public client, tenant plans) — implement the interface:
 use Mcp\Schema\Tool;
 use Mcp\Server\Session\SessionInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
@@ -200,6 +229,7 @@ final readonly class MyVisibility implements ToolVisibilityInterface
     public function isVisible(Tool $tool, ?SessionInterface $session): bool { ... }
 }
 // params: 'tool_visibility' => MyVisibility::class  ('' = off, DI-resolved)
+// 'tool_visibility' and 'visibility' are mutually exclusive => LogicException at build.
 // Applies to tools/list (invisible tools omitted) AND tools/call (fail-closed:
 // calling a hidden tool => tool error "not available in this session";
 // the call never reaches interceptors or the tool).
@@ -221,7 +251,7 @@ factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `secret_header`, `session.dir`, `session.ttl`,
 `session.budget`, `interceptors`, `configurators`, `tool_visibility`,
-`prompts_path`,
+`visibility.deny`, `visibility.allow`, `prompts_path`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,

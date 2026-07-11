@@ -9,6 +9,7 @@ use Mcp\Server\Session\SessionInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
@@ -70,3 +71,16 @@ echo 'tools/list for non-admin: ' . implode(', ', $names) . "\n";
 // fail-closed: guessing the hidden name does not help
 $result = $tester->callTool('admin.delete', ['id' => '42']);
 echo 'admin.delete isError=' . var_export($result['isError'], true) . ': ' . $result['content'][0]['text'] . "\n";
+
+// The declarative variant: session-independent deny/allow name patterns with
+// '*' wildcards — no class needed. In an application:
+// params 'visibility' => ['deny' => ['admin.*'], 'allow' => []].
+$declarativeServer = (new McpServerFactory(
+    container: new SimpleContainer([MixedTools::class => new MixedTools()]),
+    sessionStore: new InMemorySessionStore(),
+    name: 'declarative-visibility-example',
+    version: '1.0.0',
+))->create([MixedTools::class], [], [], new DeclarativeToolVisibility(deny: ['admin.*']));
+
+$declarativeTester = new McpTester($declarativeServer, $factory, $factory, $factory);
+echo 'tools/list with deny admin.*: ' . implode(', ', array_column($declarativeTester->listTools(), 'name')) . "\n";

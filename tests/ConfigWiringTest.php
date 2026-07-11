@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Closure;
+use LogicException;
 use Mcp\Server;
 use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
@@ -19,6 +20,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
 use Testo\Codecov\CoversNothing;
+use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
@@ -74,6 +76,7 @@ final class ConfigWiringTest
         Assert::same($mcp['interceptors'], []);
         Assert::same($mcp['configurators'], []);
         Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
+        Assert::same($params['rasuvaeff/yii3-mcp']['visibility'], ['deny' => [], 'allow' => []]);
     }
 
     public function serverDefinitionWiresToolVisibility(): void
@@ -100,6 +103,48 @@ final class ConfigWiringTest
         $tester = new McpTester($server, $psr17, $psr17, $psr17);
 
         Assert::same(array_column($tester->listTools(), 'name'), ['greet']);
+    }
+
+    public function serverDefinitionWiresDeclarativeVisibility(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+        $params['rasuvaeff/yii3-mcp']['visibility'] = ['deny' => ['expl*'], 'allow' => []];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]);
+        $factory = new McpServerFactory(
+            container: $container,
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        Assert::same(array_column($tester->listTools(), 'name'), ['greet']);
+    }
+
+    public function serverDefinitionRejectsBothVisibilityKinds(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tool_visibility'] = DenyListVisibility::class;
+        $params['rasuvaeff/yii3-mcp']['visibility'] = ['deny' => ['admin.*'], 'allow' => []];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $factory = new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        Expect::exception(LogicException::class);
+
+        $definition($factory, new SimpleContainer([]));
     }
 
     public function serverDefinitionWiresBudgetAndConfiguredInterceptors(): void
