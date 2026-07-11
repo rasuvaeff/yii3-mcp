@@ -35,8 +35,8 @@ final readonly class DeclarativeToolVisibility implements ToolVisibilityInterfac
      */
     public function __construct(array $deny = [], array $allow = [])
     {
-        $this->denyPatterns = self::compile($deny);
-        $this->allowPatterns = self::compile($allow);
+        $this->denyPatterns = $this->compile($deny);
+        $this->allowPatterns = $this->compile($allow);
     }
 
     #[\Override]
@@ -66,7 +66,7 @@ final readonly class DeclarativeToolVisibility implements ToolVisibilityInterfac
      *
      * @return list<non-empty-string>
      */
-    private static function compile(array $patterns): array
+    private function compile(array $patterns): array
     {
         $compiled = [];
 

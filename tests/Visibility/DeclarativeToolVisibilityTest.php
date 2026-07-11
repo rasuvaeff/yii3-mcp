@@ -19,7 +19,7 @@ final class DeclarativeToolVisibilityTest
 {
     public function allowsEverythingWithoutRules(): void
     {
-        Assert::true((new DeclarativeToolVisibility())->isVisible(self::tool('anything'), null));
+        Assert::true((new DeclarativeToolVisibility())->isVisible($this->tool('anything'), null));
     }
 
     #[DataProvider('denyProvider')]
@@ -27,7 +27,7 @@ final class DeclarativeToolVisibilityTest
     {
         $visibility = new DeclarativeToolVisibility(deny: [$pattern]);
 
-        Assert::same($visibility->isVisible(self::tool($toolName), null), $visible);
+        Assert::same($visibility->isVisible($this->tool($toolName), null), $visible);
     }
 
     public static function denyProvider(): iterable
@@ -47,17 +47,17 @@ final class DeclarativeToolVisibilityTest
     {
         $visibility = new DeclarativeToolVisibility(allow: ['order.*', 'greet']);
 
-        Assert::true($visibility->isVisible(self::tool('order.status'), null));
-        Assert::true($visibility->isVisible(self::tool('greet'), null));
-        Assert::false($visibility->isVisible(self::tool('admin.reset'), null));
+        Assert::true($visibility->isVisible($this->tool('order.status'), null));
+        Assert::true($visibility->isVisible($this->tool('greet'), null));
+        Assert::false($visibility->isVisible($this->tool('admin.reset'), null));
     }
 
     public function denyWinsOverAllow(): void
     {
         $visibility = new DeclarativeToolVisibility(deny: ['order.delete'], allow: ['order.*']);
 
-        Assert::false($visibility->isVisible(self::tool('order.delete'), null));
-        Assert::true($visibility->isVisible(self::tool('order.status'), null));
+        Assert::false($visibility->isVisible($this->tool('order.delete'), null));
+        Assert::true($visibility->isVisible($this->tool('order.status'), null));
     }
 
     public function throwsOnEmptyPattern(): void
@@ -67,7 +67,7 @@ final class DeclarativeToolVisibilityTest
         new DeclarativeToolVisibility(deny: ['']);
     }
 
-    private static function tool(string $name): Tool
+    private function tool(string $name): Tool
     {
         return new Tool(
             name: $name,
