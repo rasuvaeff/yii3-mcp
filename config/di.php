@@ -11,6 +11,7 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -116,12 +117,29 @@ return [
 
             /** @var class-string<ToolVisibilityInterface>|'' $visibilityClass */
             $visibilityClass = $params['rasuvaeff/yii3-mcp']['tool_visibility'] ?? '';
+            /** @var array{deny?: list<string>, allow?: list<string>} $declarative */
+            $declarative = $params['rasuvaeff/yii3-mcp']['visibility'] ?? [];
+            $deny = $declarative['deny'] ?? [];
+            $allow = $declarative['allow'] ?? [];
+
+            if ($visibilityClass !== '' && ($deny !== [] || $allow !== [])) {
+                throw new LogicException('Configure either "tool_visibility" (a ToolVisibilityInterface class) or declarative "visibility" deny/allow lists, not both');
+            }
+
+            $visibility = null;
+
+            if ($visibilityClass !== '') {
+                /** @var ToolVisibilityInterface $visibility */
+                $visibility = $container->get($visibilityClass);
+            } elseif ($deny !== [] || $allow !== []) {
+                $visibility = new DeclarativeToolVisibility(deny: $deny, allow: $allow);
+            }
 
             return $factory->create(
                 $tools,
                 $configurators,
                 $interceptors,
-                $visibilityClass === '' ? null : $container->get($visibilityClass),
+                $visibility,
             );
         },
     ],

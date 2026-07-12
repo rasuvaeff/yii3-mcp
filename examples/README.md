@@ -7,8 +7,9 @@
 | `conditional.php` | `ConditionalToolInterface`: the same class registered or skipped depending on `shouldRegister()` | no |
 | `prompts.php` | [`prompts/`](prompts/) directory of Markdown files served as MCP prompts: `prompts/list` + rendered `prompts/get` | no |
 | `openapi-bridge.php` | Allow-listed OpenAPI operations bridged as MCP tools; the call becomes a real HTTP request (stubbed PSR-18 client) | no |
-| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor + the session budget guard rejecting the third call | no |
-| `visibility.php` | Per-session tool visibility: admin tools hidden from the listing and fail-closed rejected on call | no |
+| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`) + the session budget guard rejecting the third call | no |
+| `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed rejected on call | no |
+| `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |
 
 Run from the package root (after `composer install`):
 
@@ -20,4 +21,5 @@ docker run --rm -v "$PWD":/app -w /app composer:2 php examples/prompts.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/openapi-bridge.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/interceptors.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/visibility.php
+docker run --rm -v "$PWD":/app -w /app composer:2 php examples/structured-output.php
 ```

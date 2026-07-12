@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.2.0 — unreleased
+
+- Structured tool output documented end-to-end: `outputSchema` on `#[McpTool]`
+  is served in `tools/list`, an array return is mirrored into the result's
+  `structuredContent` (SDK behavior, now covered by tests, README, llms.txt
+  and `examples/structured-output.php`); `Testing\SchemaSnapshot` guards
+  output schemas the same way it guards input schemas.
+- `Interceptor\ArgumentMasker` — shared sensitive-argument masking helper:
+  `password`/`secret`/`token`/`api_key`/`credit_card` keys (configurable,
+  case-insensitive) are replaced with `***` at every nesting level. One
+  helper for every consumer (audit trail, telemetry, application
+  interceptors) so masking semantics do not drift apart.
+- `Visibility\DeclarativeToolVisibility` — tool visibility from declarative
+  deny/allow name patterns with `*` wildcards, configured in params
+  (`'visibility' => ['deny' => ['admin.*'], 'allow' => []]`); deny wins over
+  allow, a non-empty allow list hides everything it does not match.
+  Mutually exclusive with `tool_visibility` (build-time `LogicException`).
+- `mcp:list --json` — full capability definitions (input/output schemas
+  included) as normalized JSON (stable item order, sorted object keys) for
+  CI diffs and external automation.
+
 ## 1.1.0 — 2026-07-05
 
 - OpenAPI bridge: a non-GET operation under `safe_methods_only` now throws

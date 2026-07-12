@@ -25,6 +25,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\TrailingHelperTool;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -260,6 +261,34 @@ final class McpServerFactoryTest
 
         Assert::same($result['content'][0]['text'], 'Hello, Yii!');
         Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
+    }
+
+    public function registersToolOutputSchemaFromAttribute(): void
+    {
+        $factory = new McpServerFactory(
+            container: new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]),
+            sessionStore: new InMemorySessionStore(),
+        );
+        $tester = $this->tester($factory->create([StructuredWeatherTool::class]));
+
+        $tools = $tester->listTools();
+
+        Assert::same($tools[0]['outputSchema']['required'] ?? null, ['city', 'temperature', 'conditions']);
+    }
+
+    public function toolWithOutputSchemaReturnsStructuredContent(): void
+    {
+        $factory = new McpServerFactory(
+            container: new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]),
+            sessionStore: new InMemorySessionStore(),
+        );
+        $tester = $this->tester($factory->create([StructuredWeatherTool::class]));
+
+        $result = $tester->callTool('weather', ['city' => 'Kazan']);
+
+        // the SDK mirrors an array return into structuredContent alongside
+        // the human-readable text content
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Kazan', 'temperature' => 21, 'conditions' => 'sunny']);
     }
 
     private function tester(Server $server): McpTester

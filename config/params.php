@@ -37,7 +37,16 @@ return [
         // per-session tool visibility: FQCN of a Visibility\ToolVisibilityInterface
         // implementation (resolved through the container). Filters tools/list AND
         // fail-closed rejects tools/call of invisible tools. Empty = all visible.
+        // Mutually exclusive with the declarative 'visibility' lists below.
         'tool_visibility' => '',
+        // declarative visibility: tool-name patterns with '*' wildcards
+        // ('admin.*', '*.delete'). deny hides matches; a non-empty allow hides
+        // everything it does not match; deny wins over allow. Both empty =
+        // all visible. For per-session logic use 'tool_visibility' instead.
+        'visibility' => [
+            'deny' => [],
+            'allow' => [],
+        ],
         // Markdown prompts directory: every *.md file becomes an MCP prompt
         // (YAML frontmatter: name/title/description/arguments; body with
         // {{argument}} placeholders). Format is vjik/my-prompts-mcp compatible.

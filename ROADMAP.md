@@ -44,11 +44,17 @@ use cases are welcome in [issues](https://github.com/rasuvaeff/yii3-mcp/issues).
 - **`rasuvaeff/yii3-mcp-rbac-bridge`** *(built, unpublished)* — publish on
   the first real request.
 
-## v1.2 — planned (observability + declarative DX)
+## v1.2 — observability + declarative DX
 
-1. **`rasuvaeff/yii3-mcp-telemetry-bridge`** (new bridge package) — the
-   flagship item: makes AI access to the application fully observable through
-   the published observability stack.
+Core items (2–5) shipped in v1.2.0; the telemetry bridge (1) ships as a
+separate package once the observability stack
+([rasuvaeff/yii3-telemetry](https://github.com/rasuvaeff/yii3-telemetry),
+[rasuvaeff/yii3-metrics](https://github.com/rasuvaeff/yii3-metrics)) is
+published on Packagist.
+
+1. **`rasuvaeff/yii3-mcp-telemetry-bridge`** (new bridge package, *pending*) —
+   the flagship item: makes AI access to the application fully observable
+   through the published observability stack.
    - `TracingToolCallInterceptor` over
      [rasuvaeff/yii3-telemetry](https://github.com/rasuvaeff/yii3-telemetry):
      a `mcp.tool <name>` span per `tools/call` — client name/version from the
@@ -61,21 +67,22 @@ use cases are welcome in [issues](https://github.com/rasuvaeff/yii3-mcp/issues).
    - stdio caveat baked in: `mcp:serve` is long-running, so the tracing
      interceptor flushes after each call (MCP call rates make that cheap);
      the HTTP path relies on the backend's shutdown flush.
-2. **`Interceptor\ArgumentMasker` in the core** — one shared
-   sensitive-argument masking helper (`password`/`token`/`secret`/… keys at
-   every nesting level). The audit bridge currently masks via
+2. **`Interceptor\ArgumentMasker` in the core** *(shipped in v1.2.0)* — one
+   shared sensitive-argument masking helper (`password`/`token`/`secret`/…
+   keys at every nesting level). The audit bridge currently masks via
    yii3-audit-log's masker; the telemetry bridge needs identical semantics —
    both consume the core helper instead of drifting apart.
-3. **Declarative visibility in params** —
+3. **Declarative visibility in params** *(shipped in v1.2.0)* —
    `'visibility' => ['deny' => ['admin.*'], 'allow' => [...]]` (wildcards):
    the typical "hide admin tools from the public client" case without writing
-   a `ToolVisibilityInterface` class; the interface stays for complex logic.
-4. **Document structured output** — the SDK (0.6) already supports
-   `outputSchema` / `structuredContent` on tools; README/llms.txt do not
-   mention it at all. Typed tool output is a big deal for agents. Consider
-   extending `Testing\SchemaSnapshot` to cover output schemas too.
-5. **`mcp:list --json`** — machine-readable capability listing for CI diffs
-   and external automation.
+   a `ToolVisibilityInterface` class; the interface stays for complex logic
+   (`Visibility\DeclarativeToolVisibility`, mutually exclusive with
+   `tool_visibility`).
+4. **Document structured output** *(shipped in v1.2.0)* — `outputSchema` /
+   `structuredContent` covered by tests, README, llms.txt and an example;
+   `Testing\SchemaSnapshot` guards output schemas like input schemas.
+5. **`mcp:list --json`** *(shipped in v1.2.0)* — machine-readable capability
+   listing for CI diffs and external automation.
 
 ## On demand — waiting for a real use case
 

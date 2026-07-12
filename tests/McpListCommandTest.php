@@ -91,6 +91,46 @@ final class McpListCommandTest
         Assert::false(str_contains($display, 'Name'));
     }
 
+    public function jsonOptionPrintsNormalizedCapabilityDefinitions(): void
+    {
+        $tester = $this->command($this->server());
+
+        Assert::same($tester->execute(['--json' => true]), Command::SUCCESS);
+
+        /** @var array<string, list<array<string, mixed>>> $decoded */
+        $decoded = json_decode($tester->getDisplay(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Assert::same(array_keys($decoded), ['tools', 'resources', 'resourceTemplates', 'prompts']);
+        // items ordered by identity, full definitions included
+        Assert::same(array_column($decoded['tools'], 'name'), ['explode', 'greet']);
+        Assert::same($decoded['tools'][1]['inputSchema']['required'] ?? null, ['name']);
+        Assert::same(count($decoded['prompts']), 3);
+    }
+
+    public function jsonOptionDoesNotRenderTables(): void
+    {
+        $tester = $this->command($this->server());
+        $tester->execute(['--json' => true]);
+
+        $display = $tester->getDisplay();
+        Assert::false(str_contains($display, 'Tools ('));
+        // the whole output is one JSON document — nothing before or after it
+        Assert::same($display[0], '{');
+        Assert::same(substr(rtrim($display), -1), '}');
+    }
+
+    public function jsonOptionPrintsEmptySectionsForAnEmptyServer(): void
+    {
+        $tester = $this->command($this->emptyServer());
+
+        Assert::same($tester->execute(['--json' => true]), Command::SUCCESS);
+
+        /** @var array<string, list<mixed>> $decoded */
+        $decoded = json_decode($tester->getDisplay(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Assert::same($decoded, ['tools' => [], 'resources' => [], 'resourceTemplates' => [], 'prompts' => []]);
+    }
+
     private function command(Server $server): CommandTester
     {
         $factory = new Psr17Factory();
