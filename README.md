@@ -8,6 +8,8 @@
 [![PHP](https://img.shields.io/packagist/dependency-v/rasuvaeff/yii3-mcp/php)](https://packagist.org/packages/rasuvaeff/yii3-mcp)
 [![License](https://img.shields.io/packagist/l/rasuvaeff/yii3-mcp)](LICENSE.md)
 
+[Русская версия](README.ru.md)
+
 [Model Context Protocol](https://modelcontextprotocol.io) server integration
 for Yii3 over the **official** [`mcp/sdk`](https://packagist.org/packages/mcp/sdk)
 (PHP Foundation + Symfony): expose your application's domain operations as MCP
