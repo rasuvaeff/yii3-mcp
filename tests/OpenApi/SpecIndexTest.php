@@ -44,6 +44,42 @@ final class SpecIndexTest
         Assert::true($operation->requestBodyRequired);
     }
 
+    public function resolvesRequiredFlagFromReferencedRequestBody(): void
+    {
+        $operation = (new SpecIndex([
+            'paths' => ['/x' => ['post' => [
+                'operationId' => 'op',
+                'requestBody' => ['$ref' => '#/components/requestBodies/Payload'],
+            ]]],
+            'components' => ['requestBodies' => ['Payload' => [
+                'required' => true,
+                'content' => ['application/json' => ['schema' => ['type' => 'object']]],
+            ]]],
+        ]))->get('op');
+
+        Assert::true($operation->requestBodyRequired);
+        Assert::same($operation->requestBodySchema, ['type' => 'object']);
+    }
+
+    public function throwsOnDuplicateOperationId(): void
+    {
+        $caught = null;
+
+        try {
+            new SpecIndex([
+                'paths' => [
+                    '/first' => ['get' => ['operationId' => 'duplicate']],
+                    '/second' => ['post' => ['operationId' => 'duplicate']],
+                ],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('GET /first');
+        Assert::string($caught->getMessage())->contains('POST /second');
+    }
+
     public function throwsOnUnknownOperation(): void
     {
         Expect::exception(UnknownOperationException::class);
@@ -199,9 +235,6 @@ final class SpecIndexTest
                     'get' => [
                         'operationId' => 'richOp',
                         'parameters' => [
-                            // header-параметры мостом не поддерживаются — отфильтрован,
-                            // и фильтрация не должна прерывать обработку остальных
-                            ['name' => 'X-Trace', 'in' => 'header', 'schema' => ['type' => 'string']],
                             // нестроковое имя — отфильтрован
                             ['name' => 42, 'in' => 'query'],
                             // одноимённый с path-параметром, но другой in — оба должны остаться
@@ -223,6 +256,9 @@ final class SpecIndexTest
                 'required' => true,
                 'schema' => ['type' => 'integer'],
                 'description' => '',
+                'style' => null,
+                'explode' => null,
+                'allowReserved' => false,
             ],
             [
                 'name' => 'inherited',
@@ -230,6 +266,9 @@ final class SpecIndexTest
                 'required' => false,
                 'schema' => [],
                 'description' => 'overridden',
+                'style' => null,
+                'explode' => null,
+                'allowReserved' => false,
             ],
             [
                 'name' => 'id',
@@ -237,6 +276,9 @@ final class SpecIndexTest
                 'required' => true,
                 'schema' => [],
                 'description' => '',
+                'style' => null,
+                'explode' => null,
+                'allowReserved' => false,
             ],
             [
                 'name' => 'flagless',
@@ -244,8 +286,75 @@ final class SpecIndexTest
                 'required' => false,
                 'schema' => [],
                 'description' => '',
+                'style' => null,
+                'explode' => null,
+                'allowReserved' => false,
             ],
         ]);
+    }
+
+    public function unsupportedHeaderParameterFailsWhenOperationIsSelected(): void
+    {
+        $index = new SpecIndex([
+            'paths' => [
+                '/unsupported' => ['get' => [
+                    'operationId' => 'unsupported',
+                    'parameters' => [['name' => 'X-Trace', 'in' => 'header', 'required' => true]],
+                ]],
+                '/supported' => ['get' => ['operationId' => 'supported']],
+            ],
+        ]);
+
+        Assert::same($index->get('supported')->operationId, 'supported');
+
+        $caught = null;
+
+        try {
+            $index->get('unsupported');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('unsupported header parameter "X-Trace"');
+    }
+
+    public function unsupportedCookieParameterThrows(): void
+    {
+        Expect::exception(InvalidSpecException::class);
+
+        $this->operationWithParameter(['name' => 'session', 'in' => 'cookie']);
+    }
+
+    public function arrayParameterSchemaThrows(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter(['name' => 'ids', 'in' => 'query', 'schema' => ['type' => 'array']]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('must use a scalar schema');
+        Assert::string($caught->getMessage())->contains('"array"');
+    }
+
+    public function unsupportedSerializationOptionsThrow(): void
+    {
+        foreach ([
+            ['name' => 'id', 'in' => 'path', 'style' => 'matrix'],
+            ['name' => 'q', 'in' => 'query', 'explode' => false],
+            ['name' => 'q', 'in' => 'query', 'allowReserved' => true],
+        ] as $parameter) {
+            $caught = null;
+
+            try {
+                $this->operationWithParameter($parameter);
+            } catch (InvalidSpecException $caught) {
+            }
+
+            Assert::notNull($caught);
+        }
     }
 
     public function refSiblingsSurviveResolution(): void
@@ -380,7 +489,7 @@ final class SpecIndexTest
         Assert::string($caught->getMessage())->contains('must point to an object');
     }
 
-    public function externalRefPassesThroughUnresolved(): void
+    public function externalParameterRefThrowsBecauseScalarTypeCannotBeVerified(): void
     {
         $index = new SpecIndex([
             'paths' => [
@@ -391,10 +500,9 @@ final class SpecIndexTest
             ],
         ]);
 
-        Assert::same(
-            $index->get('op')->parameters[0]['schema'],
-            ['$ref' => 'https://example.com/schemas.json#/Thing'],
-        );
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get('op');
     }
 
     private function indexWithRefChainOfLength(int $length): SpecIndex
@@ -415,11 +523,24 @@ final class SpecIndexTest
         ]);
     }
 
+    /**
+     * @param array<string, mixed> $parameter
+     */
+    private function operationWithParameter(array $parameter): \Rasuvaeff\Yii3Mcp\OpenApi\Operation
+    {
+        return (new SpecIndex([
+            'paths' => ['/x' => ['get' => [
+                'operationId' => 'op',
+                'parameters' => [$parameter],
+            ]]],
+        ]))->get('op');
+    }
+
     private function indexWithSchemaOfDepth(int $depth): SpecIndex
     {
         $schema = ['type' => 'string'];
         for ($i = 0; $i < $depth; ++$i) {
-            $schema = ['items' => $schema];
+            $schema = ['type' => 'string', 'allOf' => [$schema]];
         }
 
         return new SpecIndex([

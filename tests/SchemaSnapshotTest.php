@@ -12,6 +12,7 @@ use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use RuntimeException;
 use Testo\Assert;
@@ -94,6 +95,16 @@ final class SchemaSnapshotTest
     public function captureIsDeterministic(): void
     {
         Assert::same(SchemaSnapshot::capture($this->tester()), SchemaSnapshot::capture($this->tester()));
+    }
+
+    public function captureIncludesEveryPaginatedCapability(): void
+    {
+        $captured = SchemaSnapshot::capture($this->tester(withManyCapabilities: true));
+
+        Assert::same(count($captured['tools']), 23);
+        Assert::same(count($captured['resources']), 22);
+        Assert::same(count($captured['resourceTemplates']), 22);
+        Assert::same(count($captured['prompts']), 22);
     }
 
     public function captureIncludesToolOutputSchemas(): void
@@ -205,19 +216,19 @@ final class SchemaSnapshotTest
         return $caught->getMessage();
     }
 
-    private function tester(bool $withPrompts = false): McpTester
+    private function tester(bool $withPrompts = false, bool $withManyCapabilities = false): McpTester
     {
         $factory = new Psr17Factory();
 
         return new McpTester(
-            server: $this->server($withPrompts),
+            server: $this->server($withPrompts, $withManyCapabilities),
             requestFactory: $factory,
             responseFactory: $factory,
             streamFactory: $factory,
         );
     }
 
-    private function server(bool $withPrompts): Server
+    private function server(bool $withPrompts, bool $withManyCapabilities): Server
     {
         return (new McpServerFactory(
             container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
@@ -226,7 +237,10 @@ final class SchemaSnapshotTest
             version: '1.0.0',
         ))->create(
             [GreetingTool::class],
-            $withPrompts ? [new MarkdownPromptsConfigurator(__DIR__ . '/Support/prompts')] : [],
+            [
+                ...($withPrompts ? [new MarkdownPromptsConfigurator(__DIR__ . '/Support/prompts')] : []),
+                ...($withManyCapabilities ? [new ManyCapabilitiesConfigurator()] : []),
+            ],
         );
     }
 }

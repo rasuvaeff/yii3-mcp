@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- `Testing\McpTester`, `Testing\SchemaSnapshot` and `mcp:list` now follow MCP
+  cursors and include every page of tools, resources, resource templates and
+  prompts. `McpTester` adds symmetric `listResources()`,
+  `listResourceTemplates()` and `listPrompts()` helpers.
+- The OpenAPI bridge now rejects unsupported URL parameter contracts at build
+  time instead of publishing schemas it cannot execute: header/cookie
+  parameters, non-scalar or unverifiable schemas, non-default serialization
+  styles, `explode` values and `allowReserved=true`.
+- Duplicate OpenAPI `operationId` values now throw `InvalidSpecException` with
+  both conflicting endpoints instead of silently replacing one operation.
+- A request body referenced through `components/requestBodies` now preserves
+  its `required` flag in the generated MCP input schema.
+
 ## 1.2.0 — 2026-07-16
 
 - Structured tool output documented end-to-end: `outputSchema` on `#[McpTool]`

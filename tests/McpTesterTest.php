@@ -11,6 +11,7 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -34,6 +35,17 @@ final class McpTesterTest
         sort($names);
 
         Assert::same($names, ['explode', 'greet']);
+    }
+
+    public function listsEveryCapabilityAcrossPages(): void
+    {
+        $tester = $this->tester(withManyCapabilities: true);
+
+        Assert::same(count($tester->listTools()), 23);
+        Assert::same(count($tester->listResources()), 22);
+        Assert::same(count($tester->listResourceTemplates()), 22);
+        Assert::same(count($tester->listPrompts()), 22);
+        Assert::same(array_column($tester->listTools(), 'name')[22], 'tool-21');
     }
 
     public function callsToolAndReturnsResultEnvelope(): void
@@ -91,19 +103,19 @@ final class McpTesterTest
         Assert::false(str_contains($caught->getMessage(), 'unknown error'));
     }
 
-    private function tester(bool $withDisabledTool = false): McpTester
+    private function tester(bool $withDisabledTool = false, bool $withManyCapabilities = false): McpTester
     {
         $factory = new Psr17Factory();
 
         return new McpTester(
-            server: $this->server($withDisabledTool),
+            server: $this->server($withDisabledTool, $withManyCapabilities),
             requestFactory: $factory,
             responseFactory: $factory,
             streamFactory: $factory,
         );
     }
 
-    private function server(bool $withDisabledTool): Server
+    private function server(bool $withDisabledTool, bool $withManyCapabilities): Server
     {
         $classes = [GreetingTool::class];
 
@@ -119,6 +131,9 @@ final class McpTesterTest
             sessionStore: new InMemorySessionStore(),
             name: 'tester-suite',
             version: '1.0.0',
-        ))->create($classes);
+        ))->create(
+            $classes,
+            $withManyCapabilities ? [new ManyCapabilitiesConfigurator()] : [],
+        );
     }
 }

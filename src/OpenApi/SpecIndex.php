@@ -55,6 +55,19 @@ final readonly class SpecIndex
                 $operation = $this->buildOperation(path: $path, method: $method, raw: $raw, pathItem: $pathItem);
 
                 if ($operation instanceof Operation) {
+                    if (isset($operations[$operation->operationId])) {
+                        $previous = $operations[$operation->operationId];
+
+                        throw new InvalidSpecException(sprintf(
+                            'Duplicate operationId "%s" for %s %s and %s %s',
+                            $operation->operationId,
+                            $previous->method,
+                            $previous->path,
+                            $operation->method,
+                            $operation->path,
+                        ));
+                    }
+
                     $operations[$operation->operationId] = $operation;
                 }
             }
@@ -92,12 +105,16 @@ final readonly class SpecIndex
 
     public function get(string $operationId): Operation
     {
-        return $this->operations[$operationId]
+        $operation = $this->operations[$operationId]
             ?? throw new UnknownOperationException(sprintf(
                 'Operation "%s" is not present in the OpenAPI document; known operations: %s',
                 $operationId,
                 implode(', ', array_keys($this->operations)),
             ));
+
+        $this->assertParametersSupported($operation);
+
+        return $operation;
     }
 
     /**
@@ -115,13 +132,17 @@ final readonly class SpecIndex
 
         $requestBody = $this->arrayOrEmpty($raw['requestBody'] ?? null);
 
+        if ($requestBody !== []) {
+            $requestBody = $this->resolveRef($requestBody);
+        }
+
         return new Operation(
             operationId: $operationId,
             method: strtoupper($method),
             path: $path,
             description: $this->stringOrEmpty($raw['description'] ?? $raw['summary'] ?? null),
             parameters: $this->normalizeParameters($this->arrayOrEmpty($pathItem['parameters'] ?? null), $this->arrayOrEmpty($raw['parameters'] ?? null)),
-            requestBodySchema: $this->extractRequestBodySchema($raw),
+            requestBodySchema: $this->extractRequestBodySchema($requestBody),
             requestBodyRequired: (bool) ($requestBody['required'] ?? false),
         );
     }
@@ -143,7 +164,7 @@ final readonly class SpecIndex
      * @param array<array-key, mixed> $pathLevel
      * @param array<array-key, mixed> $operationLevel
      *
-     * @return list<array{name: non-empty-string, in: 'path'|'query', required: bool, schema: array<array-key, mixed>, description: string}>
+     * @return list<array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool}>
      */
     private function normalizeParameters(array $pathLevel, array $operationLevel): array
     {
@@ -157,8 +178,12 @@ final readonly class SpecIndex
             $raw = $this->resolveRef($raw);
             $name = $raw['name'] ?? null;
             $in = $raw['in'] ?? null;
+            /** @var mixed $rawStyle */
+            $rawStyle = $raw['style'] ?? null;
+            /** @var mixed $rawExplode */
+            $rawExplode = $raw['explode'] ?? null;
 
-            if (!is_string($name) || $name === '' || ($in !== 'path' && $in !== 'query')) {
+            if (!is_string($name) || $name === '' || !in_array($in, ['path', 'query', 'header', 'cookie'], strict: true)) {
                 continue;
             }
 
@@ -169,6 +194,9 @@ final readonly class SpecIndex
                 'required' => $in === 'path' || (bool) ($raw['required'] ?? false),
                 'schema' => $this->resolveRef($this->arrayOrEmpty($raw['schema'] ?? null)),
                 'description' => $this->stringOrEmpty($raw['description'] ?? null),
+                'style' => is_string($rawStyle) ? $rawStyle : null,
+                'explode' => is_bool($rawExplode) ? $rawExplode : null,
+                'allowReserved' => ($raw['allowReserved'] ?? false) === true,
             ];
         }
 
@@ -176,24 +204,79 @@ final readonly class SpecIndex
     }
 
     /**
-     * @param array<array-key, mixed> $raw
+     * @param array<array-key, mixed> $body
      *
      * @return array<array-key, mixed>|null
      */
-    private function extractRequestBodySchema(array $raw): ?array
+    private function extractRequestBodySchema(array $body): ?array
     {
-        $body = $raw['requestBody'] ?? null;
-
-        if (!is_array($body)) {
+        if ($body === []) {
             return null;
         }
 
-        $body = $this->resolveRef($body);
         $content = $this->arrayOrEmpty($body['content'] ?? null);
         $json = $this->arrayOrEmpty($content['application/json'] ?? null);
         $schema = $this->arrayOrEmpty($json['schema'] ?? null);
 
         return $schema === [] ? null : $this->resolveRef($schema);
+    }
+
+    private function assertParametersSupported(Operation $operation): void
+    {
+        foreach ($operation->parameters as $parameter) {
+            if ($parameter['in'] === 'header' || $parameter['in'] === 'cookie') {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" uses unsupported %s parameter "%s"; configure fixed headers on HttpOperationExecutor or expose a custom tool',
+                    $operation->operationId,
+                    $parameter['in'],
+                    $parameter['name'],
+                ));
+            }
+
+            $schema = $parameter['schema'];
+            $type = $schema === [] ? 'string' : ($schema['type'] ?? null);
+
+            if (!is_string($type) || !in_array($type, ['string', 'integer', 'number', 'boolean'], strict: true)) {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" parameter "%s" must use a scalar schema; type %s is not supported by the HTTP executor',
+                    $operation->operationId,
+                    $parameter['name'],
+                    json_encode($type, JSON_THROW_ON_ERROR),
+                ));
+            }
+
+            $expectedStyle = $parameter['in'] === 'path' ? 'simple' : 'form';
+
+            if ($parameter['style'] !== null && $parameter['style'] !== $expectedStyle) {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" parameter "%s" uses unsupported serialization style "%s"; only "%s" is supported for %s parameters',
+                    $operation->operationId,
+                    $parameter['name'],
+                    $parameter['style'],
+                    $expectedStyle,
+                    $parameter['in'],
+                ));
+            }
+
+            $expectedExplode = $parameter['in'] === 'query';
+
+            if ($parameter['explode'] !== null && $parameter['explode'] !== $expectedExplode) {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" parameter "%s" uses unsupported explode=%s',
+                    $operation->operationId,
+                    $parameter['name'],
+                    $parameter['explode'] ? 'true' : 'false',
+                ));
+            }
+
+            if ($parameter['allowReserved']) {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" parameter "%s" uses unsupported allowReserved=true',
+                    $operation->operationId,
+                    $parameter['name'],
+                ));
+            }
+        }
     }
 
     /**

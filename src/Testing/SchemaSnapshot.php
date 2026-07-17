@@ -23,10 +23,10 @@ use RuntimeException;
 final readonly class SchemaSnapshot
 {
     private const array SECTIONS = [
-        'tools' => ['tools/list', 'tools', 'name'],
-        'resources' => ['resources/list', 'resources', 'uri'],
-        'resourceTemplates' => ['resources/templates/list', 'resourceTemplates', 'uriTemplate'],
-        'prompts' => ['prompts/list', 'prompts', 'name'],
+        'tools' => ['listTools', 'name'],
+        'resources' => ['listResources', 'uri'],
+        'resourceTemplates' => ['listResourceTemplates', 'uriTemplate'],
+        'prompts' => ['listPrompts', 'name'],
     ];
 
     /**
@@ -62,10 +62,10 @@ final readonly class SchemaSnapshot
     {
         $snapshot = [];
 
-        foreach (self::SECTIONS as $section => [$method, $key, $identity]) {
+        foreach (self::SECTIONS as $section => [$method, $identity]) {
             $items = [];
             /** @var mixed $item */
-            foreach (self::listOf($tester->request($method)[$key] ?? null) as $item) {
+            foreach ($tester->{$method}() as $item) {
                 if (is_array($item)) {
                     /** @var array<array-key, mixed> $normalized */
                     $normalized = self::normalize($item);
@@ -168,7 +168,7 @@ final readonly class SchemaSnapshot
     {
         $drift = [];
 
-        foreach (self::SECTIONS as $section => [2 => $identity]) {
+        foreach (self::SECTIONS as $section => [1 => $identity]) {
             $expectedByIdentity = self::byIdentity($expected[$section] ?? [], $identity);
             $actualByIdentity = self::byIdentity($actual[$section] ?? [], $identity);
 

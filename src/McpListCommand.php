@@ -65,10 +65,10 @@ final class McpListCommand extends Command
 
         $io = new SymfonyStyle($input, $output);
 
-        $this->section($io, 'Tools', $this->rows($tester->request('tools/list'), 'tools'), ['Name', 'Description', 'Arguments'], $this->toolRow(...));
-        $this->section($io, 'Resources', $this->rows($tester->request('resources/list'), 'resources'), ['URI', 'Name', 'MIME type', 'Description'], $this->resourceRow(...));
-        $this->section($io, 'Resource templates', $this->rows($tester->request('resources/templates/list'), 'resourceTemplates'), ['URI template', 'Name', 'Description'], $this->templateRow(...));
-        $this->section($io, 'Prompts', $this->rows($tester->request('prompts/list'), 'prompts'), ['Name', 'Description', 'Arguments'], $this->promptRow(...));
+        $this->section($io, 'Tools', $tester->listTools(), ['Name', 'Description', 'Arguments'], $this->toolRow(...));
+        $this->section($io, 'Resources', $tester->listResources(), ['URI', 'Name', 'MIME type', 'Description'], $this->resourceRow(...));
+        $this->section($io, 'Resource templates', $tester->listResourceTemplates(), ['URI template', 'Name', 'Description'], $this->templateRow(...));
+        $this->section($io, 'Prompts', $tester->listPrompts(), ['Name', 'Description', 'Arguments'], $this->promptRow(...));
 
         return Command::SUCCESS;
     }
@@ -89,24 +89,6 @@ final class McpListCommand extends Command
         }
 
         $io->table($headers, array_map($row, $items));
-    }
-
-    /**
-     * @param array<array-key, mixed> $result
-     *
-     * @return list<array<array-key, mixed>>
-     */
-    private function rows(array $result, string $key): array
-    {
-        $items = [];
-        /** @var mixed $item */
-        foreach (is_array($result[$key] ?? null) ? $result[$key] : [] as $item) {
-            if (is_array($item)) {
-                $items[] = $item;
-            }
-        }
-
-        return $items;
     }
 
     /**

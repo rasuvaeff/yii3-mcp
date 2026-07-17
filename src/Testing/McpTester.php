@@ -70,15 +70,66 @@ final class McpTester
      */
     public function listTools(): array
     {
-        $tools = [];
-        /** @var mixed $tool */
-        foreach ($this->arrayOrEmpty($this->request('tools/list')['tools'] ?? null) as $tool) {
-            if (is_array($tool)) {
-                $tools[] = $tool;
-            }
-        }
+        return $this->listAll(method: 'tools/list', key: 'tools');
+    }
 
-        return $tools;
+    /**
+     * @return list<array<array-key, mixed>> resource definitions as exposed by resources/list
+     */
+    public function listResources(): array
+    {
+        return $this->listAll(method: 'resources/list', key: 'resources');
+    }
+
+    /**
+     * @return list<array<array-key, mixed>> resource template definitions as exposed by resources/templates/list
+     */
+    public function listResourceTemplates(): array
+    {
+        return $this->listAll(method: 'resources/templates/list', key: 'resourceTemplates');
+    }
+
+    /**
+     * @return list<array<array-key, mixed>> prompt definitions as exposed by prompts/list
+     */
+    public function listPrompts(): array
+    {
+        return $this->listAll(method: 'prompts/list', key: 'prompts');
+    }
+
+    /**
+     * @return list<array<array-key, mixed>>
+     */
+    private function listAll(string $method, string $key): array
+    {
+        $items = [];
+        $cursor = null;
+        $seenCursors = [];
+
+        do {
+            $result = $this->request($method, $cursor === null ? null : ['cursor' => $cursor]);
+
+            /** @var mixed $item */
+            foreach ($this->arrayOrEmpty($result[$key] ?? null) as $item) {
+                if (is_array($item)) {
+                    $items[] = $item;
+                }
+            }
+
+            /** @var mixed $nextCursor */
+            $nextCursor = $result['nextCursor'] ?? null;
+            $cursor = is_string($nextCursor) && $nextCursor !== '' ? $nextCursor : null;
+
+            if ($cursor !== null && isset($seenCursors[$cursor])) {
+                throw new RuntimeException(sprintf('MCP pagination for "%s" returned repeated cursor "%s"', $method, $cursor));
+            }
+
+            if ($cursor !== null) {
+                $seenCursors[$cursor] = true;
+            }
+        } while ($cursor !== null);
+
+        return $items;
     }
 
     /**
