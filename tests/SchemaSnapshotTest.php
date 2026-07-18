@@ -133,7 +133,7 @@ final class SchemaSnapshotTest
 
         Assert::string($message)->contains('prompts: added [code-review, plain-note]');
         Assert::string($message)->contains($this->path);
-        Assert::string($message)->contains('delete the snapshot file');
+        Assert::string($message)->contains('MCP_SNAPSHOT_RECORD=1');
         Assert::false(str_contains($message, 'changed'));
         Assert::false(str_contains($message, 'removed'));
     }
@@ -200,6 +200,106 @@ final class SchemaSnapshotTest
 
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('Cannot write MCP schema snapshot');
+    }
+
+    public function verifyPassesWhenServedSchemasMatchTheSnapshot(): void
+    {
+        SchemaSnapshot::record($this->tester(), $this->path);
+
+        SchemaSnapshot::verify($this->tester(), $this->path);
+
+        Assert::true(is_file($this->path));
+    }
+
+    public function verifyThrowsWhenTheSnapshotIsMissing(): void
+    {
+        $caught = null;
+
+        try {
+            SchemaSnapshot::verify($this->tester(), $this->path);
+        } catch (RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('is missing');
+        Assert::string($caught->getMessage())->contains('MCP_SNAPSHOT_RECORD=1');
+        // verify never creates the file — a lost snapshot must stay an error.
+        Assert::false(is_file($this->path));
+    }
+
+    public function verifyThrowsOnDrift(): void
+    {
+        SchemaSnapshot::record($this->tester(), $this->path);
+
+        $caught = null;
+
+        try {
+            SchemaSnapshot::verify($this->tester(withPrompts: true), $this->path);
+        } catch (RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('prompts: added [code-review, plain-note]');
+    }
+
+    public function recordOverwritesAStaleSnapshot(): void
+    {
+        SchemaSnapshot::record($this->tester(), $this->path);
+
+        SchemaSnapshot::record($this->tester(withPrompts: true), $this->path);
+
+        SchemaSnapshot::verify($this->tester(withPrompts: true), $this->path);
+        $decoded = json_decode((string) file_get_contents($this->path), associative: true);
+        Assert::same(array_column($decoded['prompts'], 'name'), ['code-review', 'greeting-style', 'plain-note']);
+    }
+
+    public function envFlagSwitchesVerifyIntoRecordMode(): void
+    {
+        putenv('MCP_SNAPSHOT_RECORD=1');
+
+        try {
+            // The file is missing; without the flag this would throw.
+            SchemaSnapshot::verify($this->tester(), $this->path);
+        } finally {
+            putenv('MCP_SNAPSHOT_RECORD');
+        }
+
+        Assert::true(is_file($this->path));
+        SchemaSnapshot::verify($this->tester(), $this->path);
+    }
+
+    public function envFlagSwitchesAssertIntoRecordMode(): void
+    {
+        SchemaSnapshot::assert($this->tester(), $this->path);
+        putenv('MCP_SNAPSHOT_RECORD=1');
+
+        try {
+            // Served set drifted (prompts added); the flag re-records instead
+            // of throwing.
+            SchemaSnapshot::assert($this->tester(withPrompts: true), $this->path);
+        } finally {
+            putenv('MCP_SNAPSHOT_RECORD');
+        }
+
+        SchemaSnapshot::verify($this->tester(withPrompts: true), $this->path);
+        Assert::true(is_file($this->path));
+    }
+
+    public function envFlagZeroDoesNotEnableRecordMode(): void
+    {
+        putenv('MCP_SNAPSHOT_RECORD=0');
+
+        $caught = null;
+
+        try {
+            SchemaSnapshot::verify($this->tester(), $this->path);
+        } catch (RuntimeException $caught) {
+        } finally {
+            putenv('MCP_SNAPSHOT_RECORD');
+        }
+
+        Assert::notNull($caught);
+        Assert::false(is_file($this->path));
     }
 
     private function driftMessage(McpTester $tester): string

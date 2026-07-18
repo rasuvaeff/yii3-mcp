@@ -13,7 +13,9 @@ serves the Streamable HTTP transport; `McpServeCommand` serves stdio;
 `SharedSecretMiddleware` guards the endpoint.
 
 Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
-`McpServeCommand`, `McpListCommand`, `ConditionalToolInterface`,
+`McpServeCommand`, `McpListCommand`, `McpDoctorCommand`,
+`Doctor\{McpDoctor, DoctorReport, CheckResult, CheckStatus, CheckCategory}`,
+`ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `Testing\McpTester`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 SessionBudgetInterceptor, InterceptingReferenceHandler, ArgumentMasker}`,

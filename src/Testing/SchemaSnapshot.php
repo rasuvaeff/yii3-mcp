@@ -11,17 +11,30 @@ use RuntimeException;
  * resource, resource template and prompt definition into a committed JSON
  * file and fails when the served set drifts — a changed method signature
  * silently changes the generated inputSchema and breaks agents mid-flight,
- * so drift must be an explicit, reviewed act (regenerate by deleting the
- * snapshot file).
+ * so drift must be an explicit, reviewed act.
+ *
+ * Three modes:
+ * - {@see verify()} — for CI: a missing snapshot is an error, so a deleted
+ *   or never-committed file cannot yield a green build.
+ * - {@see assert()} — migration-friendly: a missing snapshot is generated on
+ *   first run, then compared like verify().
+ * - {@see record()} — deliberately (re)writes the snapshot.
+ *
+ * Setting the `MCP_SNAPSHOT_RECORD` environment variable to any value except
+ * `''`/`'0'` switches assert()/verify() into record mode — the explicit
+ * regeneration path (`MCP_SNAPSHOT_RECORD=1 vendor/bin/testo`); CI must not
+ * set it.
  *
  * ```php
- * SchemaSnapshot::assert($tester, __DIR__ . '/mcp-schema.json');
+ * SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
  * ```
  *
  * @api
  */
 final readonly class SchemaSnapshot
 {
+    private const string RECORD_ENV = 'MCP_SNAPSHOT_RECORD';
+
     private const array SECTIONS = [
         'tools' => ['listTools', 'name'],
         'resources' => ['listResources', 'uri'],
@@ -32,23 +45,71 @@ final readonly class SchemaSnapshot
     /**
      * Compares the served capability schemas against the snapshot file.
      * A missing file is generated (first run passes); a mismatch throws
-     * with a per-section summary of the drift.
+     * with a per-section summary of the drift. Prefer {@see verify()} in CI,
+     * where a missing snapshot must be an error.
      *
      * @throws RuntimeException on drift or an unreadable/invalid snapshot file
      */
     public static function assert(McpTester $tester, string $path): void
     {
-        $actual = self::capture($tester);
-
-        if (!is_file($path)) {
-            self::write($path, $actual);
+        if (self::recordRequested() || !is_file($path)) {
+            self::write($path, self::capture($tester));
         } else {
-            $expected = self::read($path);
-
-            if ($expected !== $actual) {
-                throw new RuntimeException(self::describeDrift($expected, $actual, $path));
-            }
+            self::compare(self::capture($tester), $path);
         }
+    }
+
+    /**
+     * Strict form of {@see assert()} for CI: a missing snapshot file is an
+     * error instead of being silently generated, so a lost or never-committed
+     * snapshot cannot produce a green build.
+     *
+     * @throws RuntimeException on a missing snapshot, drift, or an unreadable/invalid snapshot file
+     */
+    public static function verify(McpTester $tester, string $path): void
+    {
+        if (self::recordRequested()) {
+            self::write($path, self::capture($tester));
+        } elseif (!is_file($path)) {
+            throw new RuntimeException(sprintf(
+                'MCP schema snapshot "%s" is missing. Record it deliberately — SchemaSnapshot::record() or a run with MCP_SNAPSHOT_RECORD=1 — and commit the file; verify() treats a missing snapshot as an error so CI cannot pass without the contract canary',
+                $path,
+            ));
+        } else {
+            self::compare(self::capture($tester), $path);
+        }
+    }
+
+    /**
+     * Deliberately (re)writes the snapshot file from the currently served
+     * capability schemas.
+     *
+     * @throws RuntimeException when the snapshot file cannot be written
+     */
+    public static function record(McpTester $tester, string $path): void
+    {
+        self::write($path, self::capture($tester));
+    }
+
+    /**
+     * @param array<string, list<array<array-key, mixed>>> $actual
+     */
+    private static function compare(array $actual, string $path): void
+    {
+        $expected = self::read($path);
+
+        if ($expected !== $actual) {
+            throw new RuntimeException(self::describeDrift($expected, $actual, $path));
+        }
+    }
+
+    /**
+     * `MCP_SNAPSHOT_RECORD` (any value except ''/'0') switches assert()/verify()
+     * into record mode — the deliberate regeneration path.
+     */
+    private static function recordRequested(): bool
+    {
+        return !in_array(getenv(self::RECORD_ENV), [false, '', '0'], true);
     }
 
     /**
@@ -202,7 +263,7 @@ final readonly class SchemaSnapshot
         }
 
         return sprintf(
-            'MCP schema snapshot mismatch at "%s" — %s. If the change is intended, delete the snapshot file and re-run to regenerate it deliberately',
+            'MCP schema snapshot mismatch at "%s" — %s. If the change is intended, re-record deliberately: re-run with MCP_SNAPSHOT_RECORD=1 (or call SchemaSnapshot::record()) and commit the result',
             $path,
             $drift === [] ? 'definitions differ' : implode('; ', $drift),
         );

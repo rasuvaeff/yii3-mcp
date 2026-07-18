@@ -9,6 +9,7 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -153,5 +154,23 @@ return [
             'secret' => $params['rasuvaeff/yii3-mcp']['endpoint_secret'],
             'headerName' => $params['rasuvaeff/yii3-mcp']['secret_header'],
         ],
+    ],
+    McpDoctor::class => [
+        'definition' => static function (ContainerInterface $container) use ($params): McpDoctor {
+            /** @var array{dir?: string} $session */
+            $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
+            $dir = $session['dir'] ?? '';
+            /** @var array{spec_path: string, headers: array<string, string>} $openapi */
+            $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
+
+            return new McpDoctor(
+                container: $container,
+                sessionStore: $container->get(SessionStoreInterface::class),
+                endpointSecret: $params['rasuvaeff/yii3-mcp']['endpoint_secret'],
+                sessionDirectory: $dir === '' ? sys_get_temp_dir() . '/yii3-mcp-sessions' : $dir,
+                openApiSpecPath: $openapi['spec_path'],
+                openApiHeaders: $openapi['headers'],
+            );
+        },
     ],
 ];

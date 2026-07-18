@@ -11,6 +11,7 @@ use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
@@ -222,6 +223,36 @@ final class ConfigWiringTest
         // secret must throw (fail-closed), so the shipped default is ''
         Assert::same($definition['__construct()']['secret'], '');
         Assert::same($definition['__construct()']['headerName'], 'X-Mcp-Secret');
+    }
+
+    public function doctorDefinitionBuildsFromParamsAndContainer(): void
+    {
+        /** @var Closure $definition */
+        $definition = $this->di()[McpDoctor::class]['definition'];
+
+        $doctor = $definition(new SimpleContainer([
+            SessionStoreInterface::class => new InMemorySessionStore(),
+        ]));
+
+        Assert::instanceOf($doctor, McpDoctor::class);
+    }
+
+    public function doctorDefinitionResolvesTheDefaultSessionDirectory(): void
+    {
+        /** @var Closure $definition */
+        $definition = $this->di()[McpDoctor::class]['definition'];
+
+        /** @var McpDoctor $doctor */
+        $doctor = $definition(new SimpleContainer([
+            SessionStoreInterface::class => new InMemorySessionStore(),
+        ]));
+
+        // The empty params default resolves to the same directory the
+        // SessionStoreInterface definition uses — the doctor must diagnose
+        // the real store location, not a different one.
+        $report = $doctor->diagnose();
+        $checks = $report->toArray()['checks'];
+        Assert::string($checks[1]['details'])->contains('yii3-mcp-sessions');
     }
 
     /**

@@ -79,11 +79,15 @@ $tester->readResource('app://x'); $tester->request('custom/method');
 
 // Schema contract canary (drift in served schemas fails the build):
 use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
-SchemaSnapshot::assert($tester, __DIR__ . '/mcp-schema.json');
-// missing file => generated (first run passes); mismatch => RuntimeException
-// with per-section drift summary ("tools: changed [greet]"); regenerate
-// deliberately by deleting the file. SchemaSnapshot::capture($tester) returns
-// the normalized array {tools, resources, resourceTemplates, prompts}.
+SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
+// verify(): missing file OR mismatch => RuntimeException with per-section
+// drift summary ("tools: changed [greet]") — use in CI.
+// assert(): missing file => generated (first run passes), else like verify().
+// record(): deliberately (re)writes the file. Env MCP_SNAPSHOT_RECORD=1
+// (any value except ''/'0') switches assert()/verify() into record mode —
+// the regeneration path; CI must not set it.
+// SchemaSnapshot::capture($tester) returns the normalized array
+// {tools, resources, resourceTemplates, prompts}.
 ```
 
 ### McpServerFactory
@@ -139,6 +143,21 @@ ResponseFactory/StreamFactory (must be in the container).
 `mcp:list --json` — full capability definitions (input/output schemas
 included) as normalized JSON (SchemaSnapshot format: stable item order,
 sorted object keys) for CI diffs and external automation.
+
+### McpDoctorCommand (configuration health check)
+
+`mcp:doctor` — runs Doctor\McpDoctor: endpoint secret configured, session
+directory writable, session round-trip via the configured store, OpenAPI spec
+loadable, server build. Output never contains the secret or header values.
+Exit codes (stable): 0 healthy, 2 config, 3 storage, 4 upstream — the
+category of the FIRST failing check (diagnosis order = root causes first).
+`--json` — machine-readable {healthy, exitCode, checks: [{name, category,
+status, details}]} (Doctor\CheckStatus: pass|skip|fail; Doctor\CheckCategory:
+config|storage|upstream; DoctorReport/CheckResult expose toArray()).
+`--probe` — allow network: fetch a URL OpenAPI spec; without it the command
+is fully local (URL spec fetch and the eager-loading server build are
+reported as skipped).
+DI: Doctor\McpDoctor is bound in config/di.php from the package params.
 
 ### OpenAPI bridge (expose an existing REST API)
 
