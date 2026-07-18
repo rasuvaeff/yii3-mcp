@@ -70,6 +70,24 @@ final class McpDoctorTest
         Assert::same($report->checks[0]->status, CheckStatus::Fail);
     }
 
+    public function clientSecretsSatisfyTheSecretCheck(): void
+    {
+        $report = $this->doctor(secret: '', clientIds: ['ci', 'claude'])->diagnose();
+
+        Assert::same($report->checks[0]->status, CheckStatus::Pass);
+        Assert::string($report->checks[0]->details)->contains('2 client(s)');
+        Assert::string($report->checks[0]->details)->contains('claude');
+    }
+
+    public function bothSecretFormsTogetherFailTheSecretCheck(): void
+    {
+        $report = $this->doctor(secret: 'single', clientIds: ['ci'])->diagnose();
+
+        Assert::same($report->checks[0]->status, CheckStatus::Fail);
+        Assert::same($report->exitCode(), 2);
+        Assert::string($report->checks[0]->details)->contains('exactly one');
+    }
+
     public function uncreatableSessionDirectoryFailsWithStorageExitCode(): void
     {
         // A regular file at the path: mkdir cannot create a directory there.
@@ -222,6 +240,7 @@ final class McpDoctorTest
 
     /**
      * @param array<string, string> $headers
+     * @param list<string> $clientIds
      */
     private function doctor(
         string $secret = 'test-secret',
@@ -231,6 +250,7 @@ final class McpDoctorTest
         ?ClientInterface $httpClient = null,
         bool $withServer = true,
         array $headers = [],
+        array $clientIds = [],
     ): McpDoctor {
         $factory = new Psr17Factory();
         $definitions = [
@@ -252,6 +272,7 @@ final class McpDoctorTest
             sessionDirectory: $sessionDir ?? $this->sessionDir,
             openApiSpecPath: $specPath,
             openApiHeaders: $headers,
+            clientSecretIds: $clientIds,
         );
     }
 }

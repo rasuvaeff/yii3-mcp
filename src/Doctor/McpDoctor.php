@@ -36,6 +36,7 @@ final readonly class McpDoctor
      * @param ContainerInterface $container used to build the real {@see Server} definition lazily
      * @param string $sessionDirectory the effective session directory (defaults already resolved)
      * @param array<string, string> $openApiHeaders used for the spec fetch only; never reported
+     * @param list<string> $clientSecretIds ids (NOT secrets) from the `client_secrets` param
      */
     public function __construct(
         private ContainerInterface $container,
@@ -44,6 +45,7 @@ final readonly class McpDoctor
         private string $sessionDirectory,
         private string $openApiSpecPath,
         private array $openApiHeaders = [],
+        private array $clientSecretIds = [],
     ) {}
 
     public function diagnose(bool $probeUpstream = false): DoctorReport
@@ -59,12 +61,21 @@ final readonly class McpDoctor
 
     private function checkEndpointSecret(): CheckResult
     {
-        if ($this->endpointSecret === '') {
+        if ($this->endpointSecret !== '' && $this->clientSecretIds !== []) {
             return new CheckResult(
                 name: 'endpoint_secret',
                 category: CheckCategory::Config,
                 status: CheckStatus::Fail,
-                details: 'Endpoint secret is empty: SharedSecretMiddleware answers 503 to every request. Set the "endpoint_secret" param (env MCP_SECRET) or protect the endpoint with a network ACL instead of the middleware',
+                details: 'Both "endpoint_secret" and "client_secrets" are set; configure exactly one — SharedSecretMiddleware refuses to instantiate with both',
+            );
+        }
+
+        if ($this->endpointSecret === '' && $this->clientSecretIds === []) {
+            return new CheckResult(
+                name: 'endpoint_secret',
+                category: CheckCategory::Config,
+                status: CheckStatus::Fail,
+                details: 'No endpoint secret configured: SharedSecretMiddleware answers 503 to every request. Set the "endpoint_secret" param (env MCP_SECRET), configure "client_secrets", or protect the endpoint with a network ACL instead of the middleware',
             );
         }
 
@@ -72,7 +83,9 @@ final readonly class McpDoctor
             name: 'endpoint_secret',
             category: CheckCategory::Config,
             status: CheckStatus::Pass,
-            details: 'Configured',
+            details: $this->clientSecretIds === []
+                ? 'Configured (single secret)'
+                : sprintf('Configured: %d client(s) [%s]', count($this->clientSecretIds), implode(', ', $this->clientSecretIds)),
         );
     }
 

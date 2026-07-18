@@ -347,6 +347,63 @@ re-initialize starts a fresh counter. Client quotas belong to an
 application-level rate limiter. The budget guard is always the outermost
 interceptor, so it rejects before any other interceptor does work.
 
+### Client identity and secret rotation
+
+One endpoint can serve several MCP clients, each with its own secret — and
+each client may hold **several active secrets** during a rotation window
+(add the new secret, roll the clients, remove the old one; a removed secret
+is revoked immediately):
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'client_secrets' => [
+        'ci' => getenv('MCP_SECRET_CI'),
+        'claude' => [getenv('MCP_SECRET_CLAUDE_OLD'), getenv('MCP_SECRET_CLAUDE_NEW')],
+    ],
+],
+```
+
+`SharedSecretMiddleware` resolves the presented header through a
+`Identity\SecretResolverInterface` (every comparison is `hash_equals()`,
+constant-time) and passes the resolved **client id** — never the raw
+secret — down the pipeline: interceptors see it as
+`ToolCallContext::$clientId`, and it is mirrored into the session for
+audit/telemetry bridges. The single `endpoint_secret` form keeps working
+unchanged as one client named `default`; configuring both forms at once is a
+fail-fast error. On stdio (`mcp:serve`) there is no HTTP request, so
+`$clientId` is `null`.
+
+### Per-client rate limits (bring your own limiter)
+
+This package deliberately ships no limiter storage. Implement
+`Interceptor\ToolCallLimiterInterface` over the rate limiter your application
+already runs (`yiisoft/rate-limiter`, Redis, …) and wire
+`Interceptor\RateLimitInterceptor` into the `interceptors` list:
+
+```php
+final readonly class AppToolCallLimiter implements ToolCallLimiterInterface
+{
+    public function __construct(private CounterInterface $counter) {}
+
+    public function allow(string $clientId, string $toolName): bool
+    {
+        return $this->counter->hit($clientId . ':' . $toolName)->isAllowed();
+    }
+}
+
+// params
+'rasuvaeff/yii3-mcp' => [
+    'interceptors' => [RateLimitInterceptor::class],
+],
+// di: bind ToolCallLimiterInterface => AppToolCallLimiter
+```
+
+The interceptor keys calls by the resolved client id (falling back to
+`anonymous` on transports without one) plus the tool name, so per-client and
+per-tool limits come from your limiter's configuration. **Fail-closed**: when
+the limiter backend throws, the call is rejected — an enforced quota must not
+silently become "unlimited" during an outage.
+
 ### Tool visibility
 
 `ConditionalToolInterface` gates registration globally at build time. To hide
@@ -518,7 +575,9 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 |---|---|
 | `McpServerFactory` | list of tool FQCNs → configured SDK `Server` (reads `#[McpTool]`/`#[McpResource]` attributes, wires the DI container and session store) |
 | `McpAction` | PSR-15 handler running the SDK `StreamableHttpTransport` for the current request |
-| `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; an empty secret rejects every request with an explanatory 503 — an unprotected endpoint must be an explicit decision |
+| `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; an empty secret rejects every request with an explanatory 503 — an unprotected endpoint must be an explicit decision; resolves the client id via `Identity\SecretResolverInterface` |
+| `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver` | several clients per endpoint + secret rotation (multiple active secrets per client id); constant-time comparison, the raw secret never travels past the middleware |
+| `Interceptor\ToolCallLimiterInterface` / `Interceptor\RateLimitInterceptor` | port + adapter delegating per-client/per-tool limits to the application's rate limiter; fail-closed on limiter outage |
 | `McpServeCommand` | `mcp:serve` — stdio transport for local MCP clients |
 | `McpListCommand` | `mcp:list` — console introspection of every served tool/resource/prompt with argument summaries; `--json` for normalized machine-readable definitions |
 | `McpDoctorCommand` | `mcp:doctor` — configuration health check (secret, session storage, OpenAPI spec, server build) with stable exit codes (0/2/3/4 = healthy/config/storage/upstream); `--json`, `--probe` |

@@ -126,8 +126,24 @@ new SharedSecretMiddleware(
     secret: 's3cret',                  // '' => every request gets 503 + explanation (fail-closed)
     responseFactory: $psr17,
     headerName: 'X-Mcp-Secret',        // default
+    resolver: null,                    // OR Identity\SecretResolverInterface (mutually exclusive with secret)
 );
 // wrong/missing header => 401, никогда не пропускает без секрета
+
+// Several clients + secret rotation (params 'client_secrets' builds this):
+use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
+new StaticSecretResolver([
+    'ci' => 'ci-secret',
+    'claude' => ['old-secret', 'new-secret'],  // both ACTIVE during rotation
+]);
+// hash_equals per candidate; resolve(presented) => client id | null.
+// Resolved id => request attribute SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE,
+// carried per-request by internal Identity\ClientIdentityContext (the SDK hands
+// handlers the JSON-RPC request, not the PSR-7 one), exposed as
+// ToolCallContext::$clientId and mirrored into the session
+// (InterceptingReferenceHandler::CLIENT_ID_SESSION_KEY). Raw secret never
+// travels past the middleware. Single secret = client id "default".
+// stdio => $clientId null.
 ```
 
 ### McpServeCommand (stdio, symfony/console)
@@ -214,7 +230,9 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName; $context->arguments (array<string, mixed>);
-        // $context->session (?SessionInterface); $context->getClientInfo()
+        // $context->session (?SessionInterface); $context->getClientInfo();
+        // $context->clientId (?string — identity resolved from the endpoint
+        // secret; null on stdio)
         return $next();   // don't call it to short-circuit
     }
 }
@@ -228,6 +246,16 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // Session budget (anti-loop, NOT a client quota — new session = new counter):
 // params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
 // exhausted => tool error "Session tool-call budget of N is exhausted..."
+
+// Per-client/per-tool limits — delegate to YOUR rate limiter (package ships
+// no limiter storage):
+use Rasuvaeff\Yii3Mcp\Interceptor\RateLimitInterceptor;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
+// implement ToolCallLimiterInterface::allow(string $clientId, string $toolName): bool
+// over yiisoft/rate-limiter / Redis; bind it in DI; add RateLimitInterceptor
+// to 'interceptors'. Keys: resolved client id (fallback 'anonymous') + tool.
+// false => ToolCallException "Rate limit exceeded"; limiter throws =>
+// fail-closed ToolCallException (enforced quota never silently unlimited).
 
 // Masking sensitive arguments before logging/tracing/auditing:
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
@@ -277,7 +305,9 @@ Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
 (FileSessionStore, dir from `session.dir` param or sys temp), `Server` (via
 factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
-`endpoint_secret`, `secret_header`, `session.dir`, `session.ttl`,
+`endpoint_secret`, `client_secrets` (client id => secret|list of active
+secrets; mutually exclusive with endpoint_secret), `secret_header`,
+`session.dir`, `session.ttl`,
 `session.budget`, `interceptors`, `configurators`, `tool_visibility`,
 `visibility.deny`, `visibility.allow`, `prompts_path`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.

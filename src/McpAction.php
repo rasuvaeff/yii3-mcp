@@ -14,6 +14,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 
 /**
  * PSR-15 endpoint serving the MCP Streamable HTTP transport. Route it behind
@@ -50,12 +51,23 @@ final readonly class McpAction implements RequestHandlerInterface
             $body->rewind();
         }
 
-        return $this->server->run(new StreamableHttpTransport(
-            request: $request,
-            responseFactory: $this->responseFactory,
-            streamFactory: $this->streamFactory,
-            middleware: $this->allowedHosts === [] ? null : $this->transportMiddleware(),
-        ));
+        // The SDK hands its reference handler the JSON-RPC request, not this
+        // PSR-7 one, so the client id resolved by SharedSecretMiddleware is
+        // carried through a process-local holder for the duration of the run.
+        /** @var mixed $clientId */
+        $clientId = $request->getAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE);
+        ClientIdentityContext::arm(is_string($clientId) ? $clientId : null);
+
+        try {
+            return $this->server->run(new StreamableHttpTransport(
+                request: $request,
+                responseFactory: $this->responseFactory,
+                streamFactory: $this->streamFactory,
+                middleware: $this->allowedHosts === [] ? null : $this->transportMiddleware(),
+            ));
+        } finally {
+            ClientIdentityContext::disarm();
+        }
     }
 
     /**

@@ -11,11 +11,13 @@ use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\ServerRequest;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
@@ -216,13 +218,42 @@ final class ConfigWiringTest
 
     public function middlewareDefinitionCarriesFailClosedDefaults(): void
     {
-        /** @var array{'__construct()': array{secret: string, headerName: string}} $definition */
-        $definition = $this->di()[SharedSecretMiddleware::class];
+        /** @var Closure $definition */
+        $definition = $this->di()[SharedSecretMiddleware::class]['definition'];
 
-        // empty by default: instantiating the middleware without an explicit
-        // secret must throw (fail-closed), so the shipped default is ''
-        Assert::same($definition['__construct()']['secret'], '');
-        Assert::same($definition['__construct()']['headerName'], 'X-Mcp-Secret');
+        /** @var SharedSecretMiddleware $middleware */
+        $middleware = $definition(new Psr17Factory());
+
+        // Both secret forms empty by default: the middleware must reject
+        // every request with the explanatory 503 — fail-closed is the
+        // shipped default.
+        $response = $middleware->process(new ServerRequest('POST', '/mcp', ['X-Mcp-Secret' => 'anything']), new FakeHandler());
+
+        Assert::same($response->getStatusCode(), 503);
+    }
+
+    public function middlewareDefinitionBuildsAResolverFromClientSecrets(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['client_secrets'] = ['claude' => ['old-secret', 'new-secret']];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[SharedSecretMiddleware::class]['definition'];
+
+        Assert::instanceOf($definition(new Psr17Factory()), SharedSecretMiddleware::class);
+    }
+
+    public function middlewareDefinitionRejectsBothSecretForms(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['endpoint_secret'] = 'single';
+        $params['rasuvaeff/yii3-mcp']['client_secrets'] = ['claude' => 'other'];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[SharedSecretMiddleware::class]['definition'];
+
+        Expect::exception(\InvalidArgumentException::class);
+        $definition(new Psr17Factory());
     }
 
     public function doctorDefinitionBuildsFromParamsAndContainer(): void

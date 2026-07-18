@@ -7,6 +7,7 @@ namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -62,6 +63,52 @@ final class InterceptingReferenceHandlerTest
         Assert::same($context->toolName, 'greet');
         Assert::same($context->arguments, ['name' => 'Yii']);
         Assert::same($context->getClientInfo()['name'] ?? null, 'mcp-tester');
+    }
+
+    public function armedClientIdentityReachesTheContextAndSession(): void
+    {
+        $recording = new RecordingInterceptor();
+        $tester = $this->tester([$recording]);
+
+        ClientIdentityContext::arm('claude');
+
+        try {
+            $tester->callTool('greet', ['name' => 'Yii']);
+        } finally {
+            ClientIdentityContext::disarm();
+        }
+
+        Assert::same($recording->lastContext?->clientId, 'claude');
+    }
+
+    public function sessionKeepsTheClientIdWhenTheHolderIsDisarmed(): void
+    {
+        $recording = new RecordingInterceptor();
+        $tester = $this->tester([$recording]);
+
+        ClientIdentityContext::arm('claude');
+
+        try {
+            $tester->callTool('greet', ['name' => 'Yii']);
+        } finally {
+            ClientIdentityContext::disarm();
+        }
+
+        // A later request in the SAME session without an armed holder (e.g.
+        // stdio or a misordered middleware stack) still resolves via the
+        // session mirror.
+        $tester->callTool('greet', ['name' => 'Again']);
+
+        Assert::same($recording->lastContext?->clientId, 'claude');
+    }
+
+    public function withoutIdentityTheContextClientIdIsNull(): void
+    {
+        $recording = new RecordingInterceptor();
+
+        $this->tester([$recording])->callTool('greet', ['name' => 'Yii']);
+
+        Assert::null($recording->lastContext?->clientId);
     }
 
     public function promptsAndResourcesBypassTheChain(): void

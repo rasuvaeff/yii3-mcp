@@ -9,7 +9,9 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
+use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -150,10 +152,17 @@ return [
         ],
     ],
     SharedSecretMiddleware::class => [
-        '__construct()' => [
-            'secret' => $params['rasuvaeff/yii3-mcp']['endpoint_secret'],
-            'headerName' => $params['rasuvaeff/yii3-mcp']['secret_header'],
-        ],
+        'definition' => static function (ResponseFactoryInterface $responseFactory) use ($params): SharedSecretMiddleware {
+            /** @var array<string, string|list<string>> $clientSecrets */
+            $clientSecrets = $params['rasuvaeff/yii3-mcp']['client_secrets'] ?? [];
+
+            return new SharedSecretMiddleware(
+                secret: $params['rasuvaeff/yii3-mcp']['endpoint_secret'],
+                responseFactory: $responseFactory,
+                headerName: $params['rasuvaeff/yii3-mcp']['secret_header'],
+                resolver: $clientSecrets === [] ? null : new StaticSecretResolver($clientSecrets),
+            );
+        },
     ],
     McpDoctor::class => [
         'definition' => static function (ContainerInterface $container) use ($params): McpDoctor {
@@ -163,6 +172,9 @@ return [
             /** @var array{spec_path: string, headers: array<string, string>} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
+            /** @var array<string, string|list<string>> $clientSecrets */
+            $clientSecrets = $params['rasuvaeff/yii3-mcp']['client_secrets'] ?? [];
+
             return new McpDoctor(
                 container: $container,
                 sessionStore: $container->get(SessionStoreInterface::class),
@@ -170,6 +182,7 @@ return [
                 sessionDirectory: $dir === '' ? sys_get_temp_dir() . '/yii3-mcp-sessions' : $dir,
                 openApiSpecPath: $openapi['spec_path'],
                 openApiHeaders: $openapi['headers'],
+                clientSecretIds: array_map(strval(...), array_keys($clientSecrets)),
             );
         },
     ],
