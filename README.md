@@ -190,6 +190,29 @@ The command (like `McpTester`) needs PSR-17 factories
 (`ServerRequestFactoryInterface`, `ResponseFactoryInterface`,
 `StreamFactoryInterface`) in the container.
 
+### Diagnostics: mcp:doctor
+
+`mcp:doctor` checks the MCP server configuration end-to-end and reports each
+check as pass/skip/fail — the output never contains the secret or configured
+header values:
+
+```bash
+./yii mcp:doctor           # human-readable table
+./yii mcp:doctor --json    # machine-readable report
+./yii mcp:doctor --probe   # also fetch a URL OpenAPI spec over the network
+```
+
+Checks, in diagnosis order: endpoint secret configured, session directory
+writable, a session round-trip through the configured store, OpenAPI spec
+loadable, server build. Exit codes are stable for scripting: `0` healthy,
+`2` config error, `3` storage error, `4` upstream error — the category of the
+**first** failing check (checks run root-causes-first, so a broken config
+reports as config even though it also breaks the server build).
+
+Without `--probe` the command never touches the network: with a URL
+`spec_path` both the spec fetch and the server build (which loads the spec
+eagerly) are reported as skipped.
+
 ### Sessions (important for PHP-FPM)
 
 The MCP Streamable HTTP session spans several HTTP requests (`initialize`
@@ -498,6 +521,8 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; an empty secret rejects every request with an explanatory 503 — an unprotected endpoint must be an explicit decision |
 | `McpServeCommand` | `mcp:serve` — stdio transport for local MCP clients |
 | `McpListCommand` | `mcp:list` — console introspection of every served tool/resource/prompt with argument summaries; `--json` for normalized machine-readable definitions |
+| `McpDoctorCommand` | `mcp:doctor` — configuration health check (secret, session storage, OpenAPI spec, server build) with stable exit codes (0/2/3/4 = healthy/config/storage/upstream); `--json`, `--probe` |
+| `Doctor\McpDoctor` | the diagnostics service behind `mcp:doctor`; returns an immutable `DoctorReport` of `CheckResult`s (`CheckStatus` pass/skip/fail, `CheckCategory` config/storage/upstream) |
 | `Exception\InvalidToolClassException` | configured tool class missing or without capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class opts out of registration at build time (`shouldRegister()`) |
 | `Testing\McpTester` | in-process test client: initialize/list all paginated capabilities/callTool/readResource |
@@ -566,13 +591,25 @@ $tester->request('custom/method');     // any raw JSON-RPC method
 A changed method signature silently changes the generated `inputSchema` — and
 breaks agents mid-flight. `Testing\SchemaSnapshot` snapshots every served
 capability definition into a committed JSON file; drift fails the test until
-the snapshot is regenerated deliberately (delete the file and re-run):
+the snapshot is regenerated deliberately:
 
 ```php
-SchemaSnapshot::assert($tester, __DIR__ . '/mcp-schema.json');
-// first run writes the file; a mismatch throws with a per-section summary:
+SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
+// a mismatch throws with a per-section summary:
 // "tools: changed [order.status]; prompts: added [code-review]"
 ```
+
+`verify()` treats a **missing** snapshot as an error, so a deleted or
+never-committed file cannot yield a green CI build. To create or deliberately
+regenerate the snapshot, run once with the environment flag (or call
+`SchemaSnapshot::record()`), then commit the file:
+
+```bash
+MCP_SNAPSHOT_RECORD=1 vendor/bin/testo --suite=Unit
+```
+
+`assert()` remains as the migration-friendly mode: a missing file is generated
+on the first run, then compared exactly like `verify()`.
 
 When bumping the `mcp/sdk` pin, expect to regenerate: schema serialization
 may legitimately change between SDK minors.

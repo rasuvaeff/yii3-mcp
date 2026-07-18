@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.4.0 — Unreleased
+
+- `Testing\SchemaSnapshot::verify()` — strict CI mode: a missing snapshot
+  file is an error, so a deleted or never-committed snapshot cannot yield a
+  green build. `record()` deliberately (re)writes the file; the
+  `MCP_SNAPSHOT_RECORD=1` environment flag switches `assert()`/`verify()`
+  into record mode (the regeneration path — no more "delete the file").
+  `assert()` keeps its auto-create-on-first-run behaviour.
+- `mcp:doctor` (`McpDoctorCommand` + `Doctor\McpDoctor`) — configuration
+  health check: endpoint secret, session directory and store round-trip,
+  OpenAPI spec, server build. Stable exit codes (0 healthy, 2 config,
+  3 storage, 4 upstream); `--json` machine-readable report; `--probe` opts
+  into network access (URL spec fetch) — without it the check is fully
+  local. Output never contains the secret or configured header values.
+- New runtime dependency: `symfony/uid` (session-store probe).
+
 ## 1.3.0 — 2026-07-18
 
 - `Testing\McpTester`, `Testing\SchemaSnapshot` and `mcp:list` now follow MCP
