@@ -471,7 +471,15 @@ missing from the document throws `UnknownOperationException` at server build
 time, a non-GET operation under `safe_methods_only` throws
 `UnsafeOperationException` (fail-fast). Local `#/components/...` `$ref`s are
 resolved inline (up to 32 chained hops); external (URL/file) `$ref`s pass
-through unresolved. Tool arguments are keyed by name, so an operation with a
+through unresolved for request-body schemas. URL parameters are deliberately
+limited to scalar `string`, `integer`, `number` and `boolean` schemas with the
+OpenAPI defaults (`simple` path, `form` query). Header/cookie parameters,
+external or non-scalar parameter schemas, custom serialization, non-default
+`explode` and `allowReserved=true` throw `InvalidSpecException` when the
+operation is selected. Fixed upstream headers belong in `headers`/
+`HttpOperationExecutor::defaultHeaders`; more complex contracts need a custom
+tool. Duplicate `operationId` values also fail while indexing the document.
+Tool arguments are keyed by name, so an operation with a
 path and a query parameter sharing one name — or a parameter named `body`
 alongside a request body — cannot be bridged and throws
 `InvalidSpecException` at build time.
@@ -492,7 +500,7 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `McpListCommand` | `mcp:list` — console introspection of every served tool/resource/prompt with argument summaries; `--json` for normalized machine-readable definitions |
 | `Exception\InvalidToolClassException` | configured tool class missing or without capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class opts out of registration at build time (`shouldRegister()`) |
-| `Testing\McpTester` | in-process test client: initialize/listTools/callTool/readResource |
+| `Testing\McpTester` | in-process test client: initialize/list all paginated capabilities/callTool/readResource |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
@@ -545,9 +553,12 @@ $tester = new McpTester($server, $psr17, $psr17, $psr17);
 $result = $tester->callTool('order.status', ['orderId' => '42']);
 $this->assertSame('paid', $result['content'][0]['text']);
 
-$tester->listTools();                 // tool definitions
+$tester->listTools();                 // every paginated tool definition
+$tester->listResources();             // every resource definition
+$tester->listResourceTemplates();     // every resource-template definition
+$tester->listPrompts();               // every prompt definition
 $tester->readResource('app://x');     // resource contents
-$tester->request('prompts/list');     // any raw JSON-RPC method
+$tester->request('custom/method');     // any raw JSON-RPC method
 ```
 
 ### Schema snapshot: catch accidental contract drift

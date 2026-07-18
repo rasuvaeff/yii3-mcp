@@ -11,6 +11,7 @@ use Rasuvaeff\Yii3Mcp\McpListCommand;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Testo\Assert;
@@ -131,6 +132,20 @@ final class McpListCommandTest
         Assert::same($decoded, ['tools' => [], 'resources' => [], 'resourceTemplates' => [], 'prompts' => []]);
     }
 
+    public function printsEveryCapabilityAcrossPages(): void
+    {
+        $tester = $this->command($this->server(withManyCapabilities: true));
+
+        Assert::same($tester->execute([]), Command::SUCCESS);
+
+        $display = $tester->getDisplay();
+        Assert::string($display)->contains('Tools (23)');
+        Assert::string($display)->contains('Resources (22)');
+        Assert::string($display)->contains('Resource templates (22)');
+        Assert::string($display)->contains('Prompts (24)');
+        Assert::string($display)->contains('tool-21');
+    }
+
     private function command(Server $server): CommandTester
     {
         $factory = new Psr17Factory();
@@ -143,7 +158,7 @@ final class McpListCommandTest
         ));
     }
 
-    private function server(): Server
+    private function server(bool $withManyCapabilities = false): Server
     {
         return (new McpServerFactory(
             container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
@@ -152,7 +167,10 @@ final class McpListCommandTest
             version: '1.0.0',
         ))->create(
             [GreetingTool::class],
-            [new MarkdownPromptsConfigurator(__DIR__ . '/Support/prompts')],
+            [
+                new MarkdownPromptsConfigurator(__DIR__ . '/Support/prompts'),
+                ...($withManyCapabilities ? [new ManyCapabilitiesConfigurator()] : []),
+            ],
         );
     }
 

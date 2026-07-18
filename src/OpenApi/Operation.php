@@ -15,7 +15,7 @@ final readonly class Operation
      * @param non-empty-string $operationId
      * @param non-empty-string $method HTTP method, upper-case
      * @param non-empty-string $path path template with {param} placeholders
-     * @param list<array{name: non-empty-string, in: 'path'|'query', required: bool, schema: array<array-key, mixed>, description: string}> $parameters
+     * @param list<array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool}> $parameters
      * @param array<array-key, mixed>|null $requestBodySchema JSON schema of the application/json request body
      */
     public function __construct(

@@ -470,7 +470,15 @@ DI wiring требует PSR-18/PSR-17 services (`ClientInterface`,
 вызывает `UnknownOperationException` при server build. Не-GET operation при
 `safe_methods_only` вызывает `UnsafeOperationException` (fail-fast). Локальные
 `#/components/...` `$ref` разрешаются inline до 32 chained hops; external
-(URL/file) `$ref` остаются неразрешёнными. Tool arguments индексируются по
+(URL/file) `$ref` остаются неразрешёнными для request-body schemas. URL
+parameters намеренно ограничены scalar schemas `string`, `integer`, `number`
+и `boolean` со стандартной OpenAPI serialization (`simple` для path, `form`
+для query). Header/cookie parameters, external или non-scalar parameter
+schemas, custom serialization, non-default `explode` и `allowReserved=true`
+приводят к `InvalidSpecException` при выборе operation. Фиксированные upstream
+headers задаются через `headers`/`HttpOperationExecutor::defaultHeaders`; более
+сложные контракты требуют custom tool. Дублирующиеся `operationId` также
+отклоняются при индексировании document. Tool arguments индексируются по
 имени: operation с path и query parameter одного имени, либо parameter `body`
 одновременно с request body, не может быть bridged и бросает
 `InvalidSpecException` при build time.
@@ -490,7 +498,7 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 | `McpListCommand` | `mcp:list`, консольная интроспекция tools/resources/prompts; `--json` для machine-readable definitions |
 | `Exception\InvalidToolClassException` | configured tool class отсутствует или не имеет capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class отказывается от registration при build time через `shouldRegister()` |
-| `Testing\McpTester` | in-process test client: initialize/listTools/callTool/readResource |
+| `Testing\McpTester` | in-process test client: initialize/list всех paginated capabilities/callTool/readResource |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot всех capability schemas; drift ломает build |
 | `Prompts\MarkdownPromptsConfigurator` | directory `*.md` files как MCP prompts, vjik/my-prompts-mcp-compatible format |
 | `ServerConfiguratorInterface` | extension point для добавления capabilities в builder через params `configurators` |
@@ -543,9 +551,12 @@ $tester = new McpTester($server, $psr17, $psr17, $psr17);
 $result = $tester->callTool('order.status', ['orderId' => '42']);
 $this->assertSame('paid', $result['content'][0]['text']);
 
-$tester->listTools();                 // tool definitions
+$tester->listTools();                 // все paginated tool definitions
+$tester->listResources();             // все resource definitions
+$tester->listResourceTemplates();     // все resource-template definitions
+$tester->listPrompts();               // все prompt definitions
 $tester->readResource('app://x');     // resource contents
-$tester->request('prompts/list');     // any raw JSON-RPC method
+$tester->request('custom/method');     // любой raw JSON-RPC method
 ```
 
 ### Schema snapshot: защита от случайного изменения контракта
