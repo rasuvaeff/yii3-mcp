@@ -8,9 +8,12 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
+use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Lifecycle\BeforeTest;
@@ -248,6 +251,48 @@ final class McpActionTest
         ));
 
         Assert::same($this->decode($response)['result']['contents'][0]['text'], 'ok');
+    }
+
+    public function clientIdAttributeFlowsToTheInterceptorContext(): void
+    {
+        $factory = new Psr17Factory();
+        $recording = new RecordingInterceptor();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: new InMemorySessionStore(),
+            name: 'test-server',
+            version: '1.0.0',
+        ))->create([GreetingTool::class], [], [$recording]);
+        $action = new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory);
+
+        // Simulates SharedSecretMiddleware in front of the action.
+        $withIdentity = fn(ServerRequest $request): ServerRequest => $request
+            ->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'claude');
+
+        $sessionId = $action->handle($withIdentity($this->request([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => '2025-06-18',
+                'capabilities' => [],
+                'clientInfo' => ['name' => 'test-client', 'version' => '1.0'],
+            ],
+        ])))->getHeaderLine('Mcp-Session-Id');
+
+        $action->handle($withIdentity($this->request(
+            [
+                'jsonrpc' => '2.0',
+                'id' => 2,
+                'method' => 'tools/call',
+                'params' => ['name' => 'greet', 'arguments' => ['name' => 'Yii']],
+            ],
+            sessionId: $sessionId,
+        )));
+
+        Assert::same($recording->lastContext?->clientId, 'claude');
+        // The holder never outlives the request.
+        Assert::null(ClientIdentityContext::current());
     }
 
     private function initialize(): ResponseInterface

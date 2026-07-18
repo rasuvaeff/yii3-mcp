@@ -9,9 +9,17 @@ return [
         // list of application tool classes (public methods annotated with the
         // SDK #[McpTool] / #[McpResource] attributes); the core registers none
         'tools' => [],
-        // fail-closed: SharedSecretMiddleware refuses to instantiate while
-        // this is empty — set a secret or protect the endpoint with a network ACL
+        // fail-closed: SharedSecretMiddleware answers 503 while neither this
+        // nor 'client_secrets' is set — set a secret or protect the endpoint
+        // with a network ACL. Mutually exclusive with 'client_secrets'.
         'endpoint_secret' => '',
+        // several clients / secret rotation: client id => secret or list of
+        // ACTIVE secrets (two secrets under one id = rotation window; a
+        // removed secret is revoked immediately). The resolved client id is
+        // exposed to interceptors (ToolCallContext::$clientId) and mirrored
+        // into the session; the raw secret never travels further than the
+        // middleware. Mutually exclusive with 'endpoint_secret'.
+        'client_secrets' => [],
         'secret_header' => 'X-Mcp-Secret',
         // extra hosts for the transport's DNS-rebinding protection
         // (localhost is always allowed); required when the endpoint is

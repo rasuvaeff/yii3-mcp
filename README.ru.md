@@ -189,6 +189,28 @@ schemas, в нормализованном формате `SchemaSnapshot`. По
 `ServerRequestFactoryInterface`, `ResponseFactoryInterface` и
 `StreamFactoryInterface` в контейнере.
 
+### Диагностика: mcp:doctor
+
+`mcp:doctor` проверяет конфигурацию MCP-сервера end-to-end и выводит каждую
+проверку как pass/skip/fail — секрет и значения настроенных headers никогда
+не попадают в вывод:
+
+```bash
+./yii mcp:doctor           # человекочитаемая таблица
+./yii mcp:doctor --json    # machine-readable отчёт
+./yii mcp:doctor --probe   # разрешить сеть (загрузка URL OpenAPI spec)
+```
+
+Проверки в порядке диагностики: endpoint secret настроен, session directory
+доступна на запись, session round-trip через настроенный store, OpenAPI spec
+загружается, server build. Exit codes стабильны для скриптов: `0` — здоров,
+`2` — config error, `3` — storage error, `4` — upstream error; берётся
+категория **первой** упавшей проверки (проверки идут от корневых причин, так
+что сломанный config отражается как config, хотя ломает и server build).
+
+Без `--probe` команда не трогает сеть: при URL в `spec_path` и загрузка
+спеки, и server build (который загружает её eagerly) отражаются как skipped.
+
 ### Sessions (важно для PHP-FPM)
 
 MCP Streamable HTTP session охватывает несколько HTTP-запросов: сначала
@@ -323,6 +345,62 @@ TTL. Зациклившийся агент исчерпает budget и полу
 `initialize` начинает новый counter. Client quotas должны жить в rate limiter
 уровня приложения. Budget guard всегда внешний interceptor и отклоняет вызов
 до работы остальных interceptors.
+
+### Client identity и ротация секретов
+
+Один endpoint может обслуживать несколько MCP-клиентов, каждый со своим
+секретом — и у клиента может быть **несколько активных секретов** на время
+ротации (добавьте новый, переключите клиентов, удалите старый; удалённый
+секрет отзывается немедленно):
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'client_secrets' => [
+        'ci' => getenv('MCP_SECRET_CI'),
+        'claude' => [getenv('MCP_SECRET_CLAUDE_OLD'), getenv('MCP_SECRET_CLAUDE_NEW')],
+    ],
+],
+```
+
+`SharedSecretMiddleware` резолвит предъявленный header через
+`Identity\SecretResolverInterface` (каждое сравнение — `hash_equals()`,
+constant-time) и передаёт дальше по pipeline **client id** — никогда не сам
+секрет: interceptors видят его как `ToolCallContext::$clientId`, и он
+зеркалируется в session для audit/telemetry-бриджей. Одиночный
+`endpoint_secret` продолжает работать без изменений как клиент `default`;
+обе формы сразу — fail-fast ошибка. На stdio (`mcp:serve`) HTTP-запроса нет,
+поэтому `$clientId` равен `null`.
+
+### Per-client rate limits (свой limiter)
+
+Пакет сознательно не несёт собственного limiter-хранилища. Реализуйте
+`Interceptor\ToolCallLimiterInterface` поверх rate limiter'а, который уже
+работает в приложении (`yiisoft/rate-limiter`, Redis, …), и добавьте
+`Interceptor\RateLimitInterceptor` в список `interceptors`:
+
+```php
+final readonly class AppToolCallLimiter implements ToolCallLimiterInterface
+{
+    public function __construct(private CounterInterface $counter) {}
+
+    public function allow(string $clientId, string $toolName): bool
+    {
+        return $this->counter->hit($clientId . ':' . $toolName)->isAllowed();
+    }
+}
+
+// params
+'rasuvaeff/yii3-mcp' => [
+    'interceptors' => [RateLimitInterceptor::class],
+],
+// di: bind ToolCallLimiterInterface => AppToolCallLimiter
+```
+
+Interceptor ключует вызовы по client id (fallback `anonymous` для
+транспортов без identity) плюс имя tool'а — per-client и per-tool лимиты
+задаются конфигурацией вашего limiter'а. **Fail-closed**: если limiter-бэкенд
+бросает исключение, вызов отклоняется — enforced quota не должна молча
+превращаться в «безлимит» при аварии.
 
 ### Видимость tools
 
@@ -493,9 +571,13 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 |---|---|
 | `McpServerFactory` | список tool FQCN -> настроенный SDK `Server`; читает attributes, подключает DI container и session store |
 | `McpAction` | PSR-15 handler, запускающий SDK `StreamableHttpTransport` для текущего request |
-| `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; пустой secret отклоняет все requests с поясняющим 503 |
+| `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; пустой secret отклоняет все requests с поясняющим 503; client id резолвится через `Identity\SecretResolverInterface` |
+| `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver` | несколько клиентов на endpoint + ротация секретов (несколько активных секретов на client id); constant-time сравнение, сырой секрет не уходит дальше middleware |
+| `Interceptor\ToolCallLimiterInterface` / `Interceptor\RateLimitInterceptor` | порт + адаптер, делегирующие per-client/per-tool лимиты rate limiter'у приложения; fail-closed при аварии limiter'а |
 | `McpServeCommand` | `mcp:serve`, stdio transport для локальных MCP clients |
 | `McpListCommand` | `mcp:list`, консольная интроспекция tools/resources/prompts; `--json` для machine-readable definitions |
+| `McpDoctorCommand` | `mcp:doctor` — health check конфигурации (secret, session storage, OpenAPI spec, server build) со стабильными exit codes (0/2/3/4 = healthy/config/storage/upstream); `--json`, `--probe` |
+| `Doctor\McpDoctor` | сервис диагностики за `mcp:doctor`; возвращает immutable `DoctorReport` из `CheckResult` (`CheckStatus` pass/skip/fail, `CheckCategory` config/storage/upstream) |
 | `Exception\InvalidToolClassException` | configured tool class отсутствует или не имеет capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class отказывается от registration при build time через `shouldRegister()` |
 | `Testing\McpTester` | in-process test client: initialize/list всех paginated capabilities/callTool/readResource |
@@ -564,13 +646,25 @@ $tester->request('custom/method');     // любой raw JSON-RPC method
 Изменение method signature без предупреждения меняет generated `inputSchema`
 и ломает работающих agents. `Testing\SchemaSnapshot` снимает каждое served
 capability definition в committed JSON file; изменение ломает test, пока
-snapshot не будет намеренно пересоздан (удалите файл и запустите test снова).
+snapshot не будет намеренно пересоздан:
 
 ```php
-SchemaSnapshot::assert($tester, __DIR__ . '/mcp-schema.json');
-// first run writes the file; a mismatch throws with a per-section summary:
+SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
+// a mismatch throws with a per-section summary:
 // "tools: changed [order.status]; prompts: added [code-review]"
 ```
+
+`verify()` считает **отсутствующий** snapshot ошибкой — удалённый или
+незакоммиченный файл не даст зелёный CI. Для создания или намеренной
+регенерации запустите тесты один раз с env-флагом (или вызовите
+`SchemaSnapshot::record()`) и закоммитьте файл:
+
+```bash
+MCP_SNAPSHOT_RECORD=1 vendor/bin/testo --suite=Unit
+```
+
+`assert()` остаётся migration-friendly режимом: отсутствующий файл создаётся
+на первом прогоне, дальше сравнение как в `verify()`.
 
 При обновлении pin `mcp/sdk` ожидайте регенерацию: schema serialization может
 корректно измениться между SDK minors.

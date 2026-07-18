@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 1.4.0 — Unreleased
+## 1.4.0 — 2026-07-18
 
 - `Testing\SchemaSnapshot::verify()` — strict CI mode: a missing snapshot
   file is an error, so a deleted or never-committed snapshot cannot yield a
@@ -20,6 +20,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into network access (URL spec fetch) — without it the check is fully
   local. Output never contains the secret or configured header values.
 - New runtime dependency: `symfony/uid` (session-store probe).
+- Client identity and secret rotation: the new `client_secrets` param maps
+  client ids to one or SEVERAL active secrets (rotation window; a removed
+  secret is revoked immediately), resolved through the new
+  `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver`
+  (constant-time comparison). `SharedSecretMiddleware` attributes the
+  resolved client id to the request; interceptors see it as
+  `ToolCallContext::$clientId` and it is mirrored into the session for
+  audit/telemetry bridges — the raw secret never travels past the
+  middleware. The single `endpoint_secret` form keeps working as the client
+  `default`; configuring both forms is a fail-fast error (also reported by
+  `mcp:doctor`).
+- Per-client/per-tool rate limits by delegation: implement the new
+  `Interceptor\ToolCallLimiterInterface` over the application's rate limiter
+  and wire the new `Interceptor\RateLimitInterceptor` into `interceptors`.
+  Fail-closed: a limiter outage rejects the call instead of silently lifting
+  the quota. The package deliberately ships no limiter storage.
 
 ## 1.3.0 — 2026-07-18
 

@@ -7,9 +7,11 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 use InvalidArgumentException;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
 use Testo\Assert;
+use Testo\Assert\ExpectException;
 use Testo\Codecov\Covers;
 use Testo\Expect;
 use Testo\Test;
@@ -27,6 +29,59 @@ final class SharedSecretMiddlewareTest
 
         Assert::same($response->getStatusCode(), 200);
         Assert::notNull($handler->handledRequest);
+    }
+
+    public function singleSecretAttributesTheDefaultClientId(): void
+    {
+        $handler = new FakeHandler();
+        $request = new ServerRequest('POST', '/mcp', ['X-Mcp-Secret' => 's3cret']);
+
+        $this->middleware()->process($request, $handler);
+
+        Assert::same(
+            $handler->handledRequest?->getAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE),
+            SharedSecretMiddleware::DEFAULT_CLIENT_ID,
+        );
+    }
+
+    public function resolverAttributesTheOwningClientId(): void
+    {
+        $middleware = new SharedSecretMiddleware(
+            secret: '',
+            responseFactory: new Psr17Factory(),
+            resolver: new StaticSecretResolver(['ci' => 'ci-secret', 'claude' => ['old-secret', 'new-secret']]),
+        );
+        $handler = new FakeHandler();
+
+        $response = $middleware->process(new ServerRequest('POST', '/mcp', ['X-Mcp-Secret' => 'old-secret']), $handler);
+
+        Assert::same($response->getStatusCode(), 200);
+        Assert::same($handler->handledRequest?->getAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE), 'claude');
+    }
+
+    public function resolverRejectsARevokedSecret(): void
+    {
+        $middleware = new SharedSecretMiddleware(
+            secret: '',
+            responseFactory: new Psr17Factory(),
+            resolver: new StaticSecretResolver(['claude' => 'new-secret']),
+        );
+        $handler = new FakeHandler();
+
+        $response = $middleware->process(new ServerRequest('POST', '/mcp', ['X-Mcp-Secret' => 'old-secret']), $handler);
+
+        Assert::same($response->getStatusCode(), 401);
+        Assert::null($handler->handledRequest);
+    }
+
+    #[ExpectException(InvalidArgumentException::class)]
+    public function rejectsASecretAndAResolverTogether(): void
+    {
+        new SharedSecretMiddleware(
+            secret: 's3cret',
+            responseFactory: new Psr17Factory(),
+            resolver: new StaticSecretResolver(['claude' => 'other']),
+        );
     }
 
     public function invalidSecretIsRejected(): void

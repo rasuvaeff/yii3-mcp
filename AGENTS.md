@@ -15,10 +15,13 @@ serves the Streamable HTTP transport; `McpServeCommand` serves stdio;
 Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
 `McpServeCommand`, `McpListCommand`, `McpDoctorCommand`,
 `Doctor\{McpDoctor, DoctorReport, CheckResult, CheckStatus, CheckCategory}`,
+`Identity\{SecretResolverInterface, StaticSecretResolver;
+ClientIdentityContext is @internal}`,
 `ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `Testing\McpTester`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
-SessionBudgetInterceptor, InterceptingReferenceHandler, ArgumentMasker}`,
+SessionBudgetInterceptor, InterceptingReferenceHandler, ArgumentMasker,
+ToolCallLimiterInterface, RateLimitInterceptor}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility;
 FilteredListToolsHandler is @internal}`,
 `OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator,
@@ -79,6 +82,14 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   plugin (set to `false` in `allow-plugins` — we pass PSR-17 factories
   explicitly everywhere, no runtime discovery on our paths). CI extensions
   include `fileinfo` in every job.
+- **`Identity\ClientIdentityContext` is a deliberate process-local mutable
+  static** (the only one in this package): the SDK hands its reference
+  handler the JSON-RPC request, not the PSR-7 one, so the client id resolved
+  by `SharedSecretMiddleware` cannot travel as a request attribute all the
+  way down. `McpAction` arms it before `Server::run()` and disarms in a
+  `finally`; FPM-safe because a worker handles one request at a time. Do not
+  read it outside `InterceptingReferenceHandler`, and never store the raw
+  secret in it.
 - `#[McpTool]` on `GreetingTool::explode` in tests intentionally throws:
   the assertion is that tool failures surface as MCP error envelopes
   (`isError`/`error`), not HTTP 500 with a trace.
@@ -96,7 +107,8 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 ## When you finish
 
-- Update `README.md` (and `examples/` if usage changed); update `CHANGELOG.md`
-  when releasing.
+- Update `README.md` AND `README.ru.md` — the README is bilingual, every
+  change lands in both files in the same commit (and `examples/` if usage
+  changed); update `CHANGELOG.md` when releasing.
 - Re-run `composer build`; if the change affects public API or release safety,
   also run `make release-check`. Paste the output.
