@@ -19,6 +19,9 @@ container.
 
 > **Using an AI coding assistant?** [llms.txt](llms.txt) contains a compact
 > API reference you can share with the model. Contributors: see [AGENTS.md](AGENTS.md).
+> Projects using the [llm/skills](https://github.com/roxblnfk/skills) Composer
+> plugin also get this package's agent skill synced into `.agents/skills/`
+> automatically on install.
 
 ## Requirements
 
