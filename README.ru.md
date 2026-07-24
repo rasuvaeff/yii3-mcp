@@ -523,7 +523,8 @@ Per-tenant tool sets уже поддерживаются `tool_visibility`: пр
 Если приложение уже поддерживает OpenAPI document, allow-listed operations
 можно без дублирования опубликовать как MCP tools. Имя берётся из
 `operationId`, description - из `summary`/`description`, input schemas - из
-parameters/request body. Вызовы исполняются как настоящие HTTP requests к API
+parameters/request body, output schemas - из success response (см. ниже).
+Вызовы исполняются как настоящие HTTP requests к API
 и проходят весь middleware stack (validation, rate limiting, auth), в отличие
 от hand-written tools, вызывающих handlers напрямую.
 
@@ -560,6 +561,19 @@ headers задаются через `headers`/`HttpOperationExecutor::defaultHea
 имени: operation с path и query parameter одного имени, либо parameter `body`
 одновременно с request body, не может быть bridged и бросает
 `InvalidSpecException` при build time.
+
+### Output schema из responses
+
+Bridged tool также рекламирует `outputSchema` в `tools/list`, если operation
+объявляет подходящий success response: **наименьший конкретный 2xx** с
+`application/json` schema типа `object` (локальные `$ref` разрешаются,
+top-level keywords канонизируются до `type`/`properties`/`required`/
+`additionalProperties`/`description`). Агент видит форму ответа до вызова,
+а MCP-клиенты валидируют возвращённый `structuredContent` по этой схеме.
+Array/scalar responses и wildcard `2XX` не рекламируются - JSON object
+payload всё равно приходит как `structuredContent`, просто без контракта.
+Держите OpenAPI document честным: расхождение спеки с реальным API
+проявится как ошибки валидации на стороне клиента.
 
 Для custom scenarios используйте части напрямую: `SpecIndex` +
 `HttpOperationExecutor` + `OpenApiServerConfigurator` (`ServerConfiguratorInterface`,

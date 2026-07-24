@@ -35,6 +35,24 @@ $spec = SpecIndex::fromJson(json_encode([
                 ],
             ],
         ],
+        '/blog-tag/{slug}' => [
+            'get' => [
+                'operationId' => 'getBlogTagBySlug',
+                'summary' => 'One blog tag',
+                'parameters' => [
+                    ['name' => 'slug', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']],
+                ],
+                // object-typed 2xx response => advertised as the MCP tool
+                // outputSchema; the JSON payload arrives as structuredContent
+                'responses' => [
+                    '200' => ['content' => ['application/json' => ['schema' => [
+                        'type' => 'object',
+                        'properties' => ['slug' => ['type' => 'string'], 'title' => ['type' => 'string']],
+                        'required' => ['slug'],
+                    ]]]],
+                ],
+            ],
+        ],
     ],
 ], JSON_THROW_ON_ERROR));
 
@@ -45,8 +63,11 @@ $httpClient = new class implements ClientInterface {
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
         $this->lastRequest = $request;
+        $body = str_contains($request->getUri()->getPath(), '/blog-tag/')
+            ? '{"slug":"php","title":"PHP"}'
+            : '[{"slug":"php"},{"slug":"yii3"}]';
 
-        return new Response(200, ['Content-Type' => 'application/json'], '[{"slug":"php"},{"slug":"yii3"}]');
+        return new Response(200, ['Content-Type' => 'application/json'], $body);
     }
 };
 
@@ -66,7 +87,7 @@ $server = (new McpServerFactory(
             baseUrl: 'https://api.example.com',
             defaultHeaders: ['Authorization' => 'Bearer demo-token'],
         ),
-        operations: ['getBlogTags'],   // allow-list: everything else stays hidden
+        operations: ['getBlogTags', 'getBlogTagBySlug'],   // allow-list: everything else stays hidden
         safeMethodsOnly: true,         // non-GET in the list would fail the build
     ),
 ]);
@@ -74,9 +95,15 @@ $server = (new McpServerFactory(
 $tester = new McpTester($server, $factory, $factory, $factory);
 
 foreach ($tester->listTools() as $tool) {
-    echo "tool: {$tool['name']} — {$tool['description']}\n";
+    $schema = isset($tool['outputSchema'])
+        ? ' [outputSchema: ' . implode(', ', array_keys($tool['outputSchema']['properties'] ?? [])) . ']'
+        : '';
+    echo "tool: {$tool['name']} — {$tool['description']}{$schema}\n";
 }
 
 $result = $tester->callTool('getBlogTags', ['locale' => 'ru']);
 echo 'upstream request: ' . $httpClient->lastRequest?->getUri() . "\n";
 echo 'result: ' . $result['content'][0]['text'] . "\n";
+
+$result = $tester->callTool('getBlogTagBySlug', ['slug' => 'php']);
+echo 'structuredContent: ' . json_encode($result['structuredContent'] ?? null) . "\n";

@@ -525,7 +525,8 @@ from the resolved tenant instead of `client_info`.
 If the application already maintains an OpenAPI document, allow-listed
 operations can be bridged as MCP tools with zero duplication — names come
 from `operationId`, descriptions from `summary`/`description`, input schemas
-from parameters/request body. Calls are executed as real HTTP requests
+from parameters/request body, output schemas from the success response
+(see below). Calls are executed as real HTTP requests
 against the API, passing its full middleware stack (validation, rate
 limiting, auth) — unlike hand-written tools that invoke handlers directly.
 
@@ -563,6 +564,20 @@ Tool arguments are keyed by name, so an operation with a
 path and a query parameter sharing one name — or a parameter named `body`
 alongside a request body — cannot be bridged and throws
 `InvalidSpecException` at build time.
+
+### Output schema from responses
+
+A bridged tool also advertises `outputSchema` in `tools/list` when the
+operation declares a matching success response: the **lowest concrete 2xx**
+response with an `application/json` schema of `type: object` (local `$ref`s
+resolved, top-level keywords canonicalized to `type`/`properties`/`required`/
+`additionalProperties`/`description`). Agents see the response shape before
+calling and MCP clients validate the returned `structuredContent` against it.
+Array/scalar responses and `2XX` wildcards are not advertised — JSON object
+payloads still arrive as `structuredContent`, just without the upfront
+contract. If the advertised schema must match reality, keep the OpenAPI
+document honest: a spec that diverges from the API surfaces as client-side
+validation errors.
 
 For custom scenarios use the pieces directly: `SpecIndex` +
 `HttpOperationExecutor` + `OpenApiServerConfigurator` (a

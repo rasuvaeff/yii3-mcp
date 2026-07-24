@@ -62,6 +62,40 @@ final class OpenApiServerConfiguratorTest
         Assert::same(json_decode((string) $body['result']['content'][0]['text'], true), [['slug' => 'php']]);
     }
 
+    public function objectResponseAdvertisesOutputSchemaInToolsList(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags', 'getBlogTagBySlug']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/list'], $sessionId);
+
+        $byName = array_column($this->decode($response)['result']['tools'], null, 'name');
+
+        Assert::same($byName['getBlogTagBySlug']['outputSchema']['type'], 'object');
+        Assert::same($byName['getBlogTagBySlug']['outputSchema']['required'], ['slug']);
+        // array response: no outputSchema advertised (MCP requires object)
+        Assert::false(isset($byName['getBlogTags']['outputSchema']));
+    }
+
+    public function objectResponsePayloadArrivesAsStructuredContent(): void
+    {
+        $client = new FakeHttpClient(body: '{"slug":"php","title":"PHP"}');
+        $action = $this->action($client, ['getBlogTagBySlug']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 8,
+            'method' => 'tools/call',
+            'params' => ['name' => 'getBlogTagBySlug', 'arguments' => ['slug' => 'php']],
+        ], $sessionId);
+
+        $body = $this->decode($response);
+
+        Assert::false(isset($body['error']));
+        Assert::same($body['result']['structuredContent'], ['slug' => 'php', 'title' => 'PHP']);
+    }
+
     public function upstreamFailureSurfacesAsToolError(): void
     {
         $action = $this->action(new FakeHttpClient(statusCode: 500, body: 'boom'), ['getBlogTags']);

@@ -12,9 +12,10 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 /**
  * Bridges allow-listed OpenAPI operations onto the MCP server: each
  * operationId becomes a tool named after it, with the input schema derived
- * from the operation's parameters/request body and calls executed as real
- * HTTP requests against the upstream API — passing its full middleware
- * stack (validation, rate limiting, auth).
+ * from the operation's parameters/request body, the output schema derived
+ * from its success response (object-typed application/json only) and calls
+ * executed as real HTTP requests against the upstream API — passing its
+ * full middleware stack (validation, rate limiting, auth).
  *
  * Fail-closed: an empty allow-list exposes nothing; an operationId missing
  * from the document throws UnknownOperationException at build time; with
@@ -60,6 +61,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                     inputSchema: $schemaBuilder->build($operation),
                     description: $operation->description === '' ? null : $operation->description,
                     annotations: null,
+                    outputSchema: $operation->outputSchema,
                 ),
                 handler: new BridgedToolHandler(operation: $operation, executor: $this->executor),
             );
