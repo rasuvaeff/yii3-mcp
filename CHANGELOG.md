@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.6.0 — 2026-07-24
+
+- Hooks for every capability: `prompts/get` and `resources/read` (static
+  resources and templates alike) get their own interceptor chains —
+  `Interceptor\PromptGetInterceptorInterface` (`PromptGetContext`) and
+  `Interceptor\ResourceReadInterceptorInterface` (`ResourceReadContext`,
+  with the RFC 6570 template variables and the matched `uriTemplate`) —
+  configured via the `prompt_interceptors` / `resource_interceptors` params
+  or `McpServerFactory::create()`. Contexts carry the same session/client
+  identity as `ToolCallContext`.
+- Per-session prompt/resource visibility:
+  `Visibility\PromptVisibilityInterface` and
+  `Visibility\ResourceVisibilityInterface` (params `prompt_visibility` /
+  `resource_visibility`) filter `prompts/list`, `resources/list` and
+  `resources/templates/list`, and fail-closed hide direct `prompts/get` /
+  `resources/read` — a hidden capability is reported as not found,
+  indistinguishable from a missing one.
+- `Interceptor\CallOutcome` — shared `success`/`rejected`/`error` outcome
+  vocabulary for audit/telemetry bridges;
+  `ToolCallException`/`PromptGetException`/`ResourceReadException` classify
+  as `rejected` via `CallOutcome::fromThrowable()`.
+- Existing tool-interceptor order and the `ToolCallInterceptorInterface`
+  signature are unchanged.
+
 ## 1.5.0 — 2026-07-24
 
 - OpenAPI bridge: bridged tools advertise `outputSchema` in `tools/list`

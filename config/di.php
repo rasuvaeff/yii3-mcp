@@ -12,9 +12,13 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
+use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
+use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -138,11 +142,43 @@ return [
                 $visibility = new DeclarativeToolVisibility(deny: $deny, allow: $allow);
             }
 
+            $promptInterceptors = [];
+
+            /** @var list<class-string<PromptGetInterceptorInterface>> $promptInterceptorClasses */
+            $promptInterceptorClasses = $params['rasuvaeff/yii3-mcp']['prompt_interceptors'] ?? [];
+
+            foreach ($promptInterceptorClasses as $promptInterceptorClass) {
+                $promptInterceptors[] = $container->get($promptInterceptorClass);
+            }
+
+            $resourceInterceptors = [];
+
+            /** @var list<class-string<ResourceReadInterceptorInterface>> $resourceInterceptorClasses */
+            $resourceInterceptorClasses = $params['rasuvaeff/yii3-mcp']['resource_interceptors'] ?? [];
+
+            foreach ($resourceInterceptorClasses as $resourceInterceptorClass) {
+                $resourceInterceptors[] = $container->get($resourceInterceptorClass);
+            }
+
+            /** @var class-string<PromptVisibilityInterface>|'' $promptVisibilityClass */
+            $promptVisibilityClass = $params['rasuvaeff/yii3-mcp']['prompt_visibility'] ?? '';
+            /** @var PromptVisibilityInterface|null $promptVisibility */
+            $promptVisibility = $promptVisibilityClass === '' ? null : $container->get($promptVisibilityClass);
+
+            /** @var class-string<ResourceVisibilityInterface>|'' $resourceVisibilityClass */
+            $resourceVisibilityClass = $params['rasuvaeff/yii3-mcp']['resource_visibility'] ?? '';
+            /** @var ResourceVisibilityInterface|null $resourceVisibility */
+            $resourceVisibility = $resourceVisibilityClass === '' ? null : $container->get($resourceVisibilityClass);
+
             return $factory->create(
                 $tools,
                 $configurators,
                 $interceptors,
                 $visibility,
+                $promptInterceptors,
+                $resourceInterceptors,
+                $promptVisibility,
+                $resourceVisibility,
             );
         },
     ],

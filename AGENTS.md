@@ -20,10 +20,15 @@ ClientIdentityContext is @internal}`,
 `ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `Testing\McpTester`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
+PromptGetInterceptorInterface, PromptGetContext,
+ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
 SessionBudgetInterceptor, InterceptingReferenceHandler, ArgumentMasker,
 ToolCallLimiterInterface, RateLimitInterceptor}`,
-`Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility;
-FilteredListToolsHandler is @internal}`,
+`Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
+PromptVisibilityInterface, ResourceVisibilityInterface;
+FilteredListToolsHandler, FilteredListPromptsHandler,
+FilteredListResourcesHandler, FilteredListResourceTemplatesHandler are
+@internal}`,
 `OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator,
 SpecLoader}`, `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in

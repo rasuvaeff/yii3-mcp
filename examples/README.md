@@ -9,6 +9,7 @@
 | `openapi-bridge.php` | Allow-listed OpenAPI operations bridged as MCP tools; the call becomes a real HTTP request (stubbed PSR-18 client) | no |
 | `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`) + the session budget guard rejecting the third call | no |
 | `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed rejected on call | no |
+| `capability-hooks.php` | prompts/get + resources/read interceptor chains (`CallOutcome`, template variables, client-visible rejection) and prompt visibility hiding a prompt as not-found | no |
 | `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |
 
 Run from the package root (after `composer install`):
