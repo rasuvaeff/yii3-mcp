@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.5.0 — 2026-07-24
+
+- OpenAPI bridge: bridged tools advertise `outputSchema` in `tools/list`
+  when the operation's lowest concrete 2xx response carries an
+  `application/json` schema of `type: object` — local `$ref`s resolved,
+  top-level keywords canonicalized to
+  `type`/`properties`/`required`/`additionalProperties`/`description`.
+  Array/scalar responses and `2XX` wildcards are not advertised;
+  `structuredContent` still flows for JSON object payloads either way.
+
 ## 1.4.0 — 2026-07-18
 
 - `Testing\SchemaSnapshot::verify()` — strict CI mode: a missing snapshot

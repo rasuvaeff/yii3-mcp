@@ -505,6 +505,141 @@ final class SpecIndexTest
         $index->get('op');
     }
 
+    public function outputSchemaComesFromTheObjectTypedSuccessResponse(): void
+    {
+        $operation = (new SpecIndex(OpenApiFixture::spec()))->get('getBlogTagBySlug');
+
+        Assert::same($operation->outputSchema, [
+            'type' => 'object',
+            'properties' => [
+                'slug' => ['type' => 'string'],
+                'title' => ['type' => 'string'],
+            ],
+            'required' => ['slug'],
+        ]);
+    }
+
+    public function arrayResponseIsNotAdvertisedAsOutputSchema(): void
+    {
+        $operation = (new SpecIndex(OpenApiFixture::spec()))->get('getBlogTags');
+
+        Assert::null($operation->outputSchema);
+    }
+
+    public function lowestConcreteTwoxxResponseWinsAndWildcardIsIgnored(): void
+    {
+        $operation = (new SpecIndex(OpenApiFixture::spec()))->get('createSubscriber');
+
+        Assert::same($operation->outputSchema, [
+            'type' => 'object',
+            'properties' => ['id' => ['type' => 'integer']],
+            'required' => ['id'],
+        ]);
+    }
+
+    public function operationWithoutResponsesHasNoOutputSchema(): void
+    {
+        Assert::null($this->operationWithResponses(null)->outputSchema);
+    }
+
+    public function nonTwoxxOnlyResponsesYieldNoOutputSchema(): void
+    {
+        Assert::null($this->operationWithResponses([
+            '404' => ['description' => 'Not found', 'content' => ['application/json' => ['schema' => ['type' => 'object']]]],
+        ])->outputSchema);
+    }
+
+    public function successResponseWithoutJsonContentYieldsNoOutputSchema(): void
+    {
+        Assert::null($this->operationWithResponses([
+            '200' => ['description' => 'CSV export', 'content' => ['text/csv' => ['schema' => ['type' => 'string']]]],
+        ])->outputSchema);
+    }
+
+    public function schemalessJsonSuccessResponseYieldsNoOutputSchema(): void
+    {
+        Assert::null($this->operationWithResponses([
+            '200' => ['description' => 'Anything', 'content' => ['application/json' => []]],
+        ])->outputSchema);
+    }
+
+    public function boundaryStatusCodesOutsideTwoxxAreIgnored(): void
+    {
+        $objectContent = ['content' => ['application/json' => ['schema' => ['type' => 'object']]]];
+
+        Assert::null($this->operationWithResponses([
+            '199' => ['description' => 'Informational'] + $objectContent,
+            '300' => ['description' => 'Redirect'] + $objectContent,
+        ])->outputSchema);
+        Assert::same($this->operationWithResponses([
+            '299' => ['description' => 'Edge of the range'] + $objectContent,
+        ])->outputSchema, ['type' => 'object']);
+    }
+
+    public function outputSchemaIsCanonicalizedToTheMcpShape(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => 'object',
+                'description' => 'A tag',
+                'properties' => ['slug' => ['type' => 'string'], 0 => ['type' => 'ignored']],
+                'required' => ['slug', 42],
+                'additionalProperties' => false,
+                'xml' => ['name' => 'tag'],
+                'example' => ['slug' => 'php'],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, [
+            'type' => 'object',
+            'properties' => ['slug' => ['type' => 'string']],
+            'required' => ['slug'],
+            'additionalProperties' => false,
+            'description' => 'A tag',
+        ]);
+    }
+
+    public function objectTypedAdditionalPropertiesSchemaIsKept(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => 'object',
+                'additionalProperties' => ['type' => 'string', 0 => 'dropped-int-key'],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, [
+            'type' => 'object',
+            'additionalProperties' => ['type' => 'string'],
+        ]);
+    }
+
+    public function emptyDescriptionIsOmittedFromOutputSchema(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => 'object',
+                'description' => '',
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object']);
+    }
+
+    /**
+     * @param array<string, mixed>|null $responses
+     */
+    private function operationWithResponses(?array $responses): \Rasuvaeff\Yii3Mcp\OpenApi\Operation
+    {
+        $raw = ['operationId' => 'op'];
+
+        if ($responses !== null) {
+            $raw['responses'] = $responses;
+        }
+
+        return (new SpecIndex(['paths' => ['/x' => ['get' => $raw]]]))->get('op');
+    }
+
     private function indexWithRefChainOfLength(int $length): SpecIndex
     {
         $schemas = ['S' . $length => ['type' => 'string']];

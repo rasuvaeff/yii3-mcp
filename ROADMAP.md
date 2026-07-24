@@ -35,14 +35,17 @@ use cases are welcome in [issues](https://github.com/rasuvaeff/yii3-mcp/issues).
 
 ## Bridge packages — status
 
-- **`rasuvaeff/yii3-mcp-audit-log-bridge`** *(built, unpublished)* —
-  `AuditTrailInterceptor` records every `tools/call` (client info, tool,
-  masked arguments, result/error, duration) into
+- **[`rasuvaeff/yii3-mcp-audit-log-bridge`](https://github.com/rasuvaeff/yii3-mcp-audit-log-bridge)**
+  *(published, v1.0.0)* — `AuditTrailInterceptor` records every `tools/call`
+  (client info, tool, masked arguments, result/error, duration) into
   [rasuvaeff/yii3-audit-log](https://github.com/rasuvaeff/yii3-audit-log):
-  the enterprise answer to "what did the AI do in our system". Publish on the
-  first real request.
-- **`rasuvaeff/yii3-mcp-rbac-bridge`** *(built, unpublished)* — publish on
-  the first real request.
+  the enterprise answer to "what did the AI do in our system".
+- **[`rasuvaeff/yii3-mcp-rbac-bridge`](https://github.com/rasuvaeff/yii3-mcp-rbac-bridge)**
+  *(published, v1.0.0)* — per-user RBAC on tool calls: `RequiredPermission`,
+  `RbacToolCallInterceptor`, `RbacToolVisibility`, session-identity binding.
+- **[`rasuvaeff/yii3-mcp-telemetry-bridge`](https://github.com/rasuvaeff/yii3-mcp-telemetry-bridge)**
+  *(published, v1.0.0)* — a `mcp.tool <name>` span and RED-style metrics for
+  every `tools/call` via rasuvaeff/yii3-telemetry + rasuvaeff/yii3-metrics.
 
 ## v1.2 — observability + declarative DX
 
@@ -84,6 +87,14 @@ published on Packagist.
 5. **`mcp:list --json`** *(shipped in v1.2.0)* — machine-readable capability
    listing for CI diffs and external automation.
 
+## v1.5.0 — OpenAPI output schema (shipped 2026-07-24)
+
+Bridged tools advertise `outputSchema` in `tools/list` when the operation's
+lowest concrete 2xx response carries an `application/json` schema of
+`type: object` (local `$ref`s resolved, top-level keywords canonicalized).
+Array/scalar responses and `2XX` wildcards stay unadvertised;
+`structuredContent` flows for JSON object payloads either way.
+
 ## On demand — waiting for a real use case
 
 | Feature | Notes |
@@ -93,7 +104,6 @@ published on Packagist.
 | Human-in-the-loop approval for write-tools | prefer MCP task-augmented tools over homegrown pending/poll semantics |
 | Outbox mode for write-tools | record the call into [rasuvaeff/yii3-outbox](https://github.com/rasuvaeff/yii3-outbox) instead of executing — durable, retryable, human-reviewable |
 | Dry-run interface for tools | needs per-tool support; demand first |
-| Per-tool rate limits | mostly covered by session budget + interceptor |
 | Multiple named servers (admin vs public) | separate secrets/endpoints; waiting for a real case |
 
 ## Deliberately out of scope

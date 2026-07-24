@@ -200,6 +200,12 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   from path/query parameters (+ `body` argument for application/json
   requestBody). Local `#/components/...` $refs are resolved inline (chains
   of up to 32 hops); external (URL/file) $refs pass through unresolved.
+- outputSchema is advertised in tools/list when the operation's lowest
+  concrete 2xx response has an application/json schema of type "object"
+  ($refs resolved; canonicalized to type/properties/required/
+  additionalProperties/description). Array/scalar responses and `2XX`
+  wildcards are not advertised; JSON object payloads still arrive as
+  structuredContent either way.
 - Calls are real HTTP requests against the API — its middleware stack
   (validation, rate limiting, auth) applies. Non-2xx =>
   `OperationFailedException` => MCP tool error envelope.
