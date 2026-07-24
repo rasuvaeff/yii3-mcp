@@ -5,24 +5,33 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use Mcp\Capability\Registry\ElementReference;
+use Mcp\Capability\Registry\PromptReference;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;
+use Mcp\Capability\Registry\ResourceReference;
+use Mcp\Capability\Registry\ResourceTemplateReference;
 use Mcp\Capability\Registry\ToolReference;
+use Mcp\Exception\PromptNotFoundException;
+use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Exception\ToolCallException;
 use Mcp\Server\Session\SessionInterface;
 use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
+use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 
 /**
- * Decorates the SDK reference handler with per-session tool visibility
- * (fail-closed: an invisible tool cannot be called even by its exact name)
- * and the tool-call interceptor chain. Only tools/call is affected; prompts,
- * resources and resource templates are delegated untouched.
+ * Decorates the SDK reference handler with per-session visibility and
+ * interceptor chains for every capability call: tools/call, prompts/get and
+ * resources/read (static resources and templates alike). Visibility is
+ * fail-closed — an invisible tool cannot be called even by its exact name,
+ * and a hidden prompt/resource is reported as not found, indistinguishable
+ * from a missing one.
  *
  * The client id resolved by {@see SharedSecretMiddleware} is read off the
- * request, exposed on the {@see ToolCallContext} and mirrored into the
- * session ({@see self::CLIENT_ID_SESSION_KEY}) so audit/telemetry bridges
- * can attribute calls without ever seeing the raw secret.
+ * request, exposed on every context and mirrored into the session
+ * ({@see self::CLIENT_ID_SESSION_KEY}) so audit/telemetry bridges can
+ * attribute calls without ever seeing the raw secret.
  *
  * @api
  */
@@ -35,11 +44,17 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
 
     /**
      * @param list<ToolCallInterceptorInterface> $interceptors applied in order, first = outermost
+     * @param list<PromptGetInterceptorInterface> $promptInterceptors applied in order, first = outermost
+     * @param list<ResourceReadInterceptorInterface> $resourceInterceptors applied in order, first = outermost
      */
     public function __construct(
         private ReferenceHandlerInterface $inner,
         private array $interceptors,
         private ?ToolVisibilityInterface $visibility = null,
+        private array $promptInterceptors = [],
+        private array $resourceInterceptors = [],
+        private ?PromptVisibilityInterface $promptVisibility = null,
+        private ?ResourceVisibilityInterface $resourceVisibility = null,
     ) {}
 
     /**
@@ -48,28 +63,41 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
     #[\Override]
     public function handle(ElementReference $reference, array $arguments): mixed
     {
-        if (!$reference instanceof ToolReference) {
-            return $this->inner->handle($reference, $arguments);
+        if ($reference instanceof ToolReference) {
+            return $this->handleTool($reference, $arguments);
         }
 
-        /** @var mixed $session */
-        $session = $arguments['_session'] ?? null;
-        $session = $session instanceof SessionInterface ? $session : null;
+        if ($reference instanceof PromptReference) {
+            return $this->handlePrompt($reference, $arguments);
+        }
+
+        if ($reference instanceof ResourceReference) {
+            return $this->handleResource($reference, $arguments);
+        }
+
+        if ($reference instanceof ResourceTemplateReference) {
+            return $this->handleResource($reference, $arguments);
+        }
+
+        return $this->inner->handle($reference, $arguments);
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function handleTool(ToolReference $reference, array $arguments): mixed
+    {
+        $session = $this->session($arguments);
 
         if ($this->visibility instanceof ToolVisibilityInterface && !$this->visibility->isVisible($reference->tool, $session)) {
             throw new ToolCallException(sprintf('Tool "%s" is not available in this session', $reference->tool->name));
         }
 
-        $clientId = $this->clientId($session);
-
-        $cleaned = $arguments;
-        unset($cleaned['_session'], $cleaned['_request']);
-
         $context = new ToolCallContext(
             toolName: $reference->tool->name,
-            arguments: $cleaned,
+            arguments: $this->cleaned($arguments),
             session: $session,
-            clientId: $clientId,
+            clientId: $this->clientId($session),
         );
 
         $next = fn(): mixed => $this->inner->handle($reference, $arguments);
@@ -80,6 +108,98 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         }
 
         return $next();
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function handlePrompt(PromptReference $reference, array $arguments): mixed
+    {
+        $session = $this->session($arguments);
+
+        if ($this->promptVisibility instanceof PromptVisibilityInterface && !$this->promptVisibility->isVisible($reference->prompt, $session)) {
+            throw new PromptNotFoundException($reference->prompt->name);
+        }
+
+        $context = new PromptGetContext(
+            promptName: $reference->prompt->name,
+            arguments: $this->cleaned($arguments),
+            session: $session,
+            clientId: $this->clientId($session),
+        );
+
+        $next = fn(): mixed => $this->inner->handle($reference, $arguments);
+
+        foreach (array_reverse($this->promptInterceptors) as $interceptor) {
+            $current = $next;
+            $next = static fn(): mixed => $interceptor->intercept($context, $current);
+        }
+
+        return $next();
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function handleResource(ResourceReference|ResourceTemplateReference $reference, array $arguments): mixed
+    {
+        $session = $this->session($arguments);
+        /** @var mixed $rawUri */
+        $rawUri = $arguments['uri'] ?? null;
+        $uri = is_string($rawUri) ? $rawUri : '';
+
+        if ($this->resourceVisibility instanceof ResourceVisibilityInterface) {
+            $hidden = $reference instanceof ResourceTemplateReference
+                ? !$this->resourceVisibility->isTemplateVisible($reference->resourceTemplate, $session)
+                : !$this->resourceVisibility->isVisible($reference->resource, $session);
+
+            if ($hidden) {
+                throw new ResourceNotFoundException($uri);
+            }
+        }
+
+        $variables = $this->cleaned($arguments);
+        unset($variables['uri']);
+
+        $context = new ResourceReadContext(
+            uri: $uri,
+            variables: $variables,
+            uriTemplate: $reference instanceof ResourceTemplateReference ? $reference->resourceTemplate->uriTemplate : null,
+            session: $session,
+            clientId: $this->clientId($session),
+        );
+
+        $next = fn(): mixed => $this->inner->handle($reference, $arguments);
+
+        foreach (array_reverse($this->resourceInterceptors) as $interceptor) {
+            $current = $next;
+            $next = static fn(): mixed => $interceptor->intercept($context, $current);
+        }
+
+        return $next();
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    private function session(array $arguments): ?SessionInterface
+    {
+        /** @var mixed $session */
+        $session = $arguments['_session'] ?? null;
+
+        return $session instanceof SessionInterface ? $session : null;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function cleaned(array $arguments): array
+    {
+        unset($arguments['_session'], $arguments['_request']);
+
+        return $arguments;
     }
 
     /**

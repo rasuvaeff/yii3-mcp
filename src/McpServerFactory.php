@@ -18,8 +18,15 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException;
 use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
+use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\FilteredListPromptsHandler;
+use Rasuvaeff\Yii3Mcp\Visibility\FilteredListResourcesHandler;
+use Rasuvaeff\Yii3Mcp\Visibility\FilteredListResourceTemplatesHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListToolsHandler;
+use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use ReflectionClass;
 use ReflectionMethod;
@@ -53,12 +60,20 @@ final readonly class McpServerFactory
      * @param iterable<ServerConfiguratorInterface> $configurators
      * @param iterable<ToolCallInterceptorInterface> $interceptors tool-call chain, first = outermost
      * @param ToolVisibilityInterface|null $toolVisibility per-session filter for tools/list + fail-closed tools/call
+     * @param iterable<PromptGetInterceptorInterface> $promptInterceptors prompts/get chain, first = outermost
+     * @param iterable<ResourceReadInterceptorInterface> $resourceInterceptors resources/read chain (static + templates), first = outermost
+     * @param PromptVisibilityInterface|null $promptVisibility per-session filter for prompts/list + fail-closed prompts/get
+     * @param ResourceVisibilityInterface|null $resourceVisibility per-session filter for resources/list, resources/templates/list + fail-closed resources/read
      */
     public function create(
         array $toolClasses,
         iterable $configurators = [],
         iterable $interceptors = [],
         ?ToolVisibilityInterface $toolVisibility = null,
+        iterable $promptInterceptors = [],
+        iterable $resourceInterceptors = [],
+        ?PromptVisibilityInterface $promptVisibility = null,
+        ?ResourceVisibilityInterface $resourceVisibility = null,
     ): Server {
         $builder = Server::builder()
             ->setServerInfo(name: $this->name, version: $this->version)
@@ -83,29 +98,79 @@ final readonly class McpServerFactory
             $interceptorList[] = $interceptor;
         }
 
-        if ($interceptorList !== [] || $toolVisibility instanceof ToolVisibilityInterface) {
+        $promptInterceptorList = [];
+
+        foreach ($promptInterceptors as $promptInterceptor) {
+            $promptInterceptorList[] = $promptInterceptor;
+        }
+
+        $resourceInterceptorList = [];
+
+        foreach ($resourceInterceptors as $resourceInterceptor) {
+            $resourceInterceptorList[] = $resourceInterceptor;
+        }
+
+        $anyVisibility = $toolVisibility instanceof ToolVisibilityInterface
+            || $promptVisibility instanceof PromptVisibilityInterface
+            || $resourceVisibility instanceof ResourceVisibilityInterface;
+
+        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility) {
             // the decorator wraps EVERY registration path: [class, method]
-            // references, closures and explicit ToolHandlerInterface handlers all
-            // execute through the reference handler
+            // references, closures and explicit handler objects all execute
+            // through the reference handler
             $builder->setReferenceHandler(new InterceptingReferenceHandler(
                 inner: new ReferenceHandler($this->container),
                 interceptors: $interceptorList,
                 visibility: $toolVisibility,
+                promptInterceptors: $promptInterceptorList,
+                resourceInterceptors: $resourceInterceptorList,
+                promptVisibility: $promptVisibility,
+                resourceVisibility: $resourceVisibility,
             ));
         }
 
-        if ($toolVisibility instanceof ToolVisibilityInterface) {
-            // owning the registry lets the filtering tools/list handler read it;
+        if ($anyVisibility) {
+            // owning the registry lets the filtering list handlers read it;
             // custom request handlers run ahead of the SDK's own
             $registry = new Registry(logger: $this->logger ?? new NullLogger());
             $builder->setRegistry($registry);
-            /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
-            $listHandler = new FilteredListToolsHandler(
-                registry: $registry,
-                visibility: $toolVisibility,
-                pageSize: self::PAGE_SIZE,
-            );
-            $builder->addRequestHandler($listHandler);
+
+            if ($toolVisibility instanceof ToolVisibilityInterface) {
+                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+                $listHandler = new FilteredListToolsHandler(
+                    registry: $registry,
+                    visibility: $toolVisibility,
+                    pageSize: self::PAGE_SIZE,
+                );
+                $builder->addRequestHandler($listHandler);
+            }
+
+            if ($promptVisibility instanceof PromptVisibilityInterface) {
+                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+                $listHandler = new FilteredListPromptsHandler(
+                    registry: $registry,
+                    visibility: $promptVisibility,
+                    pageSize: self::PAGE_SIZE,
+                );
+                $builder->addRequestHandler($listHandler);
+            }
+
+            if ($resourceVisibility instanceof ResourceVisibilityInterface) {
+                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+                $listHandler = new FilteredListResourcesHandler(
+                    registry: $registry,
+                    visibility: $resourceVisibility,
+                    pageSize: self::PAGE_SIZE,
+                );
+                $builder->addRequestHandler($listHandler);
+                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $templatesHandler */
+                $templatesHandler = new FilteredListResourceTemplatesHandler(
+                    registry: $registry,
+                    visibility: $resourceVisibility,
+                    pageSize: self::PAGE_SIZE,
+                );
+                $builder->addRequestHandler($templatesHandler);
+            }
         }
 
         return $builder->build();

@@ -244,7 +244,7 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 }
 // params: 'interceptors' => [MyInterceptor::class]  — DI-resolved, first = outermost.
 // Wraps EVERY tools/call (attribute tools, OpenAPI bridge, configurators);
-// prompts/resources bypass the chain.
+// prompts/resources have their OWN chains (see "Hooks for prompts and resources").
 // throw Mcp\Exception\ToolCallException => MCP tool-error envelope (agent sees reason);
 // other exceptions => opaque internal error.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors).
@@ -305,6 +305,36 @@ final readonly class MyVisibility implements ToolVisibilityInterface
 // (trusted-only endpoint model); per-tenant secrets are a planned extension.
 ```
 
+### Hooks for prompts and resources
+
+```php
+// Same seams for the other capabilities — SEPARATE interfaces and params:
+use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->getClientInfo()
+use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadContext;     // ->uri, ->variables (RFC 6570), ->uriTemplate (null = static), ->session, ->clientId
+use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;    // isVisible(Prompt, ?Session)
+use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;  // isVisible(ResourceDefinition, ?Session) + isTemplateVisible(ResourceTemplate, ?Session)
+
+// params (all DI-resolved; interceptor lists first = outermost):
+// 'prompt_interceptors' => [...], 'resource_interceptors' => [...],
+// 'prompt_visibility' => FQCN|'', 'resource_visibility' => FQCN|''
+// Rejecting: throw Mcp\Exception\PromptGetException / ResourceReadException
+//   => client sees the message.
+// Hiding: visibility (or throw PromptNotFoundException/ResourceNotFoundException)
+//   => "not found", indistinguishable from a missing capability; the call never
+//   reaches interceptors or the handler. Visibility also filters prompts/list,
+//   resources/list and resources/templates/list with the SAME implementation.
+// Manual wiring: $factory->create($tools, $configurators, $interceptors,
+//   $toolVisibility, $promptInterceptors, $resourceInterceptors,
+//   $promptVisibility, $resourceVisibility).
+
+// Shared outcome vocabulary for audit/telemetry bridges:
+use Rasuvaeff\Yii3Mcp\Interceptor\CallOutcome;   // Success|Rejected|Error ('success'/'rejected'/'error')
+CallOutcome::fromThrowable($e);   // ToolCallException/PromptGetException/ResourceReadException
+                                  // => Rejected; anything else => Error
+```
+
 ### DI (config-plugin)
 
 Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
@@ -314,7 +344,9 @@ Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `client_secrets` (client id => secret|list of active
 secrets; mutually exclusive with endpoint_secret), `secret_header`,
 `session.dir`, `session.ttl`,
-`session.budget`, `interceptors`, `configurators`, `tool_visibility`,
+`session.budget`, `interceptors`, `prompt_interceptors`,
+`resource_interceptors`, `configurators`, `tool_visibility`,
+`prompt_visibility`, `resource_visibility`,
 `visibility.deny`, `visibility.allow`, `prompts_path`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.
 

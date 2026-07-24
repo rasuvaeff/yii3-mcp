@@ -37,6 +37,14 @@ return [
         // applied in order, first = outermost); each implements
         // Interceptor\ToolCallInterceptorInterface
         'interceptors' => [],
+        // prompts/get interceptor FQCNs (resolved through the container,
+        // applied in order, first = outermost); each implements
+        // Interceptor\PromptGetInterceptorInterface
+        'prompt_interceptors' => [],
+        // resources/read interceptor FQCNs (static resources and templates
+        // alike; resolved through the container, applied in order, first =
+        // outermost); each implements Interceptor\ResourceReadInterceptorInterface
+        'resource_interceptors' => [],
         // server configurator FQCNs (resolved through the container, applied
         // in order after the core's own prompts/openapi configurators); each
         // implements ServerConfiguratorInterface. Extension point for
@@ -47,6 +55,15 @@ return [
         // fail-closed rejects tools/call of invisible tools. Empty = all visible.
         // Mutually exclusive with the declarative 'visibility' lists below.
         'tool_visibility' => '',
+        // per-session prompt visibility: FQCN of a Visibility\PromptVisibilityInterface
+        // implementation. Filters prompts/list AND fail-closed hides prompts/get
+        // (a hidden prompt is reported as not found). Empty = all visible.
+        'prompt_visibility' => '',
+        // per-session resource visibility: FQCN of a Visibility\ResourceVisibilityInterface
+        // implementation. Filters resources/list + resources/templates/list AND
+        // fail-closed hides resources/read (a hidden resource is reported as
+        // not found). Empty = all visible.
+        'resource_visibility' => '',
         // declarative visibility: tool-name patterns with '*' wildcards
         // ('admin.*', '*.delete'). deny hides matches; a non-empty allow hides
         // everything it does not match; deny wins over allow. Both empty =

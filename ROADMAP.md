@@ -87,6 +87,19 @@ published on Packagist.
 5. **`mcp:list --json`** *(shipped in v1.2.0)* — machine-readable capability
    listing for CI diffs and external automation.
 
+## v1.6.0 — hooks for every capability (shipped 2026-07-24)
+
+`prompts/get` and `resources/read` (static + templates) get their own
+interceptor chains (`PromptGetInterceptorInterface` /
+`ResourceReadInterceptorInterface` with `PromptGetContext` /
+`ResourceReadContext`) and per-session visibility
+(`PromptVisibilityInterface` / `ResourceVisibilityInterface`) filtering
+`prompts/list`, `resources/list`, `resources/templates/list` AND fail-closed
+hiding direct calls (hidden = not found). Shared `CallOutcome`
+(`success`/`rejected`/`error`) gives audit/telemetry bridges one outcome
+vocabulary. Tool-interceptor order and `ToolCallInterceptorInterface`
+signature unchanged.
+
 ## v1.5.0 — OpenAPI output schema (shipped 2026-07-24)
 
 Bridged tools advertise `outputSchema` in `tools/list` when the operation's
@@ -99,7 +112,6 @@ Array/scalar responses and `2XX` wildcards stay unadvertised;
 
 | Feature | Notes |
 |---|---|
-| Interceptors for `prompts/get` / `resources/read` | the chain currently wraps only `tools/call`; enterprise audit of resource reads may want the same seam |
 | Per-tenant endpoint secrets | the v1.1 tenant recipe keeps one global secret |
 | Human-in-the-loop approval for write-tools | prefer MCP task-augmented tools over homegrown pending/poll semantics |
 | Outbox mode for write-tools | record the call into [rasuvaeff/yii3-outbox](https://github.com/rasuvaeff/yii3-outbox) instead of executing — durable, retryable, human-reviewable |

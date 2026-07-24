@@ -453,6 +453,42 @@ them — a client that guesses a hidden name still gets a tool error, and the
 call never reaches the interceptor chain or the tool. This is an early
 filter, not a replacement for application-level ACL.
 
+### Hooks for prompts and resources
+
+The same seams exist for the other capabilities. `prompts/get` and
+`resources/read` (static resources and templates alike) each have their own
+interceptor chain and visibility filter — separate interfaces, so a tool
+policy never accidentally applies to a prompt:
+
+```php
+// config/params.php — each list resolved through the container, first = outermost
+'rasuvaeff/yii3-mcp' => [
+    'prompt_interceptors' => [PromptAuditInterceptor::class],     // Interceptor\PromptGetInterceptorInterface
+    'resource_interceptors' => [ResourceAclInterceptor::class],   // Interceptor\ResourceReadInterceptorInterface
+    'prompt_visibility' => PlanBasedPromptVisibility::class,      // Visibility\PromptVisibilityInterface
+    'resource_visibility' => PlanBasedResourceVisibility::class,  // Visibility\ResourceVisibilityInterface
+],
+```
+
+- `Interceptor\PromptGetContext` carries the prompt name, arguments, session
+  and client id; `Interceptor\ResourceReadContext` carries the URI, the RFC
+  6570 variables extracted from a template (with the matched `uriTemplate`)
+  and the same identity fields.
+- Rejecting: throw `Mcp\Exception\PromptGetException` /
+  `Mcp\Exception\ResourceReadException` — the client sees the message.
+  Hiding: visibility (or a thrown `*NotFoundException`) reports the
+  capability as **not found**, indistinguishable from a missing one — a
+  client that guesses a hidden prompt name or resource URI learns nothing,
+  and the call never reaches the interceptors or the handler.
+- Visibility filters `prompts/list`, `resources/list` and
+  `resources/templates/list` with the same implementation that guards the
+  direct calls, so listing and fetching can never disagree.
+
+For bridges (audit, telemetry) the core ships one shared outcome
+vocabulary — `Interceptor\CallOutcome` (`success` / `rejected` / `error`,
+with `CallOutcome::fromThrowable()`): a rate-limit or ACL rejection is
+classified `rejected` and never pollutes error-rate metrics.
+
 ### Server configurators
 
 Beyond the built-in Markdown-prompts and OpenAPI bridge, register your own
@@ -610,6 +646,9 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Interceptor\ArgumentMasker` | shared sensitive-argument masking (`password`/`token`/… at every nesting level) for anything leaving the process |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |
 | `Visibility\DeclarativeToolVisibility` | deny/allow tool-name patterns with `*` wildcards (`visibility` param) — the no-code visibility case |
+| `Interceptor\PromptGetInterceptorInterface` / `Interceptor\ResourceReadInterceptorInterface` | wrap every prompts/get and resources/read (`prompt_interceptors` / `resource_interceptors` params) with `PromptGetContext` / `ResourceReadContext` |
+| `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session prompt/resource filters (`prompt_visibility` / `resource_visibility` params): lists omit, direct get/read reports not-found |
+| `Interceptor\CallOutcome` | shared `success`/`rejected`/`error` vocabulary for audit/telemetry bridges (`fromThrowable()`) |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 

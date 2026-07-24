@@ -451,6 +451,41 @@ error. В обоих случаях filter работает согласован
 дойдёт ни до interceptor chain, ни до tool. Это ранний filter, а не замена ACL
 уровня приложения.
 
+### Hooks для prompts и resources
+
+Те же точки расширения есть у остальных capabilities. `prompts/get` и
+`resources/read` (static resources и templates одинаково) имеют собственные
+interceptor chain и visibility filter — отдельные интерфейсы, чтобы tool-policy
+случайно не применилась к prompt:
+
+```php
+// config/params.php — каждый список разрешается через container, первый = внешний
+'rasuvaeff/yii3-mcp' => [
+    'prompt_interceptors' => [PromptAuditInterceptor::class],     // Interceptor\PromptGetInterceptorInterface
+    'resource_interceptors' => [ResourceAclInterceptor::class],   // Interceptor\ResourceReadInterceptorInterface
+    'prompt_visibility' => PlanBasedPromptVisibility::class,      // Visibility\PromptVisibilityInterface
+    'resource_visibility' => PlanBasedResourceVisibility::class,  // Visibility\ResourceVisibilityInterface
+],
+```
+
+- `Interceptor\PromptGetContext` несёт имя prompt, arguments, session и
+  client id; `Interceptor\ResourceReadContext` — URI, RFC 6570 variables из
+  template (с совпавшим `uriTemplate`) и те же identity-поля.
+- Отклонение: бросьте `Mcp\Exception\PromptGetException` /
+  `Mcp\Exception\ResourceReadException` — клиент увидит сообщение.
+  Скрытие: visibility (или брошенное `*NotFoundException`) отвечает
+  **not found**, неотличимо от несуществующей capability — клиент,
+  угадавший скрытое имя prompt или URI, не узнаёт ничего, а вызов не
+  доходит ни до interceptors, ни до handler.
+- Visibility фильтрует `prompts/list`, `resources/list` и
+  `resources/templates/list` той же реализацией, что охраняет прямые
+  вызовы, — листинг и чтение не могут разойтись.
+
+Для бриджей (audit, telemetry) ядро несёт единый словарь исходов —
+`Interceptor\CallOutcome` (`success` / `rejected` / `error`,
+`CallOutcome::fromThrowable()`): отказ rate limit или ACL классифицируется
+как `rejected` и не загрязняет error-rate метрики.
+
 ### Server configurators
 
 Кроме встроенных Markdown-prompts и OpenAPI bridge можно зарегистрировать
@@ -605,6 +640,9 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 | `Interceptor\ArgumentMasker` | единое sensitive-argument masking на каждом nesting level |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter: `tools/list` скрывает, `tools/call` fail-closed отклоняет |
 | `Visibility\DeclarativeToolVisibility` | deny/allow patterns имён tools с wildcard `*`: параметр `visibility` |
+| `Interceptor\PromptGetInterceptorInterface` / `Interceptor\ResourceReadInterceptorInterface` | обёртка каждого prompts/get и resources/read (params `prompt_interceptors` / `resource_interceptors`) с `PromptGetContext` / `ResourceReadContext` |
+| `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session фильтры prompts/resources (params `prompt_visibility` / `resource_visibility`): списки скрывают, прямой get/read отвечает not-found |
+| `Interceptor\CallOutcome` | единый словарь `success`/`rejected`/`error` для audit/telemetry бриджей (`fromThrowable()`) |
 | `OpenApi\OpenApiServerConfigurator` | публикует allow-listed OpenAPI operations как tools через HTTP |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 
