@@ -28,7 +28,7 @@ container.
 | Requirement | Version |
 |-------------|---------|
 | PHP | 8.3 – 8.5 |
-| `mcp/sdk` | `~0.6.0` (experimental until 1.0 — hence the tilde pin) |
+| `mcp/sdk` | `~0.7.0` (experimental until 1.0 — hence the tilde pin) |
 | MCP protocol | 2025-06-18 (via SDK) |
 | `ext-fileinfo` | required by the SDK |
 

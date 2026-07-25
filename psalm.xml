@@ -18,7 +18,9 @@
             SchemaGenerator) so that an argument-less tool serializes as {} and not [].
             The OpenAPI bridge builds Tool directly, so it must normalize explicitly —
             psalm flags that correct value against the SDK's own inaccurate docblock.
-            Scoped to the one constructor; revisit when the pin moves off ~0.6.0.
+            Scoped to the one constructor; still present in ~0.7.0 (verified by
+            temporarily removing this suppression — same ArgumentTypeCoercion error).
+            Revisit whenever the pin moves again.
         -->
         <ArgumentTypeCoercion>
             <errorLevel type="suppress">

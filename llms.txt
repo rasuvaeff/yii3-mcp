@@ -15,7 +15,7 @@ composer require rasuvaeff/yii3-mcp
   (empty or wrong secret => explanatory JSON 401/503 — fail-closed) or an explicit network ACL.
 - No protocol structures are invented here: capability attributes
   (`#[McpTool]`, `#[McpResource]`) and all JSON-RPC handling come from
-  `mcp/sdk` (`~0.6.0`, experimental — tilde pin, minor = breaking).
+  `mcp/sdk` (`~0.7.0`, experimental — tilde pin, minor = breaking).
 - The core registers no tools; the application lists tool FQCNs in params.
 - Default session store is file-based (FPM-safe): MCP sessions span requests,
   the SDK in-memory default loses them between FPM workers.

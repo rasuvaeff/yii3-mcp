@@ -101,10 +101,15 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   reintroduce a pre-modifier collision check: it would reject configurations
   where the modifier's rename no longer collides, and miss ones where it
   newly does.
-- **`mcp/sdk` is pinned `~0.6.0` (tilde, not caret).** The SDK is experimental
+- **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect
-  API drift. After SDK 1.0 → `^1.0` and a major of this package.
+  API drift. After SDK 1.0 → `^1.0` and a major of this package. The 0.6.0 →
+  0.7.0 bump was verified empirically (full build + mutation + bc-check, not
+  just a changelog read) before merging — every class this package depends on
+  (`Tool`, `ToolAnnotations`, `Registry`, `NameValidator`) was byte-for-byte
+  unchanged; do the same verification on any future bump, don't assume a minor
+  is safe from the changelog alone.
 - **Empty JSON Schema `properties` must serialize as `{}`.** The SDK
   normalizes `[]` → `\stdClass` only inside `Tool::fromArray()`; the OpenAPI
   bridge builds `Tool` directly, so `InputSchemaBuilder` does it explicitly and
@@ -112,8 +117,9 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   makes clients reject the entire `tools/list` (`expected record, received
   array`). The SDK's own `ToolInputSchema` docblock contradicts what the SDK
   stores there, so `psalm.xml` suppresses `ArgumentTypeCoercion` for
-  `Mcp\Schema\Tool::__construct` — the package's only suppression; revisit it
-  when the `mcp/sdk` pin moves off `~0.6.0`.
+  `Mcp\Schema\Tool::__construct` — the package's only suppression; still
+  present in 0.7.0 (confirmed by temporarily removing it), revisit whenever
+  the pin moves again.
 - **Session store default must be FPM-safe.** MCP Streamable HTTP sessions
   span requests (`initialize` → `Mcp-Session-Id` → subsequent calls); the
   SDK's `InMemorySessionStore` default silently breaks under PHP-FPM.
