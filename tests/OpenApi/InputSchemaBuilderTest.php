@@ -35,6 +35,16 @@ final class InputSchemaBuilderTest
         Assert::same($schema['required'], []);
     }
 
+    public function operationWithoutArgumentsSerializesPropertiesAsJsonObject(): void
+    {
+        $schema = (new InputSchemaBuilder())->build($this->spec->get('getSitemap'));
+
+        // "[]" here breaks the whole tools/list for clients validating the
+        // schema as a record; the SDK only normalizes this in Tool::fromArray()
+        Assert::same(json_encode($schema['properties'], JSON_THROW_ON_ERROR), '{}');
+        Assert::same($schema['required'], []);
+    }
+
     public function pathParametersAreAlwaysRequired(): void
     {
         $schema = (new InputSchemaBuilder())->build($this->spec->get('getBlogTagBySlug'));

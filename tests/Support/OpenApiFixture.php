@@ -85,6 +85,17 @@ final readonly class OpenApiFixture
                         ],
                     ],
                 ],
+                '/rest/sitemap' => [
+                    'get' => [
+                        'operationId' => 'getSitemap',
+                        'summary' => 'Sitemap',
+                        // no parameters, no request body: the input schema has
+                        // no properties at all
+                        'responses' => [
+                            '200' => ['description' => 'Sitemap'],
+                        ],
+                    ],
+                ],
                 '/rest/no-id' => [
                     'get' => ['summary' => 'operation without operationId'],
                 ],

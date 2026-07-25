@@ -614,6 +614,21 @@ final class SpecIndexTest
         ]);
     }
 
+    public function emptyPropertiesAreOmittedFromOutputSchema(): void
+    {
+        // kept as an empty array it would serialize to "properties": [] and be
+        // rejected as "not a record"; the key is optional, so it is dropped
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => 'object',
+                'properties' => [],
+                'required' => [],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object', 'required' => []]);
+    }
+
     public function emptyDescriptionIsOmittedFromOutputSchema(): void
     {
         $schema = $this->operationWithResponses([
