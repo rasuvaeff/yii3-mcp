@@ -284,6 +284,33 @@ final class McpDoctorTest
         Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
     }
 
+    public function expectedHostMatchingIsCaseInsensitive(): void
+    {
+        $report = $this->doctor(
+            expectedHttpHost: 'MCP.EXAMPLE.TEST',
+            allowedHosts: ['unused.example.test', 'mcp.example.test'],
+        )->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
+    }
+
+    public function allowedHostMatchingIsCaseInsensitiveAcrossTheFullList(): void
+    {
+        $report = $this->doctor(
+            expectedHttpHost: 'mcp.example.test',
+            allowedHosts: ['unused.example.test', 'MCP.EXAMPLE.TEST'],
+        )->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
+    }
+
+    public function loopbackHostsAreAlwaysAllowed(): void
+    {
+        $report = $this->doctor(expectedHttpHost: '127.0.0.1')->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
+    }
+
     /**
      * @param array<string, string> $headers
      * @param list<string> $clientIds
