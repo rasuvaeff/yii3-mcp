@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use InvalidArgumentException;
+use Mcp\Schema\Tool;
+use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
@@ -16,7 +18,10 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Testo\Assert;
@@ -229,6 +234,115 @@ final class OpenApiServerConfiguratorTest
         Assert::string($caught->getMessage())->contains('getBlogTagBySlug');
     }
 
+    public function operationModifierCanChangeDescriptionAndAnnotations(): void
+    {
+        $modifier = new CallbackOperationModifier(
+            static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                name: $tool->name,
+                title: $tool->title,
+                inputSchema: $tool->inputSchema,
+                description: 'Custom: ' . $operation->operationId,
+                annotations: new ToolAnnotations(readOnlyHint: true),
+                outputSchema: $tool->outputSchema,
+            ),
+        );
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 13, 'method' => 'tools/list'], $sessionId);
+
+        $tool = $this->decode($response)['result']['tools'][0];
+        Assert::same($tool['description'], 'Custom: getBlogTags');
+        Assert::true($tool['annotations']['readOnlyHint']);
+    }
+
+    public function operationModifierAppliesAfterToolNamesRename(): void
+    {
+        $seenNames = [];
+        $modifier = new CallbackOperationModifier(static function (Operation $operation, Tool $tool) use (&$seenNames): Tool {
+            $seenNames[] = $tool->name;
+
+            return $tool;
+        });
+        $action = $this->action(
+            new FakeHttpClient(),
+            ['getBlogTags'],
+            toolNames: ['getBlogTags' => 'blog_tags_list'],
+            modifier: $modifier,
+        );
+        $this->initialize($action);
+
+        Assert::same($seenNames, ['blog_tags_list']);
+    }
+
+    public function operationModifierCanRenameTheTool(): void
+    {
+        $modifier = new CallbackOperationModifier(
+            static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                name: 'renamed_by_modifier',
+                title: $tool->title,
+                inputSchema: $tool->inputSchema,
+                description: $tool->description,
+                annotations: $tool->annotations,
+                outputSchema: $tool->outputSchema,
+            ),
+        );
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 14, 'method' => 'tools/list'], $sessionId);
+
+        Assert::same(array_column($this->decode($response)['result']['tools'], 'name'), ['renamed_by_modifier']);
+    }
+
+    public function operationModifierRenamingToAnInvalidNameFailsAtBuildTime(): void
+    {
+        $modifier = new CallbackOperationModifier(
+            static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                name: 'invalid tool name',
+                title: $tool->title,
+                inputSchema: $tool->inputSchema,
+                description: $tool->description,
+                annotations: $tool->annotations,
+                outputSchema: $tool->outputSchema,
+            ),
+        );
+
+        $caught = null;
+
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('invalid tool name');
+    }
+
+    public function operationModifierRenamingToACollidingNameFailsAtBuildTime(): void
+    {
+        $modifier = new CallbackOperationModifier(
+            static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                name: 'getBlogTagBySlug',
+                title: $tool->title,
+                inputSchema: $tool->inputSchema,
+                description: $tool->description,
+                annotations: $tool->annotations,
+                outputSchema: $tool->outputSchema,
+            ),
+        );
+
+        $caught = null;
+
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags', 'getBlogTagBySlug'], modifier: $modifier);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('getBlogTagBySlug');
+    }
+
     public function emptyAllowListExposesNothing(): void
     {
         $action = $this->action(new FakeHttpClient(), []);
@@ -243,8 +357,13 @@ final class OpenApiServerConfiguratorTest
      * @param list<string> $operations
      * @param array<string, string> $toolNames
      */
-    private function action(FakeHttpClient $client, array $operations, bool $safeMethodsOnly = false, array $toolNames = []): McpAction
-    {
+    private function action(
+        FakeHttpClient $client,
+        array $operations,
+        bool $safeMethodsOnly = false,
+        array $toolNames = [],
+        ?OperationModifierInterface $modifier = null,
+    ): McpAction {
         $factory = new Psr17Factory();
 
         $configurator = new OpenApiServerConfigurator(
@@ -258,6 +377,7 @@ final class OpenApiServerConfiguratorTest
             operations: $operations,
             safeMethodsOnly: $safeMethodsOnly,
             toolNames: $toolNames,
+            modifier: $modifier,
         );
 
         $server = (new McpServerFactory(

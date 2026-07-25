@@ -193,6 +193,7 @@ $configurator = new OpenApiServerConfigurator(
     operations: ['getBlogTags'],   // allow-list of operationIds; empty = nothing
     safeMethodsOnly: true,         // reject non-GET at build time (read-only bridge)
     toolNames: ['getBlogTags' => 'blog_tags_list'],   // optional operationId => tool name
+    modifier: $myOperationModifier,   // optional OperationModifierInterface
 );
 $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 ```
@@ -238,13 +239,22 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 - `toolNames` maps operationId => tool name; an operationId in `toolNames`
   absent from `operations` => `InvalidArgumentException` at build time; two
   operations resolving to the same final name => `InvalidSpecException`.
+- `OperationModifierInterface::modify(Operation $operation, Tool $tool): Tool`
+  runs once per bridged operation, after the `toolNames` rename — returns a
+  changed Tool (description, annotations, a further name change). A name
+  change is validated and checked for collisions exactly like a `toolNames`
+  rename (same exceptions). `Operation` is a read-only `@api` VO (operationId,
+  method, path, description, parameters, requestBodySchema,
+  requestBodyRequired, outputSchema) — construct it yourself only in tests.
+  Config: `openapi.operation_modifier` (FQCN, DI-resolved).
 - A `null` argument for a path/query parameter is skipped like an omitted
   one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
   notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
   string.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
-  `base_url` / `operations` / `tool_names` / `headers` / `cache_ttl` (PSR-16,
-  raw document, 0 disables) / `identity_provider` / `delegated_header_provider`.
+  `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers` /
+  `cache_ttl` (PSR-16, raw document, 0 disables) / `identity_provider` /
+  `delegated_header_provider`.
 
 ### Tool-call interceptors
 

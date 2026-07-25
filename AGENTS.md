@@ -29,9 +29,10 @@ PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
 FilteredListResourcesHandler, FilteredListResourceTemplatesHandler are
 @internal}`,
-`OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator, SpecLoader,
-ExecutionIdentity, ExecutionIdentityProviderInterface,
-DelegatedHeaderProviderInterface}`, `Prompts\MarkdownPromptsConfigurator` (file format is
+`OpenApi\{SpecIndex, ToolNameValidator are @internal; OpenApiServerConfigurator,
+SpecLoader, Operation, OperationModifierInterface, ExecutionIdentity,
+ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface}`,
+`Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in
 `Exception\`, `OpenApi\Exception\` and `Prompts\Exception\`
 (`Testing\SseFrame` is @internal).
@@ -66,6 +67,18 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 ## Invariants & gotchas
 
+- **`OpenApi\Operation` is `@api` (promoted from `@internal`) specifically to
+  serve as the read-only context passed to `OperationModifierInterface::modify()`.**
+  It stays a small readonly VO — do not grow it into a general-purpose object;
+  add fields only when the modifier genuinely needs them.
+- **A tool-name change is validated identically wherever it happens.** Both a
+  `tool_names` rename and an `OperationModifierInterface`-returned name reuse
+  `OpenApi\ToolNameValidator` (`@internal`, shared with `SpecIndex`) and are
+  checked for collisions against the SAME `$usedNames` map, evaluated only
+  ONCE — after the modifier ran, on the final served name. Do not
+  reintroduce a pre-modifier collision check: it would reject configurations
+  where the modifier's rename no longer collides, and miss ones where it
+  newly does.
 - **`mcp/sdk` is pinned `~0.6.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect

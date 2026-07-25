@@ -667,6 +667,45 @@ payload всё равно приходит как `structuredContent`, прос�
 `HttpOperationExecutor` + `OpenApiServerConfigurator` (`ServerConfiguratorInterface`,
 generic extension point для `McpServerFactory::create(tools, configurators)`).
 
+### Кастомизация на уровне operation
+
+`OperationModifierInterface` - hook на уровне отдельной operation,
+применяется после `tool_names` rename - для изменения description,
+добавления annotations или дальнейшего переименования без написания
+целого `ServerConfiguratorInterface`:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'openapi' => [
+        'operation_modifier' => MyOperationModifier::class,   // DI-resolved
+    ],
+],
+```
+
+```php
+use Mcp\Schema\Tool;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
+
+final readonly class MyOperationModifier implements OperationModifierInterface
+{
+    public function modify(Operation $operation, Tool $tool): Tool
+    {
+        return new Tool(
+            name: $tool->name,
+            title: $tool->title,
+            inputSchema: $tool->inputSchema,
+            description: $tool->description . ' (read-only bridge)',
+            annotations: $tool->annotations,
+            outputSchema: $tool->outputSchema,
+        );
+    }
+}
+```
+
+Смена имени из modifier валидируется и проверяется на коллизии так же, как
+`tool_names` rename - fail-closed, как и везде в bridge.
+
 ## Компоненты
 
 | Class | Роль |
@@ -697,6 +736,8 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 | `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session фильтры prompts/resources (params `prompt_visibility` / `resource_visibility`): списки скрывают, прямой get/read отвечает not-found |
 | `Interceptor\CallOutcome` | единый словарь `success`/`rejected`/`error` для audit/telemetry бриджей (`fromThrowable()`) |
 | `OpenApi\OpenApiServerConfigurator` | публикует allow-listed OpenAPI operations как tools через HTTP |
+| `OpenApi\OperationModifierInterface` | hook кастомизации на уровне operation, применяется после `tool_names` rename |
+| `OpenApi\Operation` | read-only контекст operation, передаваемый в `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 
 ## Безопасность

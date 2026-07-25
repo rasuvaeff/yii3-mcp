@@ -93,6 +93,11 @@ return [
             // execution and delegated headers stay keyed by operationId;
             // interceptors/visibility rules must reference the RENAMED name.
             'tool_names' => [],
+            // FQCN of an OpenApi\OperationModifierInterface, resolved through
+            // the container; called once per bridged operation after the
+            // tool_names rename to customize description/annotations/name
+            // further. Empty = disabled.
+            'operation_modifier' => '',
             'headers' => [],
             // PSR-16 TTL for URL specs. 0 preserves fetch-on-every-build.
             'cache_ttl' => 0,

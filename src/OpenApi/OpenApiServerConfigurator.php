@@ -24,8 +24,9 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
  * from the document throws UnknownOperationException at build time; with
  * $safeMethodsOnly a non-GET operation in the allow-list throws
  * UnsafeOperationException instead of being exposed; an unknown operationId
- * in $toolNames throws InvalidArgumentException, and a rename that is
- * invalid or collides with another tool's name throws InvalidSpecException.
+ * in $toolNames throws InvalidArgumentException, and a rename — from
+ * $toolNames or from $modifier — that is invalid or collides with another
+ * tool's name throws InvalidSpecException.
  *
  * @api
  */
@@ -41,6 +42,11 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
      *                                         calls stay keyed by operationId — only the served tool
      *                                         name changes, so interceptors/visibility rules must
      *                                         reference the RENAMED name.
+     * @param ?OperationModifierInterface $modifier optional per-operation customization, applied after
+     *                                              the $toolNames rename; may change the tool further
+     *                                              (description, annotations, name) — a further name
+     *                                              change is validated and checked for collisions the
+     *                                              same way as a $toolNames rename
      */
     public function __construct(
         private SpecIndex $spec,
@@ -48,6 +54,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
         private array $operations,
         private bool $safeMethodsOnly = false,
         private array $toolNames = [],
+        private ?OperationModifierInterface $modifier = null,
     ) {}
 
     #[\Override]
@@ -87,26 +94,40 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 ));
             }
 
-            if (isset($usedNames[$name])) {
+            $tool = new Tool(
+                name: $name,
+                title: null,
+                inputSchema: $schemaBuilder->build($operation),
+                description: $operation->description === '' ? null : $operation->description,
+                annotations: null,
+                outputSchema: $operation->outputSchema,
+            );
+
+            if ($this->modifier !== null) {
+                $tool = $this->modifier->modify($operation, $tool);
+            }
+
+            if ($tool->name !== $name && !ToolNameValidator::isValid($tool->name)) {
                 throw new InvalidSpecException(sprintf(
-                    'Operations "%s" and "%s" both resolve to tool name "%s" — rename one of them via tool_names',
-                    $usedNames[$name],
+                    'The operation modifier renamed operation "%s" to "%s", which cannot be used as an MCP tool name',
                     $operationId,
-                    $name,
+                    $tool->name,
                 ));
             }
 
-            $usedNames[$name] = $operationId;
+            if (isset($usedNames[$tool->name])) {
+                throw new InvalidSpecException(sprintf(
+                    'Operations "%s" and "%s" both resolve to tool name "%s" — rename one of them via tool_names or the operation modifier',
+                    $usedNames[$tool->name],
+                    $operationId,
+                    $tool->name,
+                ));
+            }
+
+            $usedNames[$tool->name] = $operationId;
 
             $builder->add(
-                definition: new Tool(
-                    name: $name,
-                    title: null,
-                    inputSchema: $schemaBuilder->build($operation),
-                    description: $operation->description === '' ? null : $operation->description,
-                    annotations: null,
-                    outputSchema: $operation->outputSchema,
-                ),
+                definition: $tool,
                 handler: new BridgedToolHandler(operation: $operation, executor: $this->executor),
             );
         }

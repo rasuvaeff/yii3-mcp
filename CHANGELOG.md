@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Add `OpenApi\OperationModifierInterface` (`openapi.operation_modifier`
+  param): a per-operation customization hook, applied after the
+  `tool_names` rename, for changing a bridged tool's description,
+  annotations, or name without writing a full
+  `ServerConfiguratorInterface`. `OpenApi\Operation` is now `@api` to serve
+  as its read-only context.
 - Add `openapi.tool_names` (`toolNames` on `OpenApiServerConfigurator`): rename
   an operationId into an LLM-friendly MCP tool name. The allow-list, handler
   execution and delegated-header calls stay keyed by operationId — only the

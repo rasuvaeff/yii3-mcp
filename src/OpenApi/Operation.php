@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
 /**
- * One OpenAPI operation, reduced to what the MCP bridge needs.
+ * One OpenAPI operation, reduced to what the MCP bridge needs. Read-only
+ * context passed to OperationModifierInterface::modify() — construct it
+ * yourself only in tests.
  *
- * @internal
+ * @api
  */
 final readonly class Operation
 {

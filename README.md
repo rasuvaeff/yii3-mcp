@@ -676,6 +676,45 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 `ServerConfiguratorInterface` — the generic extension point accepted by
 `McpServerFactory::create(tools, configurators)`).
 
+### Per-operation customization
+
+`OperationModifierInterface` is a per-operation hook, applied after the
+`tool_names` rename — for changing a description, adding annotations, or
+renaming further, without writing a whole `ServerConfiguratorInterface`:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'openapi' => [
+        'operation_modifier' => MyOperationModifier::class,   // DI-resolved
+    ],
+],
+```
+
+```php
+use Mcp\Schema\Tool;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
+
+final readonly class MyOperationModifier implements OperationModifierInterface
+{
+    public function modify(Operation $operation, Tool $tool): Tool
+    {
+        return new Tool(
+            name: $tool->name,
+            title: $tool->title,
+            inputSchema: $tool->inputSchema,
+            description: $tool->description . ' (read-only bridge)',
+            annotations: $tool->annotations,
+            outputSchema: $tool->outputSchema,
+        );
+    }
+}
+```
+
+A name change from the modifier is validated and checked for collisions the
+same way as a `tool_names` rename — fail-closed, same as everywhere else in
+the bridge.
+
 ## Components
 
 | Class | Role |
@@ -706,6 +745,8 @@ For custom scenarios use the pieces directly: `SpecIndex` +
 | `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session prompt/resource filters (`prompt_visibility` / `resource_visibility` params): lists omit, direct get/read reports not-found |
 | `Interceptor\CallOutcome` | shared `success`/`rejected`/`error` vocabulary for audit/telemetry bridges (`fromThrowable()`) |
 | `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
+| `OpenApi\OperationModifierInterface` | per-operation customization hook, applied after the `tool_names` rename |
+| `OpenApi\Operation` | read-only operation context passed to `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 
 ## Security

@@ -27,6 +27,7 @@ use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
@@ -62,7 +63,7 @@ return [
         'definition' => static function (McpServerFactory $factory, ContainerInterface $container) use ($params): Server {
             /** @var list<class-string> $tools */
             $tools = $params['rasuvaeff/yii3-mcp']['tools'];
-            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>} $openapi */
+            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|''} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             $configurators = [];
@@ -95,6 +96,10 @@ return [
                 /** @var ?DelegatedHeaderProviderInterface $delegatedHeaderProvider */
                 $delegatedHeaderProvider = $delegatedHeaderProviderClass === '' ? null : $container->get($delegatedHeaderProviderClass);
 
+                $operationModifierClass = $openapi['operation_modifier'] ?? '';
+                /** @var ?OperationModifierInterface $operationModifier */
+                $operationModifier = $operationModifierClass === '' ? null : $container->get($operationModifierClass);
+
                 $configurators[] = new OpenApiServerConfigurator(
                     spec: $spec,
                     executor: new HttpOperationExecutor(
@@ -109,6 +114,7 @@ return [
                     operations: $openapi['operations'],
                     safeMethodsOnly: $openapi['safe_methods_only'] ?? false,
                     toolNames: $openapi['tool_names'] ?? [],
+                    modifier: $operationModifier,
                 );
             }
 
