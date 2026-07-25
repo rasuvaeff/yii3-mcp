@@ -432,10 +432,16 @@ entirely on a hit — opt in by tool name (for the OpenAPI bridge, the
 
 Requires a PSR-16 `CacheInterface` in the container. The cache key always
 includes the resolved client id — a shared cache between distinct clients
-would leak one client's result to another. Only successful results are
-cached; a thrown exception never is. A cache read/write failure fails
+would leak one client's result to another. When `openapi.identity_provider`
+is configured, the resolved `ExecutionIdentity` is part of the key too:
+delegated upstream credentials mean the same tool and arguments can produce
+identity-specific results, and the identity may be finer-grained than the
+client id (many end users behind one MCP client). Only successful results
+are cached; a thrown exception never is. A cache read/write failure fails
 **open** (the tool runs) — this is an availability optimization, not a
-security gate.
+security gate. An identity **provider** failure, by contrast, fails
+**closed** for cached tools: serving a result without knowing whose it is
+would be exactly the leak the key exists to prevent.
 
 Interceptor order is fixed: session budget (outermost) → configured
 `interceptors` → caching → result size limit (innermost, closest to the
@@ -759,7 +765,13 @@ limited to scalar `string`, `integer`, `number` and `boolean` schemas with the
 OpenAPI defaults (`simple` path, `form` query). Header/cookie parameters,
 external or non-scalar parameter schemas, custom serialization, non-default
 `explode` and `allowReserved=true` throw `InvalidSpecException` when the
-operation is selected. Fixed upstream headers belong in `headers`/
+operation is selected. A path argument that is a bare dot segment (`.` or
+`..`) is rejected at call time — `rawurlencode` keeps dots verbatim, and a
+`..` value would climb out of the allow-listed route on upstreams that
+normalize dot segments, with the bridge's credentials. The base URL must not
+embed credentials (userinfo) or carry a query string/fragment — dry-run
+previews return the full URL to the caller, so the base URL is never allowed
+to be a credential carrier. Fixed upstream headers belong in `headers`/
 `HttpOperationExecutor::defaultHeaders`. **Bridged operations execute with the
 configured upstream credentials. The upstream API does not automatically
 inherit the MCP caller identity or RBAC decision. Do not expose user/tenant-
@@ -868,7 +880,9 @@ argument. Calling the tool with `dryRun: true` returns the request that
 leaving the process (headers are never included in the preview). The flag is
 checked twice, fail-closed: an operationId absent from `dry_run` ignores a
 `dryRun` argument entirely and always executes for real, even if a client
-sends it anyway.
+sends it anyway. On a dry-run-enabled operation a non-boolean `dryRun`
+value (`1`, `"true"`) is rejected with an error instead of being executed —
+a malformed flag must never turn an intended preview into a real call.
 
 Dry-run is orthogonal to `safe_methods_only`: it does not expose an operation
 the safety gate would otherwise reject — a write operation still needs
@@ -900,7 +914,7 @@ write action requires the same permission as actually calling it.
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | caps tool result size (`limits.tool_result_bytes` param) — truncates strings, rejects oversized arrays/objects |
-| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); key includes the client id |
+| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); key includes the client id and, with delegated auth, the `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
 | `Interceptor\ArgumentMasker` | shared sensitive-argument masking (`password`/`token`/… at every nesting level) for anything leaving the process |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |

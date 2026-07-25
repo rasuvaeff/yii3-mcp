@@ -6,7 +6,10 @@ namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
 use Rasuvaeff\Yii3Mcp\Interceptor\CachingToolCallInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
+use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ThrowingExecutionIdentityProvider;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -234,6 +237,130 @@ final class CachingToolCallInterceptorTest
         $interceptor = new CachingToolCallInterceptor(new FakeCache(throwOnWrite: true), ttlSeconds: ['cachedTool' => 60]);
 
         Assert::same($interceptor->intercept($this->context('cachedTool'), static fn(): string => 'ok'), 'ok');
+    }
+
+    public function distinctExecutionIdentitiesNeverShareACacheEntry(): void
+    {
+        // same client id, same tool, same arguments — only the delegated
+        // identity differs; a shared entry would serve one end user's
+        // upstream response to another
+        $provider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1'));
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], identityProvider: $provider);
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+        $provider->identity = new ExecutionIdentity(subjectId: 'user-2');
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+
+        Assert::same($calls, 2);
+    }
+
+    public function everyIdentityFieldPartitionsTheCacheKey(): void
+    {
+        $provider = new MutableExecutionIdentityProvider(new ExecutionIdentity());
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], identityProvider: $provider);
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+        $provider->identity = new ExecutionIdentity(tenantId: 'tenant-a');
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+        $provider->identity = new ExecutionIdentity(clientId: 'app-1');
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+
+        Assert::same($calls, 3);
+    }
+
+    public function sameExecutionIdentityIsServedFromCache(): void
+    {
+        $provider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1', tenantId: 'tenant-a'));
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], identityProvider: $provider);
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+        $interceptor->intercept($this->context('cachedTool'), $handler);
+
+        Assert::same($calls, 1);
+    }
+
+    public function identityProviderFailureFailsClosedForCachedTools(): void
+    {
+        // serving or storing a result without knowing whose it is would be
+        // the exact cross-identity leak the key exists to prevent — unlike
+        // a cache outage, this must NOT fail open
+        $cache = new FakeCache();
+        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], identityProvider: new ThrowingExecutionIdentityProvider());
+        $calls = 0;
+        $caught = null;
+
+        try {
+            $interceptor->intercept($this->context('cachedTool'), static function () use (&$calls): int {
+                return ++$calls;
+            });
+        } catch (RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($calls, 0);
+        Assert::same($cache->values, []);
+    }
+
+    public function identityProviderFailureDoesNotAffectUncachedTools(): void
+    {
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: [], identityProvider: new ThrowingExecutionIdentityProvider());
+
+        Assert::same($interceptor->intercept($this->context('otherTool'), static fn(): string => 'ok'), 'ok');
+    }
+
+    public function toolNameAndIdentityCannotBeConfusedByConcatenation(): void
+    {
+        // one server may cache identity-scoped and plain tools into one
+        // PSR-16 store; a tool NAME that ends with what another call's
+        // identity JSON looks like must not collapse into the same key
+        $cache = new FakeCache();
+        $withIdentity = new CachingToolCallInterceptor(
+            $cache,
+            ttlSeconds: ['t' => 60],
+            identityProvider: new MutableExecutionIdentityProvider(new ExecutionIdentity()),
+        );
+        $plain = new CachingToolCallInterceptor($cache, ttlSeconds: ['t[null,null,null]' => 60]);
+
+        $first = $withIdentity->intercept($this->context('t'), static fn(): string => 'identity-scoped');
+        $second = $plain->intercept($this->context('t[null,null,null]'), static fn(): string => 'plain');
+
+        Assert::same($first, 'identity-scoped');
+        Assert::same($second, 'plain');
+    }
+
+    public function cacheKeyIsPsr16SafeAndFormatStable(): void
+    {
+        $cache = new FakeCache();
+        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60]);
+
+        $interceptor->intercept($this->context('cachedTool', ['id' => 1]), static fn(): string => 'x');
+
+        $key = (string) array_key_first($cache->values);
+
+        // PSR-16 only guarantees keys up to 64 characters — a longer key
+        // makes a strict cache throw on every call, silently disabling
+        // caching; the format is pinned so an accidental change (which
+        // orphans every deployed cache entry) fails a test, not silently
+        Assert::same(strlen($key), 64);
+        Assert::same($key, 'yii3-mcp.toolcache.' . substr(hash('sha256', 'client|cachedTool||{"id":1}'), 0, 45));
     }
 
     public function nullResultIsCachedAndDistinguishedFromAMiss(): void

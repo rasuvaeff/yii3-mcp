@@ -256,6 +256,10 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
   notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
   string.
+- A path argument that is a bare dot segment (`.`/`..`) is rejected at call
+  time (path traversal out of the allow-listed route). The base URL must not
+  embed credentials (userinfo) or carry a query string/fragment — dry-run
+  previews return the full URL to the caller.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
   `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers` /
   `cache_ttl` (PSR-16, raw document, 0 disables) / `identity_provider` /
@@ -267,6 +271,8 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   declared `outputSchema` — without sending it and without upstream headers
   leaving the process. Checked twice, fail-closed: an operationId absent from
   `dry_run` ignores a `dryRun` argument entirely and always executes for real.
+  On a dry-run-enabled operation a non-boolean `dryRun` value is rejected
+  with an error, never executed for real.
   Orthogonal to `safeMethodsOnly` — does not expose an operation the safety
   gate would otherwise reject. An unknown operationId in `dry_run` =>
   `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
@@ -309,10 +315,15 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // Result caching (PSR-16, opt-in by tool name — for the OpenAPI bridge, the
 // SERVED name after any tool_names rename):
 // params: 'cache' => ['tools' => ['blog_tags_list' => 60]]  // toolName => TTL seconds
-// Key always includes the resolved client id (never shared across clients).
+// Key always includes the resolved client id (never shared across clients);
+// with openapi.identity_provider configured, the resolved ExecutionIdentity
+// is part of the key too (delegated credentials => identity-specific
+// results, possibly finer-grained than the client id).
 // Only successful results are cached; a thrown exception never is. A cache
 // read/write failure fails OPEN (the tool runs) — availability, not a
-// security gate.
+// security gate. An identity provider failure fails CLOSED for cached
+// tools (serving a result without knowing whose it is = the leak the key
+// prevents).
 // Chain order: session budget → configured interceptors → caching → size
 // limit (innermost). Configured interceptors (RBAC, audit) run on EVERY
 // call, including a cache hit — no ACL bypass through the cache. The size

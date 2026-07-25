@@ -46,8 +46,11 @@ return [
         // PSR-16 cache for successful tool results: tool name => TTL in
         // seconds. Empty (default) = no caching. The cache key always
         // includes the resolved client id — never share cached results
-        // between clients. Opt in only tools that are safe to cache
-        // (idempotent reads); the interceptor has no notion of which are.
+        // between clients — and, when openapi.identity_provider is set, the
+        // resolved ExecutionIdentity (delegated credentials can make results
+        // identity-specific below the client-id level). Opt in only tools
+        // that are safe to cache (idempotent reads); the interceptor has no
+        // notion of which are.
         'cache' => [
             'tools' => [],
         ],

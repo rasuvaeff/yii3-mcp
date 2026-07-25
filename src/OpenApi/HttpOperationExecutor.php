@@ -41,6 +41,22 @@ final readonly class HttpOperationExecutor
             throw new InvalidArgumentException('Base URL must not be empty');
         }
 
+        $parts = parse_url($normalized);
+
+        if (is_array($parts)) {
+            // dry-run previews return the full URL to the caller, so the
+            // base URL must never be a credential carrier; parse_url sets
+            // "user" (possibly empty) whenever a userinfo section exists,
+            // so this single check covers user:pass and :pass forms alike
+            if (isset($parts['user'])) {
+                throw new InvalidArgumentException('Base URL must not embed credentials; pass them via default or delegated headers');
+            }
+
+            if (isset($parts['query']) || isset($parts['fragment'])) {
+                throw new InvalidArgumentException('Base URL must not contain a query string or fragment');
+            }
+        }
+
         if ((!$identityProvider instanceof ExecutionIdentityProviderInterface) !== (!$delegatedHeaderProvider instanceof \Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface)) {
             throw new InvalidArgumentException('Execution identity provider and delegated header provider must be configured together');
         }
@@ -53,6 +69,22 @@ final readonly class HttpOperationExecutor
      */
     public function execute(Operation $operation, array $arguments, bool $dryRunnable = false): mixed
     {
+        // a malformed flag must not silently fall through to a REAL call —
+        // that is the dangerous direction for a write operation the caller
+        // intended to preview. The SDK's schema validation rejects
+        // non-boolean values first; this guard keeps the failure mode safe
+        // even when the executor is reached directly
+        if ($dryRunnable
+            && array_key_exists(InputSchemaBuilder::DRY_RUN_ARGUMENT, $arguments)
+            && !is_bool($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT])
+        ) {
+            throw new InvalidArgumentException(sprintf(
+                'Argument "%s" of operation "%s" must be a boolean',
+                InputSchemaBuilder::DRY_RUN_ARGUMENT,
+                $operation->operationId,
+            ));
+        }
+
         $path = $this->buildPath($operation, $arguments);
 
         if ($dryRunnable && ($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false) === true) {
@@ -137,6 +169,18 @@ final readonly class HttpOperationExecutor
             $value = $this->stringifyArgument($operation, $name, $arguments[$name]);
 
             if ($parameter['in'] === 'path') {
+                // rawurlencode keeps "." verbatim, so a "." or ".." value
+                // would survive into the upstream path and let a caller
+                // climb out of the allow-listed route on servers that
+                // normalize dot segments — with the bridge's credentials
+                if ($value === '.' || $value === '..') {
+                    throw new InvalidArgumentException(sprintf(
+                        'Argument "%s" of operation "%s" must not be a dot segment',
+                        $name,
+                        $operation->operationId,
+                    ));
+                }
+
                 $path = str_replace('{' . $name . '}', rawurlencode($value), $path);
             } else {
                 $query[$name] = $value;

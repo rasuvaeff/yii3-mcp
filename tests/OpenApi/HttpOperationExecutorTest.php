@@ -100,6 +100,28 @@ final class HttpOperationExecutorTest
         Assert::same($client->lastRequest?->getHeaderLine('X-Upstream-Operation'), 'getBlogTags');
     }
 
+    public function nonOverriddenDefaultHeadersSurviveDelegation(): void
+    {
+        // delegated headers REPLACE matching defaults, they do not evict
+        // the rest of the default header set
+        $client = new FakeHttpClient();
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            defaultHeaders: ['Authorization' => 'Bearer broad-service-token', 'X-Fixed' => 'kept'],
+            identityProvider: new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1', tenantId: 'tenant-a')),
+            delegatedHeaderProvider: new IdentityDelegatedHeaderProvider(),
+        );
+
+        $executor->execute($this->operation('getBlogTags'), []);
+
+        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer tenant-a:user-1');
+        Assert::same($client->lastRequest?->getHeaderLine('X-Fixed'), 'kept');
+    }
+
     public function delegatedProviderFailureIsFailClosedBeforeHttp(): void
     {
         $client = new FakeHttpClient();
@@ -319,15 +341,113 @@ final class HttpOperationExecutorTest
         Assert::same($client->requestCount, 1);
     }
 
-    public function dryRunOnlyTriggersOnAStrictBooleanTrue(): void
+    public function nonBooleanDryRunIsRejectedNotExecutedForReal(): void
     {
         $client = new FakeHttpClient();
 
         // a truthy-but-not-boolean value (e.g. from a lenient client) must
-        // NOT be treated as dryRun: true — only an actual boolean does
-        $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => 1], dryRunnable: true);
+        // never fall through to a REAL call the caller meant to preview —
+        // fail safe with an error instead
+        $caught = null;
+
+        try {
+            $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => 1], dryRunnable: true);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($client->requestCount, 0);
+    }
+
+    public function dryRunFalseExecutesForReal(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => false], dryRunnable: true);
 
         Assert::same($client->requestCount, 1);
+    }
+
+    public function nonBooleanDryRunIsStillIgnoredWhenTheOperationIsNotDryRunnable(): void
+    {
+        $client = new FakeHttpClient();
+
+        // for a non-dry-runnable operation the argument is undeclared noise,
+        // exactly like `dryRun: true` — not a reason to reject the call
+        $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => 1], dryRunnable: false);
+
+        Assert::same($client->requestCount, 1);
+    }
+
+    public function dotSegmentPathArgumentIsRejected(): void
+    {
+        $client = new FakeHttpClient();
+
+        // rawurlencode leaves "." verbatim: ".." would climb out of the
+        // allow-listed route on upstreams that normalize dot segments
+        foreach (['..', '.'] as $value) {
+            $caught = null;
+
+            try {
+                $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
+            } catch (InvalidArgumentException $caught) {
+            }
+
+            Assert::notNull($caught);
+        }
+
+        Assert::same($client->requestCount, 0);
+    }
+
+    public function pathArgumentContainingDotsIsNotADotSegment(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => 'v1.2']);
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/v1.2');
+    }
+
+    public function baseUrlWithEmbeddedCredentialsThrows(): void
+    {
+        $factory = new Psr17Factory();
+
+        Expect::exception(InvalidArgumentException::class);
+
+        new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://svc:secret@api.test/',
+        );
+    }
+
+    public function baseUrlWithQueryStringThrows(): void
+    {
+        $factory = new Psr17Factory();
+
+        Expect::exception(InvalidArgumentException::class);
+
+        new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/?api_key=secret',
+        );
+    }
+
+    public function baseUrlWithFragmentThrows(): void
+    {
+        $factory = new Psr17Factory();
+
+        Expect::exception(InvalidArgumentException::class);
+
+        new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/#fragment',
+        );
     }
 
     private function multiQueryOperation(): \Rasuvaeff\Yii3Mcp\OpenApi\Operation

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- `CachingToolCallInterceptor`: the cache key now also includes the resolved
+  `ExecutionIdentity` when `openapi.identity_provider` is configured —
+  delegated upstream credentials can make results identity-specific below
+  the client-id level, and a key partitioned by client id alone could serve
+  one end user's upstream response to another. An identity provider failure
+  fails closed for cached tools (a cache outage still fails open). The key
+  is also shortened to PSR-16's guaranteed 64 characters (truncated sha256)
+  so strict cache implementations no longer silently disable caching;
+  previously written entries are orphaned until their TTL expires.
+- OpenAPI bridge: a dry-run-enabled operation now rejects a
+  present-but-non-boolean `dryRun` value with an error instead of executing
+  the real call — a malformed preview intent must never become a real write.
+- OpenAPI bridge: path arguments that are bare dot segments (`.`/`..`) are
+  rejected at call time — `rawurlencode` keeps dots verbatim, and `..` could
+  climb out of the allow-listed route on upstreams that normalize dot
+  segments.
+- OpenAPI bridge: `HttpOperationExecutor` rejects a base URL with embedded
+  credentials (userinfo) or a query string/fragment at construction —
+  dry-run previews return the full URL to the caller, so the base URL must
+  never carry credentials.
 - Add `openapi.dry_run` (`dryRunOperations` on `OpenApiServerConfigurator`):
   an operationId in the list gets an extra `dryRun` boolean input argument.
   Calling with `dryRun: true` returns the request that would be sent

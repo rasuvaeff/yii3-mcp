@@ -56,6 +56,11 @@ sessions) come from `mcp/sdk` (`~0.7.0`, minor = breaking) — never invent them
    still runs every configured interceptor — never reorder caching to wrap
    around them. The cache key always includes the resolved client id;
    sharing one key across clients would leak one client's result to another.
+   With `openapi.identity_provider` configured, the resolved
+   `ExecutionIdentity` is part of the key too — delegated upstream
+   credentials mean results can be identity-specific, finer-grained than
+   the client id. An identity provider failure fails closed for cached
+   tools.
 
 ## Canonical usage
 

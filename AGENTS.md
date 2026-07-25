@@ -74,13 +74,23 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   interceptors and the size limit, never around user interceptors — RBAC/
   audit must run on every call including a cache hit, or caching becomes an
   ACL bypass. Never reorder without preserving this.
-- **`CachingToolCallInterceptor`'s cache key MUST include the resolved
-  client id.** A cache shared across distinct clients leaks one client's
-  result to another — this is not a configurable trade-off. A cache miss
-  falls back to `'anonymous'` (stdio has no client id), never to a shared
-  key. Cached values are wrapped (`['v' => $result]`) specifically to
-  distinguish a genuine `null` tool result from a cache miss (PSR-16's
-  `get()` returns `null` on both).
+- **`CachingToolCallInterceptor`'s cache key MUST include everything the
+  result's identity depends on: the resolved client id AND, when
+  `openapi.identity_provider` is configured, the resolved
+  `ExecutionIdentity`.** A cache shared across distinct clients leaks one
+  client's result to another — this is not a configurable trade-off; with
+  delegated upstream credentials the identity can be finer-grained than the
+  client id (many end users behind one MCP client), so the client id alone
+  is NOT enough. A missing client id falls back to `'anonymous'` (stdio),
+  never to a shared key. An identity provider failure fails CLOSED for
+  cached tools (a cache outage fails open — availability; not knowing whose
+  result it is — never). Cached values are wrapped (`['v' => $result]`)
+  specifically to distinguish a genuine `null` tool result from a cache
+  miss (PSR-16's `get()` returns `null` on both). Keys must stay within
+  PSR-16's guaranteed 64 characters — the sha256 digest is truncated to 45
+  hex chars for that reason; a longer key makes a strict PSR-16
+  implementation throw on every call, silently disabling caching through
+  the fail-open catch.
 - **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
   A pattern starting with `tag:` matches the tool's tags (`_meta['rasuvaeff/yii3-mcp']['tags']`,
   populated by the OpenAPI bridge from OpenAPI `tags`) instead of its name;
@@ -108,13 +118,25 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   `HttpOperationExecutor::execute()`, checked against the operation itself —
   a client cannot smuggle `dryRun: true` into a non-enabled operation's
   arguments and get a preview instead of a real call, since the input schema
-  has no `additionalProperties: false` guard. The preview is returned as a
+  has no `additionalProperties: false` guard. On a dry-run-ENABLED operation
+  a present-but-non-boolean `dryRun` value throws instead of executing for
+  real — the SDK's schema validation rejects it first, but the executor's
+  own failure direction must stay safe (a malformed preview intent must
+  never become a real write). The preview is returned as a
   plain string (never an array), specifically so it never becomes
   `structuredContent` and contradicts the operation's declared
   `outputSchema`; it never includes headers, since those may carry
-  server-side credentials the caller never supplied. Dry-run does not relax
+  server-side credentials the caller never supplied — and the executor
+  rejects a base URL with embedded credentials (userinfo) or a query
+  string/fragment at construction, since the preview exposes the full URL.
+  Dry-run does not relax
   `safeMethodsOnly` — a write operation still needs it disabled to be
   exposed, dry-run or not.
+- **Bridged path arguments reject bare dot segments (`.`/`..`).**
+  `rawurlencode` keeps dots verbatim, so a `..` value would reach the
+  upstream path literally and climb out of the allow-listed route on servers
+  that normalize dot segments — with the bridge's credentials. The check
+  lives in `HttpOperationExecutor::buildPath()`; do not "simplify" it away.
 - **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect

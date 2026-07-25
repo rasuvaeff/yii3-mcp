@@ -15,6 +15,7 @@ use Nyholm\Psr7\ServerRequest;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
@@ -22,6 +23,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
@@ -135,6 +137,39 @@ final class ConfigWiringTest
 
         // the second call is served from cache — the tool ran exactly once
         Assert::same($tool->calls, 1);
+    }
+
+    public function serverDefinitionPartitionsTheToolCacheByExecutionIdentity(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+        $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+        $params['rasuvaeff/yii3-mcp']['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $tool = new CountingTool();
+        $identityProvider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1'));
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            CacheInterface::class => new FakeCache(),
+            MutableExecutionIdentityProvider::class => $identityProvider,
+        ]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $tester->callTool('count.up', []);
+        $identityProvider->identity = new ExecutionIdentity(subjectId: 'user-2');
+        $tester->callTool('count.up', []);
+
+        // the configured identity provider reached the caching interceptor:
+        // a different delegated identity is a different cache entry
+        Assert::same($tool->calls, 2);
     }
 
     public function serverDefinitionWiresToolVisibility(): void

@@ -430,9 +430,16 @@ handler на hit - opt-in по имени tool (для OpenAPI bridge - **served
 
 Требует PSR-16 `CacheInterface` в контейнере. Cache key всегда включает
 resolved client id - общий cache между разными клиентами утёк бы результат
-одного клиента другому. Кешируются только успешные results; брошенное
-exception никогда не кешируется. Ошибка чтения/записи cache fails **open**
-(tool исполняется) - это оптимизация availability, а не security gate.
+одного клиента другому. Если настроен `openapi.identity_provider`, resolved
+`ExecutionIdentity` тоже входит в key: delegated upstream credentials
+означают, что тот же tool с теми же аргументами может давать
+identity-specific результаты, а identity может быть мельче, чем client id
+(много конечных пользователей за одним MCP client). Кешируются только
+успешные results; брошенное exception никогда не кешируется. Ошибка
+чтения/записи cache fails **open** (tool исполняется) - это оптимизация
+availability, а не security gate. Ошибка identity **provider**, напротив,
+fails **closed** для кешируемых tools: отдать результат, не зная чей он, -
+ровно та утечка, ради предотвращения которой key и существует.
 
 Порядок interceptors фиксирован: session budget (самый внешний) →
 настроенные `interceptors` → caching → result size limit (самый внутренний,
@@ -754,7 +761,14 @@ parameters намеренно ограничены scalar schemas `string`, `int
 и `boolean` со стандартной OpenAPI serialization (`simple` для path, `form`
 для query). Header/cookie parameters, external или non-scalar parameter
 schemas, custom serialization, non-default `explode` и `allowReserved=true`
-приводят к `InvalidSpecException` при выборе operation. Фиксированные upstream
+приводят к `InvalidSpecException` при выборе operation. Path argument,
+являющийся голым dot segment (`.` или `..`), отклоняется при вызове -
+`rawurlencode` оставляет точки как есть, и значение `..` позволило бы выйти
+за пределы allow-listed route на upstream, нормализующем dot segments, - с
+credentials бриджа. Base URL не должен содержать credentials (userinfo),
+query string или fragment - dry-run preview возвращает полный URL
+вызывающему, поэтому base URL никогда не может быть носителем credentials.
+Фиксированные upstream
 headers задаются через `headers`/`HttpOperationExecutor::defaultHeaders`.
 **Bridged operations исполняются с настроенными upstream credentials. Upstream
 API автоматически не наследует identity MCP caller или RBAC decision. Не
@@ -859,7 +873,10 @@ final readonly class MyOperationModifier implements OperationModifierInterface
 credentials из процесса (headers никогда не попадают в preview). Флаг
 проверяется дважды, fail-closed: operationId, отсутствующий в `dry_run`,
 полностью игнорирует argument `dryRun` и всегда выполняется по-настоящему,
-даже если client всё равно его прислал.
+даже если client всё равно его прислал. На dry-run-enabled operation
+non-boolean значение `dryRun` (`1`, `"true"`) отклоняется с ошибкой, а не
+выполняется - malformed флаг никогда не должен превратить задуманный
+preview в реальный call.
 
 Dry-run ортогонален `safe_methods_only`: он не экспонирует operation, которую
 safety gate иначе бы отверг - write operation всё так же требует
@@ -891,7 +908,7 @@ preview write action требует того же permission, что и реал
 | `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap: параметр `session.budget`, anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | ограничивает размер tool result (параметр `limits.tool_result_bytes`) - обрезает strings, отклоняет oversized arrays/objects |
-| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); ключ включает client id |
+| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); ключ включает client id и, при delegated auth, `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | decorator, подключающий chain к SDK; используется `McpServerFactory` |
 | `Interceptor\ArgumentMasker` | единое sensitive-argument masking на каждом nesting level |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter: `tools/list` скрывает, `tools/call` fail-closed отклоняет |

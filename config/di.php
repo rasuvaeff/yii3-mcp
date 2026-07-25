@@ -70,6 +70,10 @@ return [
 
             $configurators = [];
 
+            $identityProviderClass = $openapi['identity_provider'] ?? '';
+            /** @var ?ExecutionIdentityProviderInterface $identityProvider */
+            $identityProvider = $identityProviderClass === '' ? null : $container->get($identityProviderClass);
+
             /** @var string $promptsPath */
             $promptsPath = $params['rasuvaeff/yii3-mcp']['prompts_path'] ?? '';
 
@@ -90,11 +94,8 @@ return [
                     ))->fromUrl($openapi['spec_path'])
                     : SpecIndex::fromFile($openapi['spec_path']);
 
-                $identityProviderClass = $openapi['identity_provider'] ?? '';
                 $delegatedHeaderProviderClass = $openapi['delegated_header_provider'] ?? '';
 
-                /** @var ?ExecutionIdentityProviderInterface $identityProvider */
-                $identityProvider = $identityProviderClass === '' ? null : $container->get($identityProviderClass);
                 /** @var ?DelegatedHeaderProviderInterface $delegatedHeaderProvider */
                 $delegatedHeaderProvider = $delegatedHeaderProviderClass === '' ? null : $container->get($delegatedHeaderProviderClass);
 
@@ -156,8 +157,15 @@ return [
                 // including a cache hit — no ACL bypass through the cache.
                 // The size limit only runs on a cache miss; the value it
                 // already limited is what gets cached, so a hit never
-                // needs re-limiting
-                $interceptors[] = new CachingToolCallInterceptor($container->get(CacheInterface::class), $cacheTools);
+                // needs re-limiting. The identity provider (when delegated
+                // auth is configured) partitions the key by ExecutionIdentity:
+                // upstream responses fetched with one identity's credentials
+                // must never be served to another, even under one client id
+                $interceptors[] = new CachingToolCallInterceptor(
+                    $container->get(CacheInterface::class),
+                    $cacheTools,
+                    identityProvider: $identityProvider,
+                );
             }
 
             /** @var int $maxResultBytes */
