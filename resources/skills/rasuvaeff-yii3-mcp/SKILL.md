@@ -4,7 +4,9 @@ description: >-
   Expose Yii3 application services as MCP tools/resources over the official
   mcp/sdk — McpServerFactory, McpAction (PSR-15 Streamable HTTP),
   SharedSecretMiddleware, tool-call interceptors (SessionBudgetInterceptor,
-  RateLimitInterceptor, ArgumentMasker), tool visibility, OpenAPI bridge,
+  RateLimitInterceptor, ResponseSizeLimitInterceptor,
+  CachingToolCallInterceptor, ArgumentMasker), tool visibility (name and
+  tag: patterns), OpenAPI bridge (tool_names, OperationModifierInterface),
   Testing\McpTester + SchemaSnapshot. Use when writing, reviewing or debugging
   MCP server code in a project that has this package installed.
 ---
@@ -47,6 +49,13 @@ sessions) come from `mcp/sdk` (`~0.6.0`, minor = breaking) — never invent them
 
 6. **Sessions must stay FPM-safe.** The shipped default is `FileSessionStore`;
    the SDK's in-memory store silently loses sessions between FPM workers.
+
+7. **Caching must never bypass RBAC/audit.** The interceptor chain order is
+   fixed: session budget → configured `interceptors` (RBAC, audit, …) →
+   `CachingToolCallInterceptor` → `ResponseSizeLimitInterceptor`. A cache hit
+   still runs every configured interceptor — never reorder caching to wrap
+   around them. The cache key always includes the resolved client id;
+   sharing one key across clients would leak one client's result to another.
 
 ## Canonical usage
 

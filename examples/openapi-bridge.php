@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Mcp\Schema\Tool;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
@@ -11,6 +12,8 @@ use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Yiisoft\Test\Support\Container\SimpleContainer;
@@ -30,6 +33,7 @@ $spec = SpecIndex::fromJson(json_encode([
             'get' => [
                 'operationId' => 'getBlogTags',
                 'summary' => 'List blog tags',
+                'tags' => ['catalog'],   // propagated into the tool's _meta
                 'parameters' => [
                     ['name' => 'locale', 'in' => 'query', 'schema' => ['type' => 'string']],
                 ],
@@ -71,6 +75,25 @@ $httpClient = new class implements ClientInterface {
     }
 };
 
+// Per-operation customization, applied after the tool_names rename below —
+// here it appends a note to the description; a name change would be
+// validated and checked for collisions exactly like a tool_names rename.
+$modifier = new class implements OperationModifierInterface {
+    #[\Override]
+    public function modify(Operation $operation, Tool $tool): Tool
+    {
+        return new Tool(
+            name: $tool->name,
+            title: $tool->title,
+            inputSchema: $tool->inputSchema,
+            description: $tool->description . ' (via OpenAPI bridge)',
+            annotations: $tool->annotations,
+            meta: $tool->meta,
+            outputSchema: $tool->outputSchema,
+        );
+    }
+};
+
 $factory = new Psr17Factory();
 $server = (new McpServerFactory(
     container: new SimpleContainer(),
@@ -89,6 +112,8 @@ $server = (new McpServerFactory(
         ),
         operations: ['getBlogTags', 'getBlogTagBySlug'],   // allow-list: everything else stays hidden
         safeMethodsOnly: true,         // non-GET in the list would fail the build
+        toolNames: ['getBlogTags' => 'blog_tags_list'],   // LLM-friendlier than the raw operationId
+        modifier: $modifier,
     ),
 ]);
 
@@ -98,10 +123,15 @@ foreach ($tester->listTools() as $tool) {
     $schema = isset($tool['outputSchema'])
         ? ' [outputSchema: ' . implode(', ', array_keys($tool['outputSchema']['properties'] ?? [])) . ']'
         : '';
-    echo "tool: {$tool['name']} — {$tool['description']}{$schema}\n";
+    $readOnly = ($tool['annotations']['readOnlyHint'] ?? false) ? ' [readOnlyHint]' : '';
+    $tags = isset($tool['_meta']['rasuvaeff/yii3-mcp']['tags'])
+        ? ' [tags: ' . implode(', ', $tool['_meta']['rasuvaeff/yii3-mcp']['tags']) . ']'
+        : '';
+    echo "tool: {$tool['name']} — {$tool['description']}{$schema}{$readOnly}{$tags}\n";
 }
 
-$result = $tester->callTool('getBlogTags', ['locale' => 'ru']);
+// renamed by tool_names; the original operationId is no longer a valid tool name
+$result = $tester->callTool('blog_tags_list', ['locale' => 'ru']);
 echo 'upstream request: ' . $httpClient->lastRequest?->getUri() . "\n";
 echo 'result: ' . $result['content'][0]['text'] . "\n";
 

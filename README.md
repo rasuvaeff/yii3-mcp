@@ -460,6 +460,45 @@ per-tool limits come from your limiter's configuration. **Fail-closed**: when
 the limiter backend throws, the call is rejected — an enforced quota must not
 silently become "unlimited" during an outage.
 
+### Retrying transient failures (bring your own retry)
+
+This package ships no retry logic — a naive blanket retry duplicates side
+effects on a non-idempotent tool (double-charging a payment, resubmitting a
+form). Scope any retry to an explicit allow-list of tools you have verified
+are idempotent, and to transient failure types only, using
+[`rasuvaeff/retry`](https://github.com/rasuvaeff/retry):
+
+```php
+use Rasuvaeff\Retry\Retry;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+
+final readonly class RetryInterceptor implements ToolCallInterceptorInterface
+{
+    /** @param list<string> $idempotentTools verified idempotent — never blanket-retry */
+    public function __construct(private array $idempotentTools) {}
+
+    public function intercept(ToolCallContext $context, callable $next): mixed
+    {
+        if (!in_array($context->toolName, $this->idempotentTools, true)) {
+            return $next();
+        }
+
+        return Retry::new()
+            ->maxAttempts(3)
+            ->withExponential(baseMs: 100, multiplier: 2.0, capMs: 2_000)
+            ->retryOn(OperationFailedException::class)   // transient failures only
+            ->run($next);
+    }
+}
+```
+
+Place it near the end of your `interceptors` list (closer to the tool call)
+— any interceptor listed before it (e.g. `RateLimitInterceptor`) wraps
+around the whole retry loop and is checked once per outer call, not once
+per attempt; listed after it, it would be re-triggered on every retry.
+
 ### Tool visibility
 
 `ConditionalToolInterface` gates registration globally at build time. To hide
@@ -828,8 +867,8 @@ See [examples/](examples/) — every script runs offline.
 | [`stdio-serve.php`](examples/stdio-serve.php) | The stdio transport `mcp:serve` runs, over in-memory streams | no |
 | [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
 | [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
-| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools | no |
-| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + session budget guard | no |
+| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools, with `tool_names` and `OperationModifierInterface` | no |
+| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + session budget guard + result size limit | no |
 | [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
 

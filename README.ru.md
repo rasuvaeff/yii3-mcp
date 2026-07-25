@@ -457,6 +457,46 @@ Interceptor ключует вызовы по client id (fallback `anonymous` д�
 бросает исключение, вызов отклоняется — enforced quota не должна молча
 превращаться в «безлимит» при аварии.
 
+### Retry транзиентных ошибок (свой retry)
+
+Пакет не несёт retry-логики - наивный blanket retry дублирует side effects
+у не-idempotent tool (двойное списание платежа, повторная отправка формы).
+Ограничьте retry явным allow-list проверенно-idempotent tools и только
+transient failure типами, используя
+[`rasuvaeff/retry`](https://github.com/rasuvaeff/retry):
+
+```php
+use Rasuvaeff\Retry\Retry;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+
+final readonly class RetryInterceptor implements ToolCallInterceptorInterface
+{
+    /** @param list<string> $idempotentTools проверенно idempotent - никогда не blanket-retry */
+    public function __construct(private array $idempotentTools) {}
+
+    public function intercept(ToolCallContext $context, callable $next): mixed
+    {
+        if (!in_array($context->toolName, $this->idempotentTools, true)) {
+            return $next();
+        }
+
+        return Retry::new()
+            ->maxAttempts(3)
+            ->withExponential(baseMs: 100, multiplier: 2.0, capMs: 2_000)
+            ->retryOn(OperationFailedException::class)   // только transient failures
+            ->run($next);
+    }
+}
+```
+
+Разместите его ближе к концу вашего списка `interceptors` (ближе к вызову
+tool) - любой interceptor, стоящий перед ним (например `RateLimitInterceptor`),
+оборачивает весь retry-loop целиком и проверяется один раз на внешний вызов,
+а не на каждую попытку; если поставить его после - он будет срабатывать на
+каждый retry.
+
 ### Видимость tools
 
 `ConditionalToolInterface` управляет registration глобально при build time.
@@ -818,8 +858,8 @@ final readonly class MyOperationModifier implements OperationModifierInterface
 | [`stdio-serve.php`](examples/stdio-serve.php) | stdio transport `mcp:serve` на in-memory streams | нет |
 | [`conditional.php`](examples/conditional.php) | registration gating через `ConditionalToolInterface` | нет |
 | [`prompts.php`](examples/prompts.php) | Markdown files как MCP prompts | нет |
-| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools | нет |
-| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker` и session budget guard | нет |
+| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools, с `tool_names` и `OperationModifierInterface` | нет |
+| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, session budget guard и result size limit | нет |
 | [`visibility.php`](examples/visibility.php) | per-session interface, declarative deny patterns и fail-closed call | нет |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` и `structuredContent` tool | нет |
 

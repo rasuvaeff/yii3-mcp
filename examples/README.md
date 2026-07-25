@@ -6,8 +6,8 @@
 | `stdio-serve.php` | The stdio transport `mcp:serve` runs — line-delimited JSON-RPC over in-memory streams | no |
 | `conditional.php` | `ConditionalToolInterface`: the same class registered or skipped depending on `shouldRegister()` | no |
 | `prompts.php` | [`prompts/`](prompts/) directory of Markdown files served as MCP prompts: `prompts/list` + rendered `prompts/get` | no |
-| `openapi-bridge.php` | Allow-listed OpenAPI operations bridged as MCP tools; the call becomes a real HTTP request (stubbed PSR-18 client) | no |
-| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`) + the session budget guard rejecting the third call | no |
+| `openapi-bridge.php` | Allow-listed OpenAPI operations bridged as MCP tools — `tool_names` rename, `OperationModifierInterface`, `readOnlyHint`/tags in `_meta`; the call becomes a real HTTP request (stubbed PSR-18 client) | no |
+| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`), the session budget guard rejecting the fourth call, and `ResponseSizeLimitInterceptor` truncating an oversized result | no |
 | `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed rejected on call | no |
 | `capability-hooks.php` | prompts/get + resources/read interceptor chains (`CallOutcome`, template variables, client-visible rejection) and prompt visibility hiding a prompt as not-found | no |
 | `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |

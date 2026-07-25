@@ -316,6 +316,15 @@ use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
 // false => ToolCallException "Rate limit exceeded"; limiter throws =>
 // fail-closed ToolCallException (enforced quota never silently unlimited).
 
+// Retrying transient failures — package ships no retry logic (a blanket
+// retry duplicates side effects on a non-idempotent tool). Recipe: wrap
+// rasuvaeff/retry's Retry::new()->run($next) in your own
+// ToolCallInterceptorInterface, scoped to an explicit allow-list of
+// verified-idempotent tool names and to transient exception types only
+// (retryOn()). Place it near the end of 'interceptors' (closer to the
+// tool) so earlier interceptors (e.g. RateLimitInterceptor) wrap the whole
+// retry loop instead of re-triggering per attempt.
+
 // Masking sensitive arguments before logging/tracing/auditing:
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
 $masker = new ArgumentMasker();               // or new ArgumentMasker(['ssn', ...])

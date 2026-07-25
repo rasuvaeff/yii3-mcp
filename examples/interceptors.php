@@ -6,6 +6,7 @@ use Mcp\Capability\Attribute\McpTool;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
+use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
@@ -33,6 +34,15 @@ final readonly class CounterTool
     public function login(string $user, string $password): string
     {
         return $password === '' ? 'denied' : 'welcome, ' . $user;
+    }
+
+    /**
+     * Returns a result far bigger than any agent needs.
+     */
+    #[McpTool(name: 'report.dump')]
+    public function dump(): string
+    {
+        return str_repeat('data ', 1_000);
     }
 }
 
@@ -70,10 +80,12 @@ $server = (new McpServerFactory(
 ))->create(
     [CounterTool::class],
     [],
-    // first = outermost: the budget guard rejects before tracing does work
-    // (in an application: params 'session' => ['budget' => 2] wires the
-    // budget interceptor automatically)
-    [new SessionBudgetInterceptor(budget: 2), new TracingInterceptor()],
+    // first = outermost: the budget guard rejects before tracing does work;
+    // the size limit goes last (innermost, closest to the tool) — in an
+    // application: params 'session' => ['budget' => 3] and
+    // 'limits' => ['tool_result_bytes' => 100] wire both automatically, in
+    // this same relative order
+    [new SessionBudgetInterceptor(budget: 3), new TracingInterceptor(), new ResponseSizeLimitInterceptor(maxBytes: 100)],
 );
 
 $tester = new McpTester($server, $factory, $factory, $factory);
@@ -82,6 +94,10 @@ $tester = new McpTester($server, $factory, $factory, $factory);
 echo $tester->callTool('auth.login', ['user' => 'alice', 'password' => 'p@ss'])['content'][0]['text'] . "\n";
 echo $tester->callTool('counter.next', ['current' => 1])['content'][0]['text'] . "\n";
 
-// third call: session budget of 2 is exhausted -> MCP tool-error envelope
+// report.dump returns 5000 bytes; the limit is 100 — truncated with a marker
+$result = $tester->callTool('report.dump', []);
+echo 'dump length=' . strlen($result['content'][0]['text']) . ': ' . $result['content'][0]['text'] . "\n";
+
+// fourth call: session budget of 3 is exhausted -> MCP tool-error envelope
 $result = $tester->callTool('counter.next', ['current' => 3]);
-echo 'third call isError=' . var_export($result['isError'], true) . ': ' . $result['content'][0]['text'] . "\n";
+echo 'fourth call isError=' . var_export($result['isError'], true) . ': ' . $result['content'][0]['text'] . "\n";
