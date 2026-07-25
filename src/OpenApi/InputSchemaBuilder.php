@@ -21,11 +21,12 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 final readonly class InputSchemaBuilder
 {
     public const string BODY_ARGUMENT = 'body';
+    public const string DRY_RUN_ARGUMENT = 'dryRun';
 
     /**
      * @return array{type: 'object', properties: array<string, mixed>|\stdClass, required: list<string>}
      */
-    public function build(Operation $operation): array
+    public function build(Operation $operation, bool $dryRunnable = false): array
     {
         $properties = [];
         $required = [];
@@ -66,6 +67,21 @@ final readonly class InputSchemaBuilder
             if ($operation->requestBodyRequired) {
                 $required[] = self::BODY_ARGUMENT;
             }
+        }
+
+        if ($dryRunnable) {
+            if (isset($properties[self::DRY_RUN_ARGUMENT])) {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" declares a parameter named "%s" that collides with the dry-run argument — the operation cannot be bridged with dry_run enabled',
+                    $operation->operationId,
+                    self::DRY_RUN_ARGUMENT,
+                ));
+            }
+
+            $properties[self::DRY_RUN_ARGUMENT] = [
+                'type' => 'boolean',
+                'description' => 'Preview the request that would be sent, without actually executing it',
+            ];
         }
 
         // an operation without arguments must serialize as "properties": {},

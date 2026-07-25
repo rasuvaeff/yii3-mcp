@@ -203,6 +203,19 @@ final class OpenApiServerConfiguratorTest
         $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
     }
 
+    public function toolNamesWithSeveralUnknownOperationIdsPluralizesTheMessage(): void
+    {
+        $caught = null;
+
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['a' => 'x', 'b' => 'y']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('operationIds: a, b');
+    }
+
     public function toolNamesRenameToInvalidNameFailsAtBuildTime(): void
     {
         $caught = null;
@@ -415,9 +428,84 @@ final class OpenApiServerConfiguratorTest
         Assert::same($this->decode($response)['result']['tools'] ?? [], []);
     }
 
+    public function dryRunOperationGetsAnExtraArgumentInToolsList(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['getBlogTags']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 19, 'method' => 'tools/list'], $sessionId);
+
+        Assert::same(
+            $this->decode($response)['result']['tools'][0]['inputSchema']['properties']['dryRun']['type'],
+            'boolean',
+        );
+    }
+
+    public function dryRunCallReturnsThePlanWithoutCallingUpstream(): void
+    {
+        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $action = $this->action($client, ['getBlogTags'], dryRunOperations: ['getBlogTags']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 20,
+            'method' => 'tools/call',
+            'params' => ['name' => 'getBlogTags', 'arguments' => ['locale' => 'ru', 'dryRun' => true]],
+        ], $sessionId);
+
+        Assert::same($client->requestCount, 0);
+
+        $body = $this->decode($response);
+        Assert::false(isset($body['error']));
+        Assert::false(isset($body['result']['structuredContent']));
+
+        /** @var array{dryRun: bool, method: string} $plan */
+        $plan = json_decode((string) $body['result']['content'][0]['text'], associative: true, flags: JSON_THROW_ON_ERROR);
+        Assert::true($plan['dryRun']);
+        Assert::same($plan['method'], 'GET');
+    }
+
+    public function dryRunFlagOnANonDryRunnableOperationIsIgnored(): void
+    {
+        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $action = $this->action($client, ['getBlogTags']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 21,
+            'method' => 'tools/call',
+            'params' => ['name' => 'getBlogTags', 'arguments' => ['dryRun' => true]],
+        ], $sessionId);
+
+        Assert::same($client->requestCount, 1);
+    }
+
+    public function dryRunWithUnknownOperationIdFailsAtBuildTime(): void
+    {
+        Expect::exception(InvalidArgumentException::class);
+
+        $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
+    }
+
+    public function dryRunWithSeveralUnknownOperationIdsPluralizesTheMessage(): void
+    {
+        $caught = null;
+
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['a', 'b']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('operationIds: a, b');
+    }
+
     /**
      * @param list<string> $operations
      * @param array<string, string> $toolNames
+     * @param list<string> $dryRunOperations
      */
     private function action(
         FakeHttpClient $client,
@@ -425,6 +513,7 @@ final class OpenApiServerConfiguratorTest
         bool $safeMethodsOnly = false,
         array $toolNames = [],
         ?OperationModifierInterface $modifier = null,
+        array $dryRunOperations = [],
     ): McpAction {
         $factory = new Psr17Factory();
 
@@ -440,6 +529,7 @@ final class OpenApiServerConfiguratorTest
             safeMethodsOnly: $safeMethodsOnly,
             toolNames: $toolNames,
             modifier: $modifier,
+            dryRunOperations: $dryRunOperations,
         );
 
         $server = (new McpServerFactory(

@@ -25,9 +25,9 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
  * from the document throws UnknownOperationException at build time; with
  * $safeMethodsOnly a non-GET operation in the allow-list throws
  * UnsafeOperationException instead of being exposed; an unknown operationId
- * in $toolNames throws InvalidArgumentException, and a rename — from
- * $toolNames or from $modifier — that is invalid or collides with another
- * tool's name throws InvalidSpecException.
+ * in $toolNames or $dryRunOperations throws InvalidArgumentException, and a
+ * rename — from $toolNames or from $modifier — that is invalid or collides
+ * with another tool's name throws InvalidSpecException.
  *
  * @api
  */
@@ -48,6 +48,11 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
      *                                              (description, annotations, name) — a further name
      *                                              change is validated and checked for collisions the
      *                                              same way as a $toolNames rename
+     * @param list<string> $dryRunOperations operationIds that get an extra `dryRun` boolean argument;
+     *                                       a call with `dryRun: true` returns the planned request
+     *                                       (method, url, body) instead of executing it. Orthogonal to
+     *                                       $safeMethodsOnly — does not expose an operation the safety
+     *                                       gate would otherwise reject.
      */
     public function __construct(
         private SpecIndex $spec,
@@ -56,6 +61,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
         private bool $safeMethodsOnly = false,
         private array $toolNames = [],
         private ?OperationModifierInterface $modifier = null,
+        private array $dryRunOperations = [],
     ) {}
 
     #[\Override]
@@ -68,6 +74,16 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 'tool_names contains unknown operationId%s: %s',
                 count($unknown) > 1 ? 's' : '',
                 implode(', ', $unknown),
+            ));
+        }
+
+        $unknownDryRun = array_diff($this->dryRunOperations, $this->operations);
+
+        if ($unknownDryRun !== []) {
+            throw new InvalidArgumentException(sprintf(
+                'dry_run contains unknown operationId%s: %s',
+                count($unknownDryRun) > 1 ? 's' : '',
+                implode(', ', $unknownDryRun),
             ));
         }
 
@@ -95,10 +111,12 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 ));
             }
 
+            $dryRunnable = in_array($operationId, $this->dryRunOperations, true);
+
             $tool = new Tool(
                 name: $name,
                 title: null,
-                inputSchema: $schemaBuilder->build($operation),
+                inputSchema: $schemaBuilder->build($operation, $dryRunnable),
                 description: $operation->description === '' ? null : $operation->description,
                 annotations: $operation->method === 'GET' ? new ToolAnnotations(readOnlyHint: true) : null,
                 meta: $operation->tags === [] ? null : ['rasuvaeff/yii3-mcp' => ['tags' => $operation->tags]],
@@ -130,7 +148,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
 
             $builder->add(
                 definition: $tool,
-                handler: new BridgedToolHandler(operation: $operation, executor: $this->executor),
+                handler: new BridgedToolHandler(operation: $operation, executor: $this->executor, dryRunnable: $dryRunnable),
             );
         }
     }

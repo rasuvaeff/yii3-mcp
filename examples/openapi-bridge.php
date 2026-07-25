@@ -114,6 +114,7 @@ $server = (new McpServerFactory(
         safeMethodsOnly: true,         // non-GET in the list would fail the build
         toolNames: ['getBlogTags' => 'blog_tags_list'],   // LLM-friendlier than the raw operationId
         modifier: $modifier,
+        dryRunOperations: ['getBlogTagBySlug'],   // adds a `dryRun` boolean argument to this tool only
     ),
 ]);
 
@@ -137,3 +138,8 @@ echo 'result: ' . $result['content'][0]['text'] . "\n";
 
 $result = $tester->callTool('getBlogTagBySlug', ['slug' => 'php']);
 echo 'structuredContent: ' . json_encode($result['structuredContent'] ?? null) . "\n";
+
+// dryRun: true previews the request without sending it — no HTTP call, no
+// upstream credentials leave the process (headers are never in the preview)
+$dryRun = $tester->callTool('getBlogTagBySlug', ['slug' => 'php', 'dryRun' => true]);
+echo 'dry-run plan: ' . $dryRun['content'][0]['text'] . "\n";

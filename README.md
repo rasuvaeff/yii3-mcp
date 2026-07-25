@@ -808,6 +808,34 @@ A name change from the modifier is validated and checked for collisions the
 same way as a `tool_names` rename — fail-closed, same as everywhere else in
 the bridge.
 
+### Dry-run: preview a call without executing it
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'openapi' => [
+        // operationIds that get an extra `dryRun` boolean argument
+        'dry_run' => ['createSubscriber'],
+    ],
+],
+```
+
+A dry-run-enabled operation's `inputSchema` gains a `dryRun: boolean`
+argument. Calling the tool with `dryRun: true` returns the request that
+*would* be sent (`operationId`, `method`, `url`, `body`) as text — never as
+`structuredContent`, so it never conflicts with the operation's declared
+`outputSchema` — without sending it, and without any upstream credentials
+leaving the process (headers are never included in the preview). The flag is
+checked twice, fail-closed: an operationId absent from `dry_run` ignores a
+`dryRun` argument entirely and always executes for real, even if a client
+sends it anyway.
+
+Dry-run is orthogonal to `safe_methods_only`: it does not expose an operation
+the safety gate would otherwise reject — a write operation still needs
+`safe_methods_only: false` (or omitted) to be exposed at all, dry-run or not.
+A dry-run call still passes through the full interceptor chain (session
+budget, RBAC/audit, caching, size limit) like any other call — previewing a
+write action requires the same permission as actually calling it.
+
 ## Components
 
 | Class | Role |

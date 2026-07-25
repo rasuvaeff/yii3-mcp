@@ -51,12 +51,21 @@ final readonly class HttpOperationExecutor
     /**
      * @param array<string, mixed> $arguments tool arguments keyed by parameter name
      */
-    public function execute(Operation $operation, array $arguments): mixed
+    public function execute(Operation $operation, array $arguments, bool $dryRunnable = false): mixed
     {
-        $request = $this->requestFactory->createRequest(
-            $operation->method,
-            $this->baseUrl . $this->buildPath($operation, $arguments),
-        );
+        $path = $this->buildPath($operation, $arguments);
+
+        if ($dryRunnable && ($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false) === true) {
+            return json_encode([
+                'dryRun' => true,
+                'operationId' => $operation->operationId,
+                'method' => $operation->method,
+                'url' => $this->baseUrl . $path,
+                'body' => $arguments[InputSchemaBuilder::BODY_ARGUMENT] ?? null,
+            ], JSON_THROW_ON_ERROR);
+        }
+
+        $request = $this->requestFactory->createRequest($operation->method, $this->baseUrl . $path);
 
         $headers = $this->defaultHeaders;
 

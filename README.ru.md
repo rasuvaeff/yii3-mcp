@@ -799,6 +799,34 @@ final readonly class MyOperationModifier implements OperationModifierInterface
 Смена имени из modifier валидируется и проверяется на коллизии так же, как
 `tool_names` rename - fail-closed, как и везде в bridge.
 
+### Dry-run: preview call без выполнения
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'openapi' => [
+        // operationId, для которых добавляется extra `dryRun` boolean argument
+        'dry_run' => ['createSubscriber'],
+    ],
+],
+```
+
+У dry-run-enabled operation `inputSchema` получает extra argument
+`dryRun: boolean`. Call tool с `dryRun: true` возвращает request, который
+*был бы* отправлен (`operationId`, `method`, `url`, `body`) как text - никогда
+как `structuredContent`, поэтому никогда не конфликтует с объявленным
+`outputSchema` operation - без реальной отправки и без утечки upstream
+credentials из процесса (headers никогда не попадают в preview). Флаг
+проверяется дважды, fail-closed: operationId, отсутствующий в `dry_run`,
+полностью игнорирует argument `dryRun` и всегда выполняется по-настоящему,
+даже если client всё равно его прислал.
+
+Dry-run ортогонален `safe_methods_only`: он не экспонирует operation, которую
+safety gate иначе бы отверг - write operation всё так же требует
+`safe_methods_only: false` (или отсутствия параметра), чтобы вообще быть
+exposed. Dry-run call всё так же проходит через весь interceptor chain
+(session budget, RBAC/audit, caching, size limit), как и любой другой call -
+preview write action требует того же permission, что и реальный call.
+
 ## Компоненты
 
 | Class | Роль |

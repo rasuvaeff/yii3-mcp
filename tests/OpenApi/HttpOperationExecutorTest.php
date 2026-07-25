@@ -277,6 +277,59 @@ final class HttpOperationExecutorTest
         );
     }
 
+    public function dryRunReturnsThePlannedRequestWithoutCallingHttp(): void
+    {
+        $client = new FakeHttpClient();
+
+        $result = $this->executor($client)->execute(
+            $this->operation('createSubscriber'),
+            ['body' => ['email' => 'user@example.com'], 'dryRun' => true],
+            dryRunnable: true,
+        );
+
+        Assert::same($client->requestCount, 0);
+        /** @var array{dryRun: bool, operationId: string, method: string, url: string, body: mixed} $plan */
+        $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
+        Assert::true($plan['dryRun']);
+        Assert::same($plan['operationId'], 'createSubscriber');
+        Assert::same($plan['method'], 'POST');
+        Assert::string($plan['url'])->contains('https://api.test/');
+        Assert::same($plan['body'], ['email' => 'user@example.com']);
+    }
+
+    public function dryRunFlagIsIgnoredWhenTheOperationIsNotDryRunnable(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->executor($client)->execute(
+            $this->operation('getBlogTags'),
+            ['dryRun' => true],
+            dryRunnable: false,
+        );
+
+        Assert::same($client->requestCount, 1);
+    }
+
+    public function dryRunnableOperationExecutesNormallyWithoutTheFlag(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->executor($client)->execute($this->operation('getBlogTags'), [], dryRunnable: true);
+
+        Assert::same($client->requestCount, 1);
+    }
+
+    public function dryRunOnlyTriggersOnAStrictBooleanTrue(): void
+    {
+        $client = new FakeHttpClient();
+
+        // a truthy-but-not-boolean value (e.g. from a lenient client) must
+        // NOT be treated as dryRun: true — only an actual boolean does
+        $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => 1], dryRunnable: true);
+
+        Assert::same($client->requestCount, 1);
+    }
+
     private function multiQueryOperation(): \Rasuvaeff\Yii3Mcp\OpenApi\Operation
     {
         return (new SpecIndex([

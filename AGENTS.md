@@ -101,6 +101,20 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   reintroduce a pre-modifier collision check: it would reject configurations
   where the modifier's rename no longer collides, and miss ones where it
   newly does.
+- **OpenAPI bridge dry-run is fail-closed by construction, not by config.**
+  `OpenApiServerConfigurator`'s `dryRunOperations` list decides which
+  operations get the extra `dryRun` inputSchema argument; the actual guard is
+  a SEPARATE boolean threaded from `BridgedToolHandler` into
+  `HttpOperationExecutor::execute()`, checked against the operation itself —
+  a client cannot smuggle `dryRun: true` into a non-enabled operation's
+  arguments and get a preview instead of a real call, since the input schema
+  has no `additionalProperties: false` guard. The preview is returned as a
+  plain string (never an array), specifically so it never becomes
+  `structuredContent` and contradicts the operation's declared
+  `outputSchema`; it never includes headers, since those may carry
+  server-side credentials the caller never supplied. Dry-run does not relax
+  `safeMethodsOnly` — a write operation still needs it disabled to be
+  exposed, dry-run or not.
 - **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect

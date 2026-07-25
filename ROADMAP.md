@@ -143,6 +143,14 @@ deliberately left out; the items below are what did fit.
   [rasuvaeff/retry](https://github.com/rasuvaeff/retry), scoped to an
   explicit allow-list of verified-idempotent tools (no code in the core —
   a blanket retry duplicates side effects on a non-idempotent tool).
+- **`openapi.dry_run`** — an operationId in the list gets an extra `dryRun`
+  boolean input argument; calling with `dryRun: true` returns the planned
+  request instead of sending it. Fail-closed by construction (a second
+  boolean threaded from the handler into the executor, not just a schema
+  property) and orthogonal to `safe_methods_only`.
+- Bump `mcp/sdk` to `~0.7.0` — verified empirically (full build + mutation +
+  bc-check) that every SDK class this package depends on is unchanged
+  between 0.6.0 and 0.7.0, not just from the changelog.
 
 Deliberately deferred: route maps / array query parameters (OpenAPI bridge,
 on demand), `PromptsAsTools`/`ResourcesAsTools` compatibility, a JWT-based
@@ -159,7 +167,7 @@ handler before any commitment.
 | Per-tenant endpoint secrets | the v1.1 tenant recipe keeps one global secret |
 | Human-in-the-loop approval for write-tools | prefer MCP task-augmented tools over homegrown pending/poll semantics |
 | Outbox mode for write-tools | record the call into [rasuvaeff/yii3-outbox](https://github.com/rasuvaeff/yii3-outbox) instead of executing — durable, retryable, human-reviewable |
-| Dry-run interface for tools | needs per-tool support; demand first |
+| Dry-run for attribute tools | shipped for the OpenAPI bridge in v1.9.0; a hand-written tool's side effects are application-specific, so this cannot be automatic — needs the tool author to write their own dry-run branch and a way to declare it (candidate: `ToolAnnotations`'s `destructiveHint`/`idempotentHint` rather than a new marker interface) |
 | Multiple named servers (admin vs public) | separate secrets/endpoints; waiting for a real case |
 
 ## Deliberately out of scope

@@ -123,6 +123,12 @@ return [
             'delegated_header_provider' => '',
             // read-only bridge: reject non-GET operations at build time
             'safe_methods_only' => false,
+            // operationIds that get an extra `dryRun` boolean argument; a call
+            // with `dryRun: true` returns the planned request (method, url,
+            // body) instead of executing it. Orthogonal to safe_methods_only —
+            // does not expose an operation the safety gate would otherwise
+            // reject.
+            'dry_run' => [],
         ],
     ],
 ];

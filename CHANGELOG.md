@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Add `openapi.dry_run` (`dryRunOperations` on `OpenApiServerConfigurator`):
+  an operationId in the list gets an extra `dryRun` boolean input argument.
+  Calling with `dryRun: true` returns the request that would be sent
+  (`operationId`, `method`, `url`, `body`) as text, without sending it and
+  without upstream headers leaving the process. Fail-closed by construction:
+  the check is a second boolean threaded from the handler into the executor,
+  so a `dryRun` argument on a non-enabled operation is always ignored.
+  Orthogonal to `safe_methods_only` — does not expose an operation the
+  safety gate would otherwise reject.
 - Bump `mcp/sdk` to `~0.7.0` (from `~0.6.0`). Verified empirically (full
   build + mutation + bc-check), not just from the changelog: every SDK class
   this package depends on (`Tool`, `ToolAnnotations`, `Registry`,

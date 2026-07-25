@@ -6,9 +6,9 @@ description: >-
   SharedSecretMiddleware, tool-call interceptors (SessionBudgetInterceptor,
   RateLimitInterceptor, ResponseSizeLimitInterceptor,
   CachingToolCallInterceptor, ArgumentMasker), tool visibility (name and
-  tag: patterns), OpenAPI bridge (tool_names, OperationModifierInterface),
-  Testing\McpTester + SchemaSnapshot. Use when writing, reviewing or debugging
-  MCP server code in a project that has this package installed.
+  tag: patterns), OpenAPI bridge (tool_names, OperationModifierInterface,
+  dry_run), Testing\McpTester + SchemaSnapshot. Use when writing, reviewing
+  or debugging MCP server code in a project that has this package installed.
 ---
 
 # rasuvaeff/yii3-mcp

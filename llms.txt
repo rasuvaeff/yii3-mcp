@@ -194,6 +194,7 @@ $configurator = new OpenApiServerConfigurator(
     safeMethodsOnly: true,         // reject non-GET at build time (read-only bridge)
     toolNames: ['getBlogTags' => 'blog_tags_list'],   // optional operationId => tool name
     modifier: $myOperationModifier,   // optional OperationModifierInterface
+    dryRunOperations: ['createSubscriber'],   // optional: adds a `dryRun` boolean argument
 );
 $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 ```
@@ -258,7 +259,19 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
   `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers` /
   `cache_ttl` (PSR-16, raw document, 0 disables) / `identity_provider` /
-  `delegated_header_provider`.
+  `delegated_header_provider` / `dry_run` (list of operationIds).
+- Dry-run: an operationId in `dry_run` (or `dryRunOperations`) gets an extra
+  `dryRun: boolean` inputSchema argument. Calling with `dryRun: true` returns
+  the planned request (`operationId`, `method`, `url`, `body`) as plain text —
+  never as `structuredContent`, so it never conflicts with the operation's
+  declared `outputSchema` — without sending it and without upstream headers
+  leaving the process. Checked twice, fail-closed: an operationId absent from
+  `dry_run` ignores a `dryRun` argument entirely and always executes for real.
+  Orthogonal to `safeMethodsOnly` — does not expose an operation the safety
+  gate would otherwise reject. An unknown operationId in `dry_run` =>
+  `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
+  call still passes through the full interceptor chain (session budget,
+  RBAC/audit, caching, size limit).
 
 ### Tool-call interceptors
 
