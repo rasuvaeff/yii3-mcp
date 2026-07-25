@@ -118,7 +118,10 @@ final readonly class HttpOperationExecutor
         foreach ($operation->parameters as $parameter) {
             $name = $parameter['name'];
 
-            if (!array_key_exists($name, $arguments)) {
+            // null is treated the same as "not passed" — OpenAPI optional
+            // scalars are nullable in the 3.1 union notation, and there is
+            // no REST distinction between an absent and a null query/path value
+            if (!array_key_exists($name, $arguments) || $arguments[$name] === null) {
                 continue;
             }
 

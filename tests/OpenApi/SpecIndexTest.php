@@ -293,6 +293,112 @@ final class SpecIndexTest
         ]);
     }
 
+    public function throwsOnToolNameWithASpace(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'get user']]],
+        ]);
+
+        $caught = null;
+
+        try {
+            $index->get('get user');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('get user');
+    }
+
+    public function toolNameWithTrailingNewlineIsRejected(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => "validName\n"]]],
+        ]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get("validName\n");
+    }
+
+    public function toolNameAtMaxLengthIsAccepted(): void
+    {
+        $name = str_repeat('a', 64);
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Assert::same($index->get($name)->operationId, $name);
+    }
+
+    public function toolNameBeyondMaxLengthIsRejected(): void
+    {
+        $name = str_repeat('a', 65);
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get($name);
+    }
+
+    public function toolNameWithAllowedCharsIsAccepted(): void
+    {
+        $name = 'get.user_by-id/v2';
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Assert::same($index->get($name)->operationId, $name);
+    }
+
+    public function toolNameWithUnicodeIsRejected(): void
+    {
+        $name = 'gëtUser';
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get($name);
+    }
+
+    public function nullableUnionScalarTypeIsAccepted(): void
+    {
+        $operation = $this->operationWithParameter([
+            'name' => 'q',
+            'in' => 'query',
+            'schema' => ['type' => ['string', 'null']],
+        ]);
+
+        Assert::same($operation->parameters[0]['schema'], ['type' => ['string', 'null']]);
+    }
+
+    public function nullFirstUnionScalarTypeIsAccepted(): void
+    {
+        $operation = $this->operationWithParameter([
+            'name' => 'q',
+            'in' => 'query',
+            'schema' => ['type' => ['null', 'integer']],
+        ]);
+
+        Assert::same($operation->parameters[0]['schema']['type'], ['null', 'integer']);
+    }
+
+    public function unionTypeWithTwoScalarMembersThrows(): void
+    {
+        Expect::exception(InvalidSpecException::class);
+
+        $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['type' => ['string', 'integer']]]);
+    }
+
+    public function unionTypeWithUnsupportedScalarThrows(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['type' => ['array', 'null']]]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('["array","null"]');
+    }
+
     public function unsupportedHeaderParameterFailsWhenOperationIsSelected(): void
     {
         $index = new SpecIndex([

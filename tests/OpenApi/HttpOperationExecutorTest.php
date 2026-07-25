@@ -234,6 +234,22 @@ final class HttpOperationExecutorTest
         Assert::false(str_contains($caught->getMessage(), '…'));
     }
 
+    public function nullQueryArgumentIsSkipped(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->executor($client)->execute($this->multiQueryOperation(), ['first' => null, 'second' => 'B']);
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/multi?second=B');
+    }
+
+    public function nullPathArgumentThrowsAsIfMissing(): void
+    {
+        Expect::exception(InvalidArgumentException::class);
+
+        $this->executor(new FakeHttpClient())->execute($this->operation('getBlogTagBySlug'), ['slug' => null]);
+    }
+
     public function missingQueryArgumentDoesNotStopLaterOnes(): void
     {
         $client = new FakeHttpClient();

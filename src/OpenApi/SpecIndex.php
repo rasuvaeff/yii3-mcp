@@ -21,6 +21,14 @@ final readonly class SpecIndex
     private const array HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
     private const int MAX_REF_DEPTH = 32;
 
+    // mcp/sdk's own Capability\Tool\NameValidator only logs a warning on a
+    // mismatch and still registers the tool; without this check a malformed
+    // operationId (space, unicode, trailing newline) would silently become
+    // an MCP tool name and surface only as an opaque tools/list rejection
+    // on the client. Charset matches the SDK validator; \z, not $ — PCRE $
+    // matches before a trailing "\n".
+    private const string TOOL_NAME_PATTERN = '/^[A-Za-z0-9._\/-]{1,64}\z/';
+
     /**
      * @var array<string, Operation>
      */
@@ -112,9 +120,23 @@ final readonly class SpecIndex
                 implode(', ', array_keys($this->operations)),
             ));
 
+        $this->assertValidToolName($operation);
         $this->assertParametersSupported($operation);
 
         return $operation;
+    }
+
+    private function assertValidToolName(Operation $operation): void
+    {
+        if (preg_match(self::TOOL_NAME_PATTERN, $operation->operationId) !== 1) {
+            throw new InvalidSpecException(sprintf(
+                'Operation "%s" (%s %s) has an operationId that cannot be used as an MCP tool name; it must match %s',
+                $operation->operationId,
+                $operation->method,
+                $operation->path,
+                self::TOOL_NAME_PATTERN,
+            ));
+        }
     }
 
     /**
@@ -338,14 +360,16 @@ final readonly class SpecIndex
             }
 
             $schema = $parameter['schema'];
-            $type = $schema === [] ? 'string' : ($schema['type'] ?? null);
+            /** @var mixed $rawType */
+            $rawType = $schema === [] ? 'string' : ($schema['type'] ?? null);
+            $type = $this->resolveScalarType($rawType);
 
-            if (!is_string($type) || !in_array($type, ['string', 'integer', 'number', 'boolean'], strict: true)) {
+            if ($type === null) {
                 throw new InvalidSpecException(sprintf(
                     'Operation "%s" parameter "%s" must use a scalar schema; type %s is not supported by the HTTP executor',
                     $operation->operationId,
                     $parameter['name'],
-                    json_encode($type, JSON_THROW_ON_ERROR),
+                    json_encode($rawType, JSON_THROW_ON_ERROR),
                 ));
             }
 
@@ -381,6 +405,32 @@ final readonly class SpecIndex
                 ));
             }
         }
+    }
+
+    /**
+     * Accepts a plain scalar type string (OpenAPI 3.0, e.g. `"string"`) or a
+     * two-element nullable union (OpenAPI 3.1, e.g. `["string", "null"]` or
+     * `["null", "integer"]`). The null branch itself needs no schema-side
+     * handling: HttpOperationExecutor skips null-valued arguments entirely.
+     */
+    private function resolveScalarType(mixed $type): ?string
+    {
+        if (is_string($type)) {
+            return in_array($type, ['string', 'integer', 'number', 'boolean'], strict: true) ? $type : null;
+        }
+
+        if (!is_array($type) || count($type) !== 2 || !in_array('null', $type, strict: true)) {
+            return null;
+        }
+
+        /** @var mixed $candidate */
+        foreach ($type as $candidate) {
+            if (is_string($candidate) && in_array($candidate, ['string', 'integer', 'number', 'boolean'], strict: true)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**

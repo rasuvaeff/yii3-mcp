@@ -633,6 +633,16 @@ path and a query parameter sharing one name — or a parameter named `body`
 alongside a request body — cannot be bridged and throws
 `InvalidSpecException` at build time.
 
+An `operationId` that cannot serve as an MCP tool name (space, unicode,
+over 64 characters — `^[A-Za-z0-9._/-]{1,64}$`) throws `InvalidSpecException`
+when the operation is selected; `mcp/sdk` itself only logs a warning and
+would otherwise register the tool anyway, surfacing only as an opaque
+`tools/list` rejection on the client. A `null` argument for a path or query
+parameter is treated the same as an omitted one (skipped, not sent as an
+empty value) — matching OpenAPI 3.1's nullable union notation
+(`{"type": ["string", "null"]}`) on scalar parameter schemas, which the
+bridge accepts alongside the plain 3.0 type string.
+
 ### Output schema from responses
 
 A bridged tool also advertises `outputSchema` in `tools/list` when the

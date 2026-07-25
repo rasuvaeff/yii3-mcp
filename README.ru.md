@@ -626,6 +626,16 @@ id/method/path и identity, но никогда raw MCP shared secret. Не пр
 одновременно с request body, не может быть bridged и бросает
 `InvalidSpecException` при build time.
 
+`operationId`, не пригодный как имя MCP tool (пробел, unicode, длиннее
+64 символов — `^[A-Za-z0-9._/-]{1,64}$`), бросает `InvalidSpecException` при
+выборе operation; сам `mcp/sdk` в этом случае только пишет warning в лог и
+всё равно регистрирует tool — проблема проявится только как непрозрачный
+отказ всего `tools/list` на стороне клиента. `null`-аргумент path/query
+parameter трактуется как отсутствующий (пропускается, а не отправляется
+пустым значением) — это соответствует nullable union нотации OpenAPI 3.1
+(`{"type": ["string", "null"]}`) для scalar parameter schemas, которую bridge
+принимает наравне с обычной 3.0 type-строкой.
+
 ### Output schema из responses
 
 Bridged tool также рекламирует `outputSchema` в `tools/list`, если operation

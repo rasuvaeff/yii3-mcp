@@ -227,6 +227,13 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `InvalidSpecException` when selected. Put fixed upstream headers in
   `HttpOperationExecutor::defaultHeaders`; use a custom tool for richer input.
 - Duplicate operationId values => `InvalidSpecException` while indexing.
+- operationId must match `^[A-Za-z0-9._/-]{1,64}$` to become a tool name =>
+  `InvalidSpecException` when selected (mcp/sdk itself only logs a warning
+  and registers the tool anyway on a mismatch).
+- A `null` argument for a path/query parameter is skipped like an omitted
+  one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
+  notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
+  string.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
   `base_url` / `operations` / `headers` / `cache_ttl` (PSR-16, raw document,
   0 disables) / `identity_provider` / `delegated_header_provider`.
