@@ -283,6 +283,47 @@ prompt.
 > Предводителева и вдохновлён им: один prompt file работает и в личном stdio
 > prompt manager, и на application server.
 
+## Framework-agnostic usage
+
+Несмотря на название пакета, код не имеет ни одной `yiisoft/*` runtime
+dependency - `require` в `composer.json` это PSR-интерфейсы
+(`psr/container`, `psr/http-message`, `psr/http-server-middleware`,
+`psr/http-factory`, `psr/simple-cache`, `psr/log`) плюс `mcp/sdk` и
+`symfony/console`/`yaml`. `McpServerFactory` принимает обычный
+`Psr\Container\ContainerInterface`; `McpAction` и `SharedSecretMiddleware` -
+plain PSR-15. `config/di.php` + `config/params.php` - это только
+convenience-слой `yiisoft/config-plugin`; вне Yii3 те же классы собираются
+руками с любым PSR-11 container и router, которые уже использует приложение
+(Laravel, Symfony, Mezzio, Slim, …):
+
+```php
+use Mcp\Server\Session\FileSessionStore;
+use Rasuvaeff\Yii3Mcp\{McpAction, McpServerFactory, SharedSecretMiddleware};
+
+// любой PSR-11 container - Yii3, PHP-DI, Laravel, рукописный
+$container = /* ... */;
+
+$sessionStore = new FileSessionStore(directory: sys_get_temp_dir() . '/mcp-sessions', ttl: 3600);
+$factory = new McpServerFactory(container: $container, sessionStore: $sessionStore, name: 'my-app', version: '1.0.0');
+$server = $factory->create([OrderTools::class]);
+
+$psr17 = /* любая PSR-17 factory, например nyholm/psr7 или guzzlehttp/psr7 */;
+$action = new McpAction(server: $server, responseFactory: $psr17, streamFactory: $psr17);
+$middleware = new SharedSecretMiddleware(secret: getenv('MCP_SECRET'), responseFactory: $psr17);
+
+// маршрутизировать POST/GET/DELETE/OPTIONS /mcp через $middleware -> $action
+// в том виде middleware-диспетчеризации, который ожидает router фреймворка
+```
+
+`McpServeCommand` (stdio) наследует
+`Symfony\Component\Console\Command\Command` напрямую и не требует Yii3
+console app - добавьте его в любой `Symfony\Component\Console\Application`.
+Что теряется без `yiisoft/config`: автоматический array-merge между
+пакетами (interceptors, visibility, OpenAPI bridge) - конструируйте
+`Interceptor\*`/`Visibility\*`/`OpenApi\OpenApiServerConfigurator` напрямую и
+передавайте их в `McpServerFactory::create()` - те же объекты, которые
+`config/di.php` строит из params, просто без сборки через config-plugin.
+
 ## Interceptors: обёртка каждого tools/call
 
 `Interceptor\ToolCallInterceptorInterface` - публичная extension point пакета
