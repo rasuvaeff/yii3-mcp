@@ -192,6 +192,31 @@ final class SpecIndexTest
         $index->get('');
     }
 
+    public function tagsAreExtractedFromTheOperation(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['admin', 'reporting']]]],
+        ]);
+
+        Assert::same($index->get('op')->tags, ['admin', 'reporting']);
+    }
+
+    public function operationWithoutTagsHasAnEmptyTagsList(): void
+    {
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => 'op']]]]);
+
+        Assert::same($index->get('op')->tags, []);
+    }
+
+    public function nonStringTagEntriesAreDropped(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['admin', 42, '', null]]]],
+        ]);
+
+        Assert::same($index->get('op')->tags, ['admin']);
+    }
+
     public function descriptionWinsOverSummary(): void
     {
         $index = new SpecIndex([

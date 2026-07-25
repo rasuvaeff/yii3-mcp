@@ -234,6 +234,68 @@ final class OpenApiServerConfiguratorTest
         Assert::string($caught->getMessage())->contains('getBlogTagBySlug');
     }
 
+    public function getOperationsAreMarkedReadOnly(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 15, 'method' => 'tools/list'], $sessionId);
+
+        Assert::true($this->decode($response)['result']['tools'][0]['annotations']['readOnlyHint']);
+    }
+
+    public function nonGetOperationsAreNotMarkedReadOnly(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['createSubscriber']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 16, 'method' => 'tools/list'], $sessionId);
+
+        Assert::false(isset($this->decode($response)['result']['tools'][0]['annotations']));
+    }
+
+    public function operationTagsAreExposedInToolMeta(): void
+    {
+        $factory = new Psr17Factory();
+        $configurator = new OpenApiServerConfigurator(
+            spec: new SpecIndex([
+                'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['catalog', 'read-only']]]],
+            ]),
+            executor: new HttpOperationExecutor(
+                httpClient: new FakeHttpClient(),
+                requestFactory: $factory,
+                streamFactory: $factory,
+                baseUrl: 'https://api.test',
+            ),
+            operations: ['op'],
+        );
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+            name: 'bridge-test',
+            version: '1.0.0',
+        ))->create([], [$configurator]);
+        $action = new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 17, 'method' => 'tools/list'], $sessionId);
+
+        Assert::same(
+            $this->decode($response)['result']['tools'][0]['_meta']['rasuvaeff/yii3-mcp']['tags'],
+            ['catalog', 'read-only'],
+        );
+    }
+
+    public function operationWithoutTagsHasNoMeta(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 18, 'method' => 'tools/list'], $sessionId);
+
+        Assert::false(isset($this->decode($response)['result']['tools'][0]['_meta']));
+    }
+
     public function operationModifierCanChangeDescriptionAndAnnotations(): void
     {
         $modifier = new CallbackOperationModifier(

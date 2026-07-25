@@ -68,6 +68,89 @@ final class DeclarativeToolVisibilityTest
         new DeclarativeToolVisibility(deny: ['']);
     }
 
+    public function throwsOnEmptyTagPattern(): void
+    {
+        Expect::exception(InvalidArgumentException::class);
+
+        new DeclarativeToolVisibility(deny: ['tag:']);
+    }
+
+    public function tagDenyPatternHidesToolsCarryingTheTag(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:admin']);
+
+        Assert::false($visibility->isVisible($this->toolWithTags('resetSystem', ['admin']), null));
+        Assert::true($visibility->isVisible($this->toolWithTags('getStatus', ['public']), null));
+    }
+
+    public function tagDenyPatternSupportsWildcards(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:admin-*']);
+
+        Assert::false($visibility->isVisible($this->toolWithTags('resetSystem', ['admin-write']), null));
+        Assert::true($visibility->isVisible($this->toolWithTags('getStatus', ['admin']), null));
+    }
+
+    public function tagPatternNeverMatchesAToolWithoutTags(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:*']);
+
+        Assert::true($visibility->isVisible($this->tool('plainTool'), null));
+    }
+
+    public function tagAllowPatternKeepsOnlyMatchingTools(): void
+    {
+        $visibility = new DeclarativeToolVisibility(allow: ['tag:public']);
+
+        Assert::true($visibility->isVisible($this->toolWithTags('getStatus', ['public']), null));
+        Assert::false($visibility->isVisible($this->toolWithTags('resetSystem', ['admin']), null));
+        Assert::false($visibility->isVisible($this->tool('plainTool'), null));
+    }
+
+    public function namePatternDoesNotAccidentallyMatchAsATagPattern(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['admin.*']);
+
+        Assert::true($visibility->isVisible($this->toolWithTags('safeTool', ['admin.reset']), null));
+    }
+
+    public function tagPatternDoesNotAlsoActAsANamePattern(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:admin']);
+
+        // a tool literally named "tag:admin" (untagged) must stay visible —
+        // the tag: prefix is consumed once, not also compiled as a name pattern
+        Assert::true($visibility->isVisible($this->tool('tag:admin'), null));
+    }
+
+    public function tagPatternDoesNotStopCompilingLaterPatterns(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:admin', 'order.delete']);
+
+        Assert::false($visibility->isVisible($this->tool('order.delete'), null));
+    }
+
+    public function allTagsAreConsideredNotJustTheFirst(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:second']);
+
+        Assert::false($visibility->isVisible($this->toolWithTags('op', ['first', 'second']), null));
+    }
+
+    public function nonArrayOwnMetaIsTreatedAsNoTags(): void
+    {
+        $tool = new Tool(
+            name: 'x',
+            title: null,
+            inputSchema: ['type' => 'object'],
+            description: null,
+            annotations: null,
+            meta: ['rasuvaeff/yii3-mcp' => 'not-an-array'],
+        );
+
+        Assert::true((new DeclarativeToolVisibility(deny: ['tag:*']))->isVisible($tool, null));
+    }
+
     private function tool(string $name): Tool
     {
         return new Tool(
@@ -76,6 +159,21 @@ final class DeclarativeToolVisibilityTest
             inputSchema: ['type' => 'object'],
             description: null,
             annotations: null,
+        );
+    }
+
+    /**
+     * @param list<string> $tags
+     */
+    private function toolWithTags(string $name, array $tags): Tool
+    {
+        return new Tool(
+            name: $name,
+            title: null,
+            inputSchema: ['type' => 'object'],
+            description: null,
+            annotations: null,
+            meta: ['rasuvaeff/yii3-mcp' => ['tags' => $tags]],
         );
     }
 }

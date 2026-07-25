@@ -158,7 +158,29 @@ final readonly class SpecIndex
             requestBodySchema: $this->extractRequestBodySchema($requestBody),
             requestBodyRequired: (bool) ($requestBody['required'] ?? false),
             outputSchema: $this->extractOutputSchema($this->arrayOrEmpty($raw['responses'] ?? null)),
+            tags: $this->extractTags($raw['tags'] ?? null),
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractTags(mixed $tags): array
+    {
+        if (!is_array($tags)) {
+            return [];
+        }
+
+        $named = [];
+
+        /** @var mixed $tag */
+        foreach ($tags as $tag) {
+            if (is_string($tag) && $tag !== '') {
+                $named[] = $tag;
+            }
+        }
+
+        return $named;
     }
 
     /**

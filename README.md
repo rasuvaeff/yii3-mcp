@@ -434,6 +434,12 @@ characters:
 ],
 ```
 
+A `tag:` prefix matches against the tool's tags instead of its name — the
+OpenAPI bridge propagates OpenAPI `tags` into the tool's `_meta`, so
+`'deny' => ['tag:admin']` hides every bridged operation tagged `admin`
+regardless of its `operationId`/`tool_names` name. A tool with no tags never
+matches a `tag:` pattern.
+
 Deny wins over allow; both lists empty (the default) means every tool is
 visible. When the decision depends on the **session** (admin vs public
 client, tenant plans), implement `Visibility\ToolVisibilityInterface`
@@ -607,6 +613,12 @@ reference the **renamed** name. An `operationId` in `tool_names` that is not
 in `operations` throws `InvalidArgumentException` at build time (a likely
 typo); a rename that is invalid as an MCP tool name or collides with another
 tool's name throws `InvalidSpecException`.
+
+Every `GET` operation is advertised with `readOnlyHint: true` — no
+configuration needed. OpenAPI `tags` on an operation are propagated into the
+served tool's `_meta` (`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`), which the
+declarative `tag:` visibility pattern (see [Tool visibility](#tool-visibility))
+reads directly.
 
 The DI wiring requires PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) in the container and a

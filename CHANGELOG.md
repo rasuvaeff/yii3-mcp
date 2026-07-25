@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- OpenAPI bridge: advertise every `GET` operation with `readOnlyHint: true`,
+  and propagate OpenAPI `tags` into the served tool's `_meta`
+  (`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`).
+- Add a `tag:` prefix to `Visibility\DeclarativeToolVisibility` patterns,
+  matching a tool's tags (from `_meta`) instead of its name — a tool with no
+  tags never matches a `tag:` pattern.
 - Add `OpenApi\OperationModifierInterface` (`openapi.operation_modifier`
   param): a per-operation customization hook, applied after the
   `tool_names` rename, for changing a bridged tool's description,

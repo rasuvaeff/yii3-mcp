@@ -6,6 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
 use InvalidArgumentException;
 use Mcp\Schema\Tool;
+use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Builder;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
@@ -99,7 +100,8 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 title: null,
                 inputSchema: $schemaBuilder->build($operation),
                 description: $operation->description === '' ? null : $operation->description,
-                annotations: null,
+                annotations: $operation->method === 'GET' ? new ToolAnnotations(readOnlyHint: true) : null,
+                meta: $operation->tags === [] ? null : ['rasuvaeff/yii3-mcp' => ['tags' => $operation->tags]],
                 outputSchema: $operation->outputSchema,
             );
 

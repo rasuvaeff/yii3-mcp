@@ -67,6 +67,14 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 ## Invariants & gotchas
 
+- **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
+  A pattern starting with `tag:` matches the tool's tags (`_meta['rasuvaeff/yii3-mcp']['tags']`,
+  populated by the OpenAPI bridge from OpenAPI `tags`) instead of its name;
+  the prefix is stripped once during `compile()`, so a tag pattern must
+  never ALSO get compiled as a name pattern (that bug already happened once —
+  keep the early `continue` after appending the tag-kind entry). Tool names
+  containing a literal `tag:` are indistinguishable from the prefix — none
+  exist in this ecosystem, and this is an accepted, documented trade-off.
 - **`OpenApi\Operation` is `@api` (promoted from `@internal`) specifically to
   serve as the read-only context passed to `OperationModifierInterface::modify()`.**
   It stays a small readonly VO — do not grow it into a general-purpose object;

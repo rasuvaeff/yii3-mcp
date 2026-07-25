@@ -431,6 +431,12 @@ declarative tool-name patterns в params; `*` соответствует люб�
 ],
 ```
 
+Префикс `tag:` matches по тегам tool вместо имени - OpenAPI bridge
+прокидывает OpenAPI `tags` в `_meta` tool, так что `'deny' => ['tag:admin']`
+скрывает каждую bridged operation с тегом `admin` независимо от её
+`operationId`/`tool_names` имени. Tool без тегов никогда не матчится
+`tag:`-паттерном.
+
 `deny` имеет приоритет над `allow`; пустые списки, значение по умолчанию,
 делают видимым каждый tool. Когда решение зависит от **session** (admin/public
 client, tenant plan), реализуйте `Visibility\ToolVisibilityInterface`: решение
@@ -603,6 +609,11 @@ audit/RBAC bridge должны ссылаться на **переименова�
 в `tool_names`, отсутствующий в `operations`, бросает `InvalidArgumentException`
 при build time (вероятная опечатка); переименование, невалидное как имя MCP
 tool или коллидирующее с именем другого tool, бросает `InvalidSpecException`.
+
+Каждая `GET` operation рекламируется с `readOnlyHint: true` - конфигурация не
+нужна. OpenAPI `tags` operation прокидываются в `_meta` served tool
+(`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`), которую declarative `tag:`
+visibility pattern (см. [Видимость tools](#видимость-tools)) читает напрямую.
 
 DI wiring требует PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) и PSR-16 `CacheInterface`

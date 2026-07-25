@@ -247,6 +247,10 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   method, path, description, parameters, requestBodySchema,
   requestBodyRequired, outputSchema) — construct it yourself only in tests.
   Config: `openapi.operation_modifier` (FQCN, DI-resolved).
+- Every GET operation is served with `annotations: {readOnlyHint: true}` —
+  no configuration. OpenAPI `tags` are propagated into the tool's `_meta`
+  (`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`); read by declarative `tag:`
+  visibility patterns (see below).
 - A `null` argument for a path/query parameter is skipped like an omitted
   one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
   notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
@@ -310,6 +314,9 @@ $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
 // params: 'visibility' => ['deny' => ['admin.*'], 'allow' => []]
 // deny hides matches; non-empty allow hides everything it does not match;
 // deny wins over allow; both empty (default) = all visible.
+// A 'tag:' prefix matches tags from the tool's _meta instead of its name
+// (e.g. 'tag:admin' — set by the OpenAPI bridge from OpenAPI `tags`); a tool
+// with no tags never matches a 'tag:' pattern.
 // Manual: new Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility(deny: [...], allow: [...])
 
 // Per-session (admin vs public client, tenant plans) — implement the interface:
