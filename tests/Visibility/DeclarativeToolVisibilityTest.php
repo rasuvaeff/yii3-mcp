@@ -41,6 +41,7 @@ final class DeclarativeToolVisibilityTest
         yield 'wildcard is not a dot-boundary' => ['admin*', 'administrate', false];
         yield 'no partial match without wildcard' => ['admin', 'admin.reset', true];
         yield 'dot is literal, not regex any-char' => ['admin.reset', 'adminXreset', true];
+        yield 'trailing newline does not match exact name' => ['admin.reset', "admin.reset\n", true];
     }
 
     public function nonEmptyAllowListHidesEverythingElse(): void
