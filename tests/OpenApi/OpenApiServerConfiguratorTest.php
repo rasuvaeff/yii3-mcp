@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
+use InvalidArgumentException;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
@@ -162,6 +164,71 @@ final class OpenApiServerConfiguratorTest
         Assert::same(array_column($this->decode($response)['result']['tools'], 'name'), ['getBlogTags']);
     }
 
+    public function renamedToolIsServedUnderTheNewNameOnly(): void
+    {
+        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $action = $this->action($client, ['getBlogTags'], toolNames: ['getBlogTags' => 'blog_tags_list']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $listResponse = $this->post($action, ['jsonrpc' => '2.0', 'id' => 10, 'method' => 'tools/list'], $sessionId);
+        Assert::same(array_column($this->decode($listResponse)['result']['tools'], 'name'), ['blog_tags_list']);
+
+        $callResponse = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 11,
+            'method' => 'tools/call',
+            'params' => ['name' => 'blog_tags_list', 'arguments' => []],
+        ], $sessionId);
+        Assert::false(isset($this->decode($callResponse)['error']));
+
+        $oldNameResponse = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 12,
+            'method' => 'tools/call',
+            'params' => ['name' => 'getBlogTags', 'arguments' => []],
+        ], $sessionId);
+        $body = $this->decode($oldNameResponse);
+        Assert::true(isset($body['error']) || ($body['result']['isError'] ?? false) === true);
+    }
+
+    public function toolNamesWithUnknownOperationIdFailsAtBuildTime(): void
+    {
+        Expect::exception(InvalidArgumentException::class);
+
+        $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
+    }
+
+    public function toolNamesRenameToInvalidNameFailsAtBuildTime(): void
+    {
+        $caught = null;
+
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['getBlogTags' => 'get blog tags']);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('get blog tags');
+    }
+
+    public function toolNamesCollisionFailsAtBuildTime(): void
+    {
+        $caught = null;
+
+        try {
+            $this->action(
+                new FakeHttpClient(),
+                ['getBlogTags', 'getBlogTagBySlug'],
+                toolNames: ['getBlogTagBySlug' => 'getBlogTags'],
+            );
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('getBlogTags');
+        Assert::string($caught->getMessage())->contains('getBlogTagBySlug');
+    }
+
     public function emptyAllowListExposesNothing(): void
     {
         $action = $this->action(new FakeHttpClient(), []);
@@ -174,8 +241,9 @@ final class OpenApiServerConfiguratorTest
 
     /**
      * @param list<string> $operations
+     * @param array<string, string> $toolNames
      */
-    private function action(FakeHttpClient $client, array $operations, bool $safeMethodsOnly = false): McpAction
+    private function action(FakeHttpClient $client, array $operations, bool $safeMethodsOnly = false, array $toolNames = []): McpAction
     {
         $factory = new Psr17Factory();
 
@@ -189,6 +257,7 @@ final class OpenApiServerConfiguratorTest
             ),
             operations: $operations,
             safeMethodsOnly: $safeMethodsOnly,
+            toolNames: $toolNames,
         );
 
         $server = (new McpServerFactory(

@@ -62,7 +62,7 @@ return [
         'definition' => static function (McpServerFactory $factory, ContainerInterface $container) use ($params): Server {
             /** @var list<class-string> $tools */
             $tools = $params['rasuvaeff/yii3-mcp']['tools'];
-            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool} $openapi */
+            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             $configurators = [];
@@ -108,6 +108,7 @@ return [
                     ),
                     operations: $openapi['operations'],
                     safeMethodsOnly: $openapi['safe_methods_only'] ?? false,
+                    toolNames: $openapi['tool_names'] ?? [],
                 );
             }
 

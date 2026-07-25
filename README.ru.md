@@ -568,10 +568,11 @@ Per-tenant tool sets уже поддерживаются `tool_visibility`: пр
 
 ## OpenAPI bridge: публикация существующего REST API
 
-Если приложение уже поддерживает OpenAPI document, allow-listed operations
-можно без дублирования опубликовать как MCP tools. Имя берётся из
-`operationId`, description - из `summary`/`description`, input schemas - из
-parameters/request body, output schemas - из success response (см. ниже).
+Если приложение уже поддерживает OpenAPI document версии 3.0.x или 3.1.x,
+allow-listed operations можно без дублирования опубликовать как MCP tools.
+Имя берётся из `operationId` (или из `tool_names`, см. ниже), description -
+из `summary`/`description`, input schemas - из parameters/request body,
+output schemas - из success response (см. ниже).
 Вызовы исполняются как настоящие HTTP requests к API
 и проходят весь middleware stack (validation, rate limiting, auth), в отличие
 от hand-written tools, вызывающих handlers напрямую.
@@ -585,12 +586,23 @@ parameters/request body, output schemas - из success response (см. ниже)
         'spec_path' => 'https://api.example.com/rest/json-url',
         'base_url' => 'https://api.example.com',
         'operations' => ['getBlogTags', 'getPage'],   // allow-list, empty = nothing
+        // переименовать некрасивый сгенерированный operationId в
+        // LLM-дружелюбное имя tool; немаппленные operations сохраняют operationId
+        'tool_names' => ['getBlogTags' => 'blog_tags_list'],
         'headers' => ['Authorization' => 'Bearer ' . getenv('MCP_API_TOKEN')],
         'cache_ttl' => 60,             // PSR-16 cache URL-спеки; 0 = загружать при каждом build
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
     ],
 ],
 ```
+
+`tool_names` переименовывает только то, что MCP-клиенты видят как имя tool -
+allow-list, исполнение handler'а и delegated-header вызовы остаются
+индексированы по `operationId`. Interceptors, visibility rules и любой
+audit/RBAC bridge должны ссылаться на **переименованное** имя. `operationId`
+в `tool_names`, отсутствующий в `operations`, бросает `InvalidArgumentException`
+при build time (вероятная опечатка); переименование, невалидное как имя MCP
+tool или коллидирующее с именем другого tool, бросает `InvalidSpecException`.
 
 DI wiring требует PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) и PSR-16 `CacheInterface`
@@ -640,9 +652,11 @@ parameter трактуется как отсутствующий (пропуск
 
 Bridged tool также рекламирует `outputSchema` в `tools/list`, если operation
 объявляет подходящий success response: **наименьший конкретный 2xx** с
-`application/json` schema типа `object` (локальные `$ref` разрешаются,
-top-level keywords канонизируются до `type`/`properties`/`required`/
-`additionalProperties`/`description`). Агент видит форму ответа до вызова,
+`application/json` schema типа `object` - nullable union нотация OpenAPI 3.1
+(`type: ["object", "null"]`) принимается так же (локальные `$ref`
+разрешаются, top-level keywords канонизируются до `type`/`properties`/
+`required`/`additionalProperties`/`description`, всегда до простого типа
+`"object"`). Агент видит форму ответа до вызова,
 а MCP-клиенты валидируют возвращённый `structuredContent` по этой схеме.
 Array/scalar responses и wildcard `2XX` не рекламируются - JSON object
 payload всё равно приходит как `structuredContent`, просто без контракта.

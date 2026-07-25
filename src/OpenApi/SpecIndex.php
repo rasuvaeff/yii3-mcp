@@ -21,14 +21,6 @@ final readonly class SpecIndex
     private const array HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
     private const int MAX_REF_DEPTH = 32;
 
-    // mcp/sdk's own Capability\Tool\NameValidator only logs a warning on a
-    // mismatch and still registers the tool; without this check a malformed
-    // operationId (space, unicode, trailing newline) would silently become
-    // an MCP tool name and surface only as an opaque tools/list rejection
-    // on the client. Charset matches the SDK validator; \z, not $ — PCRE $
-    // matches before a trailing "\n".
-    private const string TOOL_NAME_PATTERN = '/^[A-Za-z0-9._\/-]{1,64}\z/';
-
     /**
      * @var array<string, Operation>
      */
@@ -128,13 +120,12 @@ final readonly class SpecIndex
 
     private function assertValidToolName(Operation $operation): void
     {
-        if (preg_match(self::TOOL_NAME_PATTERN, $operation->operationId) !== 1) {
+        if (!ToolNameValidator::isValid($operation->operationId)) {
             throw new InvalidSpecException(sprintf(
-                'Operation "%s" (%s %s) has an operationId that cannot be used as an MCP tool name; it must match %s',
+                'Operation "%s" (%s %s) has an operationId that cannot be used as an MCP tool name',
                 $operation->operationId,
                 $operation->method,
                 $operation->path,
-                self::TOOL_NAME_PATTERN,
             ));
         }
     }
@@ -204,7 +195,7 @@ final readonly class SpecIndex
         $json = $this->arrayOrEmpty($content['application/json'] ?? null);
         $schema = $this->arrayOrEmpty($json['schema'] ?? null);
 
-        if ($schema === [] || ($schema['type'] ?? null) !== 'object') {
+        if ($schema === [] || !$this->isObjectType($schema['type'] ?? null)) {
             return null;
         }
 
@@ -271,6 +262,22 @@ final readonly class SpecIndex
         }
 
         return $output;
+    }
+
+    /**
+     * Accepts the plain `"object"` type string (OpenAPI 3.0) or the 3.1
+     * nullable union `["object", "null"]` (or `["null", "object"]`); the
+     * output schema is always canonicalized to `type: "object"` regardless.
+     */
+    private function isObjectType(mixed $type): bool
+    {
+        if ($type === 'object') {
+            return true;
+        }
+
+        return is_array($type) && count($type) === 2
+            && in_array('object', $type, strict: true)
+            && in_array('null', $type, strict: true);
     }
 
     private function stringOrEmpty(mixed $value): string

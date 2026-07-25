@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Add `openapi.tool_names` (`toolNames` on `OpenApiServerConfigurator`): rename
+  an operationId into an LLM-friendly MCP tool name. The allow-list, handler
+  execution and delegated-header calls stay keyed by operationId — only the
+  served tool name changes.
 - Reject an `operationId` that cannot serve as an MCP tool name
   (`^[A-Za-z0-9._/-]{1,64}$`) at build time with `InvalidSpecException`,
   instead of relying on `mcp/sdk`'s registration-time warning (which does
-  not stop the tool from being registered).
+  not stop the tool from being registered). The same check applies to a
+  `tool_names` rename.
 - Treat a `null` argument for an OpenAPI-bridged path/query parameter as
   omitted (skipped) rather than stringified.
 - Accept OpenAPI 3.1's nullable union type notation
-  (`{"type": ["string", "null"]}`) on scalar parameter schemas, alongside
-  the plain 3.0 type string.
+  (`{"type": ["string", "null"]}`) on scalar parameter schemas, and
+  (`{"type": ["object", "null"]}`) on the response schema advertised as
+  `outputSchema`, alongside the plain 3.0 type strings.
 
 ## 1.8.0 — 2026-07-25
 

@@ -192,20 +192,25 @@ $configurator = new OpenApiServerConfigurator(
     ),
     operations: ['getBlogTags'],   // allow-list of operationIds; empty = nothing
     safeMethodsOnly: true,         // reject non-GET at build time (read-only bridge)
+    toolNames: ['getBlogTags' => 'blog_tags_list'],   // optional operationId => tool name
 );
 $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 ```
 
-- Tool name = operationId, description = summary/description, inputSchema
+- Tool name = operationId, or its `toolNames`/`tool_names` override — allow-list,
+  handler execution and delegated headers stay keyed by operationId, only the
+  served name changes; interceptors/visibility must reference the RENAMED
+  name. description = summary/description, inputSchema
   from path/query parameters (+ `body` argument for application/json
   requestBody). Local `#/components/...` $refs are resolved inline (chains
   of up to 32 hops); external (URL/file) $refs pass through unresolved.
 - outputSchema is advertised in tools/list when the operation's lowest
   concrete 2xx response has an application/json schema of type "object"
-  ($refs resolved; canonicalized to type/properties/required/
-  additionalProperties/description). Array/scalar responses and `2XX`
-  wildcards are not advertised; JSON object payloads still arrive as
-  structuredContent either way.
+  (OpenAPI 3.1's `type: ["object", "null"]` accepted the same way; $refs
+  resolved; canonicalized to type/properties/required/
+  additionalProperties/description, always to plain "object"). Array/scalar
+  responses and `2XX` wildcards are not advertised; JSON object payloads
+  still arrive as structuredContent either way.
 - Calls are real HTTP requests against the API — its middleware stack
   (validation, rate limiting, auth) applies. Non-2xx =>
   `OperationFailedException` => MCP tool error envelope.
@@ -227,16 +232,19 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `InvalidSpecException` when selected. Put fixed upstream headers in
   `HttpOperationExecutor::defaultHeaders`; use a custom tool for richer input.
 - Duplicate operationId values => `InvalidSpecException` while indexing.
-- operationId must match `^[A-Za-z0-9._/-]{1,64}$` to become a tool name =>
-  `InvalidSpecException` when selected (mcp/sdk itself only logs a warning
-  and registers the tool anyway on a mismatch).
+- operationId (or its `toolNames` rename) must match `^[A-Za-z0-9._/-]{1,64}$`
+  to become a tool name => `InvalidSpecException` when selected (mcp/sdk
+  itself only logs a warning and registers the tool anyway on a mismatch).
+- `toolNames` maps operationId => tool name; an operationId in `toolNames`
+  absent from `operations` => `InvalidArgumentException` at build time; two
+  operations resolving to the same final name => `InvalidSpecException`.
 - A `null` argument for a path/query parameter is skipped like an omitted
   one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
   notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
   string.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
-  `base_url` / `operations` / `headers` / `cache_ttl` (PSR-16, raw document,
-  0 disables) / `identity_provider` / `delegated_header_provider`.
+  `base_url` / `operations` / `tool_names` / `headers` / `cache_ttl` (PSR-16,
+  raw document, 0 disables) / `identity_provider` / `delegated_header_provider`.
 
 ### Tool-call interceptors
 

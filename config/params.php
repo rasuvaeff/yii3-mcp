@@ -88,6 +88,11 @@ return [
             'spec_path' => '',
             'base_url' => '',
             'operations' => [],
+            // rename operationId => tool name (e.g. ugly generated
+            // operationIds into LLM-friendly names). Allow-list, handler
+            // execution and delegated headers stay keyed by operationId;
+            // interceptors/visibility rules must reference the RENAMED name.
+            'tool_names' => [],
             'headers' => [],
             // PSR-16 TTL for URL specs. 0 preserves fetch-on-every-build.
             'cache_ttl' => 0,

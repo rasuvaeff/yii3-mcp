@@ -643,6 +643,27 @@ final class SpecIndexTest
         ]);
     }
 
+    public function nullableUnionObjectResponseIsAdvertisedAsOutputSchema(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => ['object', 'null'],
+                'properties' => ['slug' => ['type' => 'string']],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object', 'properties' => ['slug' => ['type' => 'string']]]);
+    }
+
+    public function nullFirstUnionObjectResponseIsAdvertisedAsOutputSchema(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => ['type' => ['null', 'object']]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object']);
+    }
+
     public function operationWithoutResponsesHasNoOutputSchema(): void
     {
         Assert::null($this->operationWithResponses(null)->outputSchema);

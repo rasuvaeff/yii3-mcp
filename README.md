@@ -572,13 +572,14 @@ from the resolved tenant instead of `client_info`.
 
 ## OpenAPI bridge: expose an existing REST API
 
-If the application already maintains an OpenAPI document, allow-listed
-operations can be bridged as MCP tools with zero duplication — names come
-from `operationId`, descriptions from `summary`/`description`, input schemas
-from parameters/request body, output schemas from the success response
-(see below). Calls are executed as real HTTP requests
-against the API, passing its full middleware stack (validation, rate
-limiting, auth) — unlike hand-written tools that invoke handlers directly.
+If the application already maintains an OpenAPI 3.0.x or 3.1.x document,
+allow-listed operations can be bridged as MCP tools with zero duplication —
+names come from `operationId` (or `tool_names`, see below), descriptions
+from `summary`/`description`, input schemas from parameters/request body,
+output schemas from the success response (see below). Calls are executed as
+real HTTP requests against the API, passing its full middleware stack
+(validation, rate limiting, auth) — unlike hand-written tools that invoke
+handlers directly.
 
 ```php
 // config/params.php
@@ -589,12 +590,23 @@ limiting, auth) — unlike hand-written tools that invoke handlers directly.
         'spec_path' => 'https://api.example.com/rest/json-url',
         'base_url' => 'https://api.example.com',
         'operations' => ['getBlogTags', 'getPage'],   // allow-list, empty = nothing
+        // rename an ugly generated operationId into an LLM-friendly tool
+        // name; unmapped operations keep their operationId
+        'tool_names' => ['getBlogTags' => 'blog_tags_list'],
         'headers' => ['Authorization' => 'Bearer ' . getenv('MCP_API_TOKEN')],
         'cache_ttl' => 60,             // PSR-16 URL-spec cache; 0 = fetch every build
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
     ],
 ],
 ```
+
+`tool_names` only renames what MCP clients see as the tool name — the
+allow-list, handler execution and delegated-header calls all stay keyed by
+`operationId`. Interceptors, visibility rules and any audit/RBAC bridge must
+reference the **renamed** name. An `operationId` in `tool_names` that is not
+in `operations` throws `InvalidArgumentException` at build time (a likely
+typo); a rename that is invalid as an MCP tool name or collides with another
+tool's name throws `InvalidSpecException`.
 
 The DI wiring requires PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) in the container and a
@@ -647,9 +659,11 @@ bridge accepts alongside the plain 3.0 type string.
 
 A bridged tool also advertises `outputSchema` in `tools/list` when the
 operation declares a matching success response: the **lowest concrete 2xx**
-response with an `application/json` schema of `type: object` (local `$ref`s
-resolved, top-level keywords canonicalized to `type`/`properties`/`required`/
-`additionalProperties`/`description`). Agents see the response shape before
+response with an `application/json` schema of `type: object` — OpenAPI 3.1's
+nullable union notation (`type: ["object", "null"]`) is accepted the same
+way (local `$ref`s resolved, top-level keywords canonicalized to
+`type`/`properties`/`required`/`additionalProperties`/`description`, always
+to the plain `"object"` type). Agents see the response shape before
 calling and MCP clients validate the returned `structuredContent` against it.
 Array/scalar responses and `2XX` wildcards are not advertised — JSON object
 payloads still arrive as `structuredContent`, just without the upfront
