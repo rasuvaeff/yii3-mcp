@@ -32,9 +32,9 @@ final class ResponseSizeLimitInterceptorTest
         $result = $interceptor->intercept($this->context(), static fn(): string => 'abcdefghij');
 
         // truncated content comes first, the marker after — not the other way round
-        Assert::true(str_starts_with($result, 'abcde'));
+        Assert::true(str_starts_with((string) $result, 'abcde'));
         Assert::string($result)->contains('truncated, showing 5 of 10 bytes');
-        Assert::false(str_contains($result, 'fghij'));
+        Assert::false(str_contains((string) $result, 'fghij'));
     }
 
     public function arrayResultAtTheLimitIsReturnedUnchanged(): void

@@ -86,7 +86,7 @@ final readonly class SpecLoader
 
     private function readCache(string $key): ?string
     {
-        if ($this->cache === null || $this->cacheTtl === 0) {
+        if (!$this->cache instanceof CacheInterface || $this->cacheTtl === 0) {
             return null;
         }
 
@@ -102,7 +102,7 @@ final readonly class SpecLoader
 
     private function writeCache(string $key, string $document): void
     {
-        if ($this->cache === null || $this->cacheTtl === 0) {
+        if (!$this->cache instanceof CacheInterface || $this->cacheTtl === 0) {
             return;
         }
 

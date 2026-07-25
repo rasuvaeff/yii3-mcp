@@ -105,7 +105,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 outputSchema: $operation->outputSchema,
             );
 
-            if ($this->modifier !== null) {
+            if ($this->modifier instanceof OperationModifierInterface) {
                 $tool = $this->modifier->modify($operation, $tool);
             }
 

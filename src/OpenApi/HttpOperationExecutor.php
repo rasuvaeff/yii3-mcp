@@ -41,7 +41,7 @@ final readonly class HttpOperationExecutor
             throw new InvalidArgumentException('Base URL must not be empty');
         }
 
-        if (($identityProvider === null) !== ($delegatedHeaderProvider === null)) {
+        if ((!$identityProvider instanceof ExecutionIdentityProviderInterface) !== (!$delegatedHeaderProvider instanceof \Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface)) {
             throw new InvalidArgumentException('Execution identity provider and delegated header provider must be configured together');
         }
 
@@ -60,7 +60,7 @@ final readonly class HttpOperationExecutor
 
         $headers = $this->defaultHeaders;
 
-        if ($this->identityProvider !== null && $this->delegatedHeaderProvider !== null) {
+        if ($this->identityProvider instanceof ExecutionIdentityProviderInterface && $this->delegatedHeaderProvider instanceof \Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface) {
             $headers = array_replace(
                 $headers,
                 $this->delegatedHeaderProvider->headers(
