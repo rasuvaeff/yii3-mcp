@@ -256,8 +256,9 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
   notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
   string.
-- A path argument that is a bare dot segment (`.`/`..`) is rejected at call
-  time (path traversal out of the allow-listed route). The base URL must not
+- A path argument that is empty or a bare dot segment (`.`/`..`) is rejected
+  at call time (route escape out of the allow-list: `..` climbs up, `""`
+  turns an item route into the collection route). The base URL must not
   embed credentials (userinfo) or carry a query string/fragment — dry-run
   previews return the full URL to the caller.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
@@ -353,7 +354,8 @@ use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
 $masker = new ArgumentMasker();               // or new ArgumentMasker(['ssn', ...])
 $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
-// defaults: password, secret, token, api_key, credit_card;
+// defaults: password, secret, token, api_key, apikey, api-key, x-api-key,
+// credit_card;
 // case-insensitive exact key match, applied at EVERY nesting level;
 // a sensitive key's whole value (array included) becomes '***'.
 ```

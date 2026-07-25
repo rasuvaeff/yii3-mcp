@@ -319,6 +319,24 @@ final class HttpOperationExecutorTest
         Assert::same($plan['body'], ['email' => 'user@example.com']);
     }
 
+    public function dryRunPreviewOmitsAStrayBodyOnABodylessOperation(): void
+    {
+        $client = new FakeHttpClient();
+
+        // the real call ignores `body` on a bodyless operation — the
+        // preview must not claim it would be sent
+        $result = $this->executor($client)->execute(
+            $this->operation('getBlogTags'),
+            ['body' => ['x' => 1], 'dryRun' => true],
+            dryRunnable: true,
+        );
+
+        Assert::same($client->requestCount, 0);
+        /** @var array{body: mixed} $plan */
+        $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
+        Assert::null($plan['body']);
+    }
+
     public function dryRunFlagIsIgnoredWhenTheOperationIsNotDryRunnable(): void
     {
         $client = new FakeHttpClient();
@@ -384,8 +402,10 @@ final class HttpOperationExecutorTest
         $client = new FakeHttpClient();
 
         // rawurlencode leaves "." verbatim: ".." would climb out of the
-        // allow-listed route on upstreams that normalize dot segments
-        foreach (['..', '.'] as $value) {
+        // allow-listed route on upstreams that normalize dot segments; ""
+        // is the same escape one level up ("/users/" = the collection
+        // route instead of the allow-listed item route)
+        foreach (['..', '.', ''] as $value) {
             $caught = null;
 
             try {

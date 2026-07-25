@@ -19,10 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAPI bridge: a dry-run-enabled operation now rejects a
   present-but-non-boolean `dryRun` value with an error instead of executing
   the real call — a malformed preview intent must never become a real write.
-- OpenAPI bridge: path arguments that are bare dot segments (`.`/`..`) are
-  rejected at call time — `rawurlencode` keeps dots verbatim, and `..` could
-  climb out of the allow-listed route on upstreams that normalize dot
-  segments.
+- OpenAPI bridge: path arguments that are empty or bare dot segments
+  (`.`/`..`) are rejected at call time — `rawurlencode` keeps dots verbatim,
+  and `..` could climb out of the allow-listed route on upstreams that
+  normalize dot segments; an empty value turns an allow-listed item route
+  into the collection route.
+- OpenAPI bridge: the dry-run preview mirrors the real-send condition for
+  `body` — a stray `body` argument on a bodyless operation is no longer
+  shown as if it would be sent.
+- `Interceptor\ArgumentMasker`: the default sensitive-key list now also
+  covers the common API-key spellings `apikey` (matches `ApiKey`
+  case-insensitively), `api-key` and `x-api-key`.
 - OpenAPI bridge: `HttpOperationExecutor` rejects a base URL with embedded
   credentials (userinfo) or a query string/fragment at construction —
   dry-run previews return the full URL to the caller, so the base URL must

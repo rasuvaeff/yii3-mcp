@@ -93,7 +93,12 @@ final readonly class HttpOperationExecutor
                 'operationId' => $operation->operationId,
                 'method' => $operation->method,
                 'url' => $this->baseUrl . $path,
-                'body' => $arguments[InputSchemaBuilder::BODY_ARGUMENT] ?? null,
+                // mirror the real-send condition below: a bodyless operation
+                // ignores a stray `body` argument, so the preview must not
+                // claim it would be sent
+                'body' => $operation->requestBodySchema !== null
+                    ? ($arguments[InputSchemaBuilder::BODY_ARGUMENT] ?? null)
+                    : null,
             ], JSON_THROW_ON_ERROR);
         }
 
@@ -172,10 +177,13 @@ final readonly class HttpOperationExecutor
                 // rawurlencode keeps "." verbatim, so a "." or ".." value
                 // would survive into the upstream path and let a caller
                 // climb out of the allow-listed route on servers that
-                // normalize dot segments — with the bridge's credentials
-                if ($value === '.' || $value === '..') {
+                // normalize dot segments — with the bridge's credentials.
+                // An empty value is the same escape one level up: "/users/"
+                // is typically the collection route, not the allow-listed
+                // item route
+                if ($value === '' || $value === '.' || $value === '..') {
                     throw new InvalidArgumentException(sprintf(
-                        'Argument "%s" of operation "%s" must not be a dot segment',
+                        'Argument "%s" of operation "%s" must not be empty or a dot segment',
                         $name,
                         $operation->operationId,
                     ));

@@ -369,7 +369,8 @@ any other exception becomes an opaque internal error.
 Anything an interceptor sends out of the process — a log line, a trace span,
 an audit record — must not carry secrets. `Interceptor\ArgumentMasker`
 replaces the values of sensitive keys (`password`, `secret`, `token`,
-`api_key`, `credit_card` by default; case-insensitive, at **every** nesting
+`api_key`, `apikey`, `api-key`, `x-api-key`, `credit_card` by default;
+case-insensitive, so `ApiKey`/`X-Api-Key` match too, at **every** nesting
 level) with `***`:
 
 ```php
@@ -765,10 +766,12 @@ limited to scalar `string`, `integer`, `number` and `boolean` schemas with the
 OpenAPI defaults (`simple` path, `form` query). Header/cookie parameters,
 external or non-scalar parameter schemas, custom serialization, non-default
 `explode` and `allowReserved=true` throw `InvalidSpecException` when the
-operation is selected. A path argument that is a bare dot segment (`.` or
-`..`) is rejected at call time — `rawurlencode` keeps dots verbatim, and a
-`..` value would climb out of the allow-listed route on upstreams that
-normalize dot segments, with the bridge's credentials. The base URL must not
+operation is selected. A path argument that is empty or a bare dot segment
+(`.` or `..`) is rejected at call time — `rawurlencode` keeps dots verbatim,
+and a `..` value would climb out of the allow-listed route on upstreams that
+normalize dot segments, with the bridge's credentials; an empty value is the
+same escape one level up (`/users/` is typically the collection route, not
+the allow-listed item route). The base URL must not
 embed credentials (userinfo) or carry a query string/fragment — dry-run
 previews return the full URL to the caller, so the base URL is never allowed
 to be a credential carrier. Fixed upstream headers belong in `headers`/

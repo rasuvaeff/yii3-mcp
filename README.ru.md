@@ -367,8 +367,9 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 Всё, что interceptor отправляет за пределы процесса - log line, trace span,
 audit record - не должно содержать secrets. `Interceptor\ArgumentMasker`
 заменяет значения чувствительных ключей (`password`, `secret`, `token`,
-`api_key`, `credit_card` по умолчанию, без учёта регистра и на **каждом** уровне
-вложенности) на `***`.
+`api_key`, `apikey`, `api-key`, `x-api-key`, `credit_card` по умолчанию,
+без учёта регистра - `ApiKey`/`X-Api-Key` тоже матчатся - и на **каждом**
+уровне вложенности) на `***`.
 
 ```php
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
@@ -762,10 +763,11 @@ parameters намеренно ограничены scalar schemas `string`, `int
 для query). Header/cookie parameters, external или non-scalar parameter
 schemas, custom serialization, non-default `explode` и `allowReserved=true`
 приводят к `InvalidSpecException` при выборе operation. Path argument,
-являющийся голым dot segment (`.` или `..`), отклоняется при вызове -
-`rawurlencode` оставляет точки как есть, и значение `..` позволило бы выйти
-за пределы allow-listed route на upstream, нормализующем dot segments, - с
-credentials бриджа. Base URL не должен содержать credentials (userinfo),
+пустой или являющийся голым dot segment (`.` или `..`), отклоняется при
+вызове - `rawurlencode` оставляет точки как есть, и значение `..` позволило
+бы выйти за пределы allow-listed route на upstream, нормализующем dot
+segments, - с credentials бриджа; пустое значение - тот же escape на уровень
+выше (`/users/` - обычно collection route, а не allow-listed item route). Base URL не должен содержать credentials (userinfo),
 query string или fragment - dry-run preview возвращает полный URL
 вызывающему, поэтому base URL никогда не может быть носителем credentials.
 Фиксированные upstream
