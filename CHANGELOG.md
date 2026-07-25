@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Add `Interceptor\ResponseSizeLimitInterceptor` (`limits.tool_result_bytes`
+  param): guards against a tool result burning an agent's context window.
+  A string result over the limit is truncated with a marker; any other
+  result (array, object) is rejected instead.
+- Add `Interceptor\CachingToolCallInterceptor` (`cache.tools` param, PSR-16):
+  caches successful tool results per client, opt-in by tool name with a
+  TTL. The cache key always includes the resolved client id.
 - OpenAPI bridge: advertise every `GET` operation with `readOnlyHint: true`,
   and propagate OpenAPI `tags` into the served tool's `_meta`
   (`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`).

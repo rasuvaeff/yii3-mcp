@@ -359,6 +359,48 @@ TTL. Зациклившийся агент исчерпает budget и полу
 уровня приложения. Budget guard всегда внешний interceptor и отклоняет вызов
 до работы остальных interceptors.
 
+### Лимит размера результата и кеш
+
+У tool result нет естественного верхнего предела - bridged GET к реальному
+API или hand-written tool над большой таблицей может вернуть мегабайты JSON
+и выжечь context window агента. `limits.tool_result_bytes` обрезает
+превышающий лимит string result явным маркером; любой другой result
+(array, object) вместо этого отклоняется - обрезанный JSON payload это
+невалидный JSON, а не меньший валидный:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'limits' => ['tool_result_bytes' => 0],   // 0 = unlimited (default)
+],
+```
+
+Для read-heavy tools, вызываемых повторно с теми же аргументами внутри
+session (справочник, OpenAPI GET), `cache.tools` полностью пропускает
+handler на hit - opt-in по имени tool (для OpenAPI bridge - **served**
+имя, после возможного `tool_names` rename) с TTL в секундах:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache' => [
+        'tools' => ['blog_tags_list' => 60],
+    ],
+],
+```
+
+Требует PSR-16 `CacheInterface` в контейнере. Cache key всегда включает
+resolved client id - общий cache между разными клиентами утёк бы результат
+одного клиента другому. Кешируются только успешные results; брошенное
+exception никогда не кешируется. Ошибка чтения/записи cache fails **open**
+(tool исполняется) - это оптимизация availability, а не security gate.
+
+Порядок interceptors фиксирован: session budget (самый внешний) →
+настроенные `interceptors` → caching → result size limit (самый внутренний,
+ближе всего к реальному вызову tool). Настроенные interceptors (RBAC,
+audit) выполняются всегда, даже на cache hit - через cache нельзя обойти
+их проверку. Size limit выполняется только на cache miss; в cache попадает
+уже ограниченное значение, так что hit никогда не требует повторного
+ограничения.
+
 ### Client identity и ротация секретов
 
 Один endpoint может обслуживать несколько MCP-клиентов, каждый со своим
@@ -739,6 +781,8 @@ final readonly class MyOperationModifier implements OperationModifierInterface
 | `Interceptor\ToolCallInterceptorInterface` | оборачивает каждый tools/call: tracing, ACL, rate limits; params `interceptors` |
 | `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap: параметр `session.budget`, anti-loop guard |
+| `Interceptor\ResponseSizeLimitInterceptor` | ограничивает размер tool result (параметр `limits.tool_result_bytes`) - обрезает strings, отклоняет oversized arrays/objects |
+| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); ключ включает client id |
 | `Interceptor\InterceptingReferenceHandler` | decorator, подключающий chain к SDK; используется `McpServerFactory` |
 | `Interceptor\ArgumentMasker` | единое sensitive-argument masking на каждом nesting level |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter: `tools/list` скрывает, `tools/call` fail-closed отклоняет |

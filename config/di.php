@@ -13,8 +13,10 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
+use Rasuvaeff\Yii3Mcp\Interceptor\CachingToolCallInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -144,6 +146,27 @@ return [
                 $interceptors[] = $container->get($interceptorClass);
             }
 
+            /** @var array<string, int> $cacheTools */
+            $cacheTools = $params['rasuvaeff/yii3-mcp']['cache']['tools'] ?? [];
+
+            if ($cacheTools !== []) {
+                // wraps the size limit (added next, further in): user
+                // interceptors (RBAC/audit) still run on EVERY call,
+                // including a cache hit — no ACL bypass through the cache.
+                // The size limit only runs on a cache miss; the value it
+                // already limited is what gets cached, so a hit never
+                // needs re-limiting
+                $interceptors[] = new CachingToolCallInterceptor($container->get(CacheInterface::class), $cacheTools);
+            }
+
+            /** @var int $maxResultBytes */
+            $maxResultBytes = $params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'] ?? 0;
+
+            if ($maxResultBytes > 0) {
+                // innermost: closest to the actual tool call
+                $interceptors[] = new ResponseSizeLimitInterceptor($maxResultBytes);
+            }
+
             /** @var class-string<ToolVisibilityInterface>|'' $visibilityClass */
             $visibilityClass = $params['rasuvaeff/yii3-mcp']['tool_visibility'] ?? '';
             /** @var array{deny?: list<string>, allow?: list<string>} $declarative */
@@ -245,6 +268,7 @@ return [
                 openApiCacheTtl: $openapi['cache_ttl'] ?? 0,
                 expectedHttpHost: $params['rasuvaeff/yii3-mcp']['expected_http_host'] ?? '',
                 allowedHosts: $params['rasuvaeff/yii3-mcp']['allowed_hosts'],
+                toolResultCacheEnabled: ($params['rasuvaeff/yii3-mcp']['cache']['tools'] ?? []) !== [],
             );
         },
     ],

@@ -361,6 +361,48 @@ re-initialize starts a fresh counter. Client quotas belong to an
 application-level rate limiter. The budget guard is always the outermost
 interceptor, so it rejects before any other interceptor does work.
 
+### Result size limit and caching
+
+A tool result has no natural upper bound — a bridged GET against a real API,
+or a hand-written tool over a large table, can return megabytes of JSON and
+burn an agent's context window. `limits.tool_result_bytes` truncates an
+over-limit string result with an explicit marker; any other result (array,
+object) is rejected outright instead, because a truncated JSON payload is
+invalid JSON, not a smaller valid one:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'limits' => ['tool_result_bytes' => 0],   // 0 = unlimited (default)
+],
+```
+
+For read-heavy tools called repeatedly with the same arguments inside a
+session (a lookup table, an OpenAPI GET), `cache.tools` skips the handler
+entirely on a hit — opt in by tool name (for the OpenAPI bridge, the
+**served** name, after any `tool_names` rename) with a TTL in seconds:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache' => [
+        'tools' => ['blog_tags_list' => 60],
+    ],
+],
+```
+
+Requires a PSR-16 `CacheInterface` in the container. The cache key always
+includes the resolved client id — a shared cache between distinct clients
+would leak one client's result to another. Only successful results are
+cached; a thrown exception never is. A cache read/write failure fails
+**open** (the tool runs) — this is an availability optimization, not a
+security gate.
+
+Interceptor order is fixed: session budget (outermost) → configured
+`interceptors` → caching → result size limit (innermost, closest to the
+actual tool call). Configured interceptors (RBAC, audit) always run, even on
+a cache hit — caching cannot be used to bypass them. The size limit only
+runs on a cache miss; the value it already limited is what gets cached, so a
+hit never needs re-limiting.
+
 ### Client identity and secret rotation
 
 One endpoint can serve several MCP clients, each with its own secret — and
@@ -749,6 +791,8 @@ the bridge.
 | `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
+| `Interceptor\ResponseSizeLimitInterceptor` | caps tool result size (`limits.tool_result_bytes` param) — truncates strings, rejects oversized arrays/objects |
+| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); key includes the client id |
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
 | `Interceptor\ArgumentMasker` | shared sensitive-argument masking (`password`/`token`/… at every nesting level) for anything leaving the process |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |

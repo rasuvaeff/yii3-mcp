@@ -266,6 +266,37 @@ final class McpDoctorTest
         Assert::false(str_contains($check->details, RequestFactoryInterface::class . ';'));
     }
 
+    public function toolResultCacheEnabledWithoutABoundCacheFails(): void
+    {
+        $factory = new Psr17Factory();
+        $doctor = new McpDoctor(
+            container: new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $factory,
+                ServerRequestFactoryInterface::class => $factory,
+                ResponseFactoryInterface::class => $factory,
+                StreamFactoryInterface::class => $factory,
+            ]),
+            sessionStore: new InMemorySessionStore(),
+            endpointSecret: 'test-secret',
+            sessionDirectory: $this->sessionDir,
+            openApiSpecPath: '',
+            toolResultCacheEnabled: true,
+        );
+
+        $check = $this->check($doctor->diagnose(), 'service_simplecache_cacheinterface');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('Tool result cache');
+    }
+
+    public function toolResultCacheDisabledSkipsTheCheck(): void
+    {
+        $report = $this->doctor()->diagnose();
+
+        Assert::true($report->healthy());
+    }
+
     public function expectedProductionHostMustBeAllowListed(): void
     {
         $report = $this->doctor(expectedHttpHost: 'mcp.example.test')->diagnose();

@@ -22,7 +22,8 @@ ClientIdentityContext is @internal}`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 PromptGetInterceptorInterface, PromptGetContext,
 ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
-SessionBudgetInterceptor, InterceptingReferenceHandler, ArgumentMasker,
+SessionBudgetInterceptor, ResponseSizeLimitInterceptor,
+CachingToolCallInterceptor, InterceptingReferenceHandler, ArgumentMasker,
 ToolCallLimiterInterface, RateLimitInterceptor}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
 PromptVisibilityInterface, ResourceVisibilityInterface;
@@ -67,6 +68,19 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 ## Invariants & gotchas
 
+- **Interceptor chain order is fixed and load-bearing:** session budget
+  (outermost) → configured `interceptors` → `CachingToolCallInterceptor` →
+  `ResponseSizeLimitInterceptor` (innermost). Caching must sit BETWEEN user
+  interceptors and the size limit, never around user interceptors — RBAC/
+  audit must run on every call including a cache hit, or caching becomes an
+  ACL bypass. Never reorder without preserving this.
+- **`CachingToolCallInterceptor`'s cache key MUST include the resolved
+  client id.** A cache shared across distinct clients leaks one client's
+  result to another — this is not a configurable trade-off. A cache miss
+  falls back to `'anonymous'` (stdio has no client id), never to a shared
+  key. Cached values are wrapped (`['v' => $result]`) specifically to
+  distinguish a genuine `null` tool result from a cache miss (PSR-16's
+  `get()` returns `null` on both).
 - **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
   A pattern starting with `tag:` matches the tool's tags (`_meta['rasuvaeff/yii3-mcp']['tags']`,
   populated by the OpenAPI bridge from OpenAPI `tags`) instead of its name;

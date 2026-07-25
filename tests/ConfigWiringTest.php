@@ -12,11 +12,14 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
@@ -80,6 +83,58 @@ final class ConfigWiringTest
         Assert::same($mcp['configurators'], []);
         Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
         Assert::same($params['rasuvaeff/yii3-mcp']['visibility'], ['deny' => [], 'allow' => []]);
+        Assert::same($params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'], 0);
+        Assert::same($params['rasuvaeff/yii3-mcp']['cache']['tools'], []);
+    }
+
+    public function serverDefinitionWiresTheSizeLimitInterceptor(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+        $params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'] = 5;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        // "Hi, Yii!" is well over 5 bytes — the limit interceptor is
+        // actually wired into the chain, not just accepted as config
+        Assert::string($tester->callTool('greet', ['name' => 'Yii'])['content'][0]['text'])->contains('truncated');
+    }
+
+    public function serverDefinitionWiresTheCachingInterceptor(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+        $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $tool = new CountingTool();
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            CacheInterface::class => new FakeCache(),
+        ]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $tester->callTool('count.up', []);
+        $tester->callTool('count.up', []);
+
+        // the second call is served from cache — the tool ran exactly once
+        Assert::same($tool->calls, 1);
     }
 
     public function serverDefinitionWiresToolVisibility(): void

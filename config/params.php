@@ -36,6 +36,21 @@ return [
             // NOT a client quota — a new session starts a fresh counter
             'budget' => 0,
         ],
+        // guard against a tool result burning an agent's context window
+        // (0 = unlimited). A string result over the limit is truncated with
+        // a marker; any other result (array/object) is rejected outright —
+        // truncated JSON is invalid JSON, not a smaller valid one.
+        'limits' => [
+            'tool_result_bytes' => 0,
+        ],
+        // PSR-16 cache for successful tool results: tool name => TTL in
+        // seconds. Empty (default) = no caching. The cache key always
+        // includes the resolved client id — never share cached results
+        // between clients. Opt in only tools that are safe to cache
+        // (idempotent reads); the interceptor has no notion of which are.
+        'cache' => [
+            'tools' => [],
+        ],
         // tool-call interceptor FQCNs (resolved through the container,
         // applied in order, first = outermost); each implements
         // Interceptor\ToolCallInterceptorInterface

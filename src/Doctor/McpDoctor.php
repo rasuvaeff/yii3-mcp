@@ -58,6 +58,7 @@ final readonly class McpDoctor
         private int $openApiCacheTtl = 0,
         private string $expectedHttpHost = '',
         private array $allowedHosts = [],
+        private bool $toolResultCacheEnabled = false,
     ) {}
 
     public function diagnose(bool $probeUpstream = false): DoctorReport
@@ -136,6 +137,10 @@ final readonly class McpDoctor
             $requirements[ClientInterface::class][] = 'OpenAPI operation execution';
             $requirements[RequestFactoryInterface::class][] = 'OpenAPI operation execution';
             $requirements[StreamFactoryInterface::class][] = 'OpenAPI operation execution';
+        }
+
+        if ($this->toolResultCacheEnabled) {
+            $requirements[CacheInterface::class][] = 'Tool result cache';
         }
 
         $checks = [];

@@ -288,6 +288,24 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
 // exhausted => tool error "Session tool-call budget of N is exhausted..."
 
+// Result size limit (context-overflow guard) — a string over the limit is
+// truncated with a marker; any other result (array/object) throws instead
+// (truncated JSON is invalid JSON):
+// params: 'limits' => ['tool_result_bytes' => 0]  // 0 = unlimited (default)
+
+// Result caching (PSR-16, opt-in by tool name — for the OpenAPI bridge, the
+// SERVED name after any tool_names rename):
+// params: 'cache' => ['tools' => ['blog_tags_list' => 60]]  // toolName => TTL seconds
+// Key always includes the resolved client id (never shared across clients).
+// Only successful results are cached; a thrown exception never is. A cache
+// read/write failure fails OPEN (the tool runs) — availability, not a
+// security gate.
+// Chain order: session budget → configured interceptors → caching → size
+// limit (innermost). Configured interceptors (RBAC, audit) run on EVERY
+// call, including a cache hit — no ACL bypass through the cache. The size
+// limit only runs on a cache miss; the already-limited value is what gets
+// cached.
+
 // Per-client/per-tool limits — delegate to YOUR rate limiter (package ships
 // no limiter storage):
 use Rasuvaeff\Yii3Mcp\Interceptor\RateLimitInterceptor;
@@ -381,14 +399,17 @@ factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `client_secrets` (client id => secret|list of active
 secrets; mutually exclusive with endpoint_secret), `secret_header`,
-`session.dir`, `session.ttl`,
-`session.budget`, `interceptors`, `prompt_interceptors`,
+`allowed_hosts`, `session.dir`, `session.ttl`,
+`session.budget`, `limits.tool_result_bytes`, `cache.tools`, `interceptors`,
+`prompt_interceptors`,
 `resource_interceptors`, `configurators`, `tool_visibility`,
 `prompt_visibility`, `resource_visibility`,
 `visibility.deny`, `visibility.allow`, `prompts_path`,
-`openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`,
+`openapi.spec_path`, `openapi.base_url`, `openapi.operations`,
+`openapi.tool_names`, `openapi.operation_modifier`, `openapi.headers`,
 `openapi.cache_ttl`, `openapi.identity_provider`,
-`openapi.delegated_header_provider`, `expected_http_host`.
+`openapi.delegated_header_provider`, `openapi.safe_methods_only`,
+`expected_http_host`.
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,
 applied after the core's prompts/openapi configurators — generic extension
