@@ -29,8 +29,9 @@ PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
 FilteredListResourcesHandler, FilteredListResourceTemplatesHandler are
 @internal}`,
-`OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator,
-SpecLoader}`, `Prompts\MarkdownPromptsConfigurator` (file format is
+`OpenApi\{SpecIndex is @internal; OpenApiServerConfigurator, SpecLoader,
+ExecutionIdentity, ExecutionIdentityProviderInterface,
+DelegatedHeaderProviderInterface}`, `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in
 `Exception\`, `OpenApi\Exception\` and `Prompts\Exception\`
 (`Testing\SseFrame` is @internal).

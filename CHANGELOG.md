@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.8.0 — 2026-07-25
+
+- Add conditional PSR-17/18 and PSR-16 service diagnostics plus expected HTTP
+  host validation to `mcp:doctor`.
+- Add optional scoped PSR-16 caching for URL OpenAPI documents, including
+  corrupt-cache and unavailable-cache fallback.
+- Add per-call execution identity and delegated-header provider contracts for
+  upstream credentials; static service-token mode now reports its trust model.
+- Add a verified end-to-end MCP integration guide.
+
 ## 1.7.2 — 2026-07-25
 
 - Reject trailing newlines in `DeclarativeToolVisibility` pattern matching:

@@ -7,9 +7,12 @@ namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 use InvalidArgumentException;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
+use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDelegatedHeaderProvider;
+use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -70,6 +73,70 @@ final class HttpOperationExecutorTest
 
         Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer token-1');
         Assert::same($client->lastRequest?->getHeaderLine('Accept'), 'application/json');
+    }
+
+    public function delegatedHeadersAreResolvedForEveryIdentity(): void
+    {
+        $client = new FakeHttpClient();
+        $identityProvider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1', tenantId: 'tenant-a'));
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            defaultHeaders: ['Authorization' => 'Bearer broad-service-token'],
+            identityProvider: $identityProvider,
+            delegatedHeaderProvider: new IdentityDelegatedHeaderProvider(),
+        );
+
+        $executor->execute($this->operation('getBlogTags'), []);
+        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer tenant-a:user-1');
+
+        $identityProvider->identity = new ExecutionIdentity(subjectId: 'user-2', tenantId: 'tenant-b');
+        $executor->execute($this->operation('getBlogTags'), []);
+
+        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer tenant-b:user-2');
+        Assert::same($client->lastRequest?->getHeaderLine('X-Upstream-Operation'), 'getBlogTags');
+    }
+
+    public function delegatedProviderFailureIsFailClosedBeforeHttp(): void
+    {
+        $client = new FakeHttpClient();
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            identityProvider: new MutableExecutionIdentityProvider(new ExecutionIdentity()),
+            delegatedHeaderProvider: new IdentityDelegatedHeaderProvider(),
+        );
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (\RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($client->requestCount, 0);
+    }
+
+    public function delegatedProvidersMustBeConfiguredAsAPair(): void
+    {
+        $factory = new Psr17Factory();
+
+        Expect::exception(InvalidArgumentException::class);
+
+        new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            identityProvider: new MutableExecutionIdentityProvider(new ExecutionIdentity()),
+        );
     }
 
     public function nonSuccessResponseThrows(): void

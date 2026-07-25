@@ -188,9 +188,18 @@ Markdown prompts.
 `--json` печатает полные definitions capabilities, включая input/output
 schemas, в нормализованном формате `SchemaSnapshot`. Порядок элементов и
 ключей стабилен, поэтому вывод хорошо подходит для CI diff и automation.
-Как и `McpTester`, команде требуются PSR-17 factories
-`ServerRequestFactoryInterface`, `ResponseFactoryInterface` и
-`StreamFactoryInterface` в контейнере.
+Как и `McpTester`, команде требуются PSR-17 factories. Эти services должны быть
+во всех config groups, где строится `Mcp\Server`, включая console:
+
+| Entry point / feature | Обязательные services |
+|---|---|
+| `McpAction` | `ResponseFactoryInterface`, `StreamFactoryInterface` |
+| `McpListCommand`, `McpTester` | `ServerRequestFactoryInterface`, `ResponseFactoryInterface`, `StreamFactoryInterface` |
+| URL OpenAPI spec | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface` |
+| OpenAPI operation execution | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface`, `StreamFactoryInterface` |
+
+`ServerRequestFactoryInterface` и `RequestFactoryInterface` — разные PSR-17
+контракты; binding одного не заменяет другой.
 
 ### Диагностика: mcp:doctor
 
@@ -204,9 +213,10 @@ schemas, в нормализованном формате `SchemaSnapshot`. По
 ./yii mcp:doctor --probe   # разрешить сеть (загрузка URL OpenAPI spec)
 ```
 
-Проверки в порядке диагностики: endpoint secret настроен, session directory
-доступна на запись, session round-trip через настроенный store, OpenAPI spec
-загружается, server build. Exit codes стабильны для скриптов: `0` — здоров,
+Проверки охватывают endpoint secret, optional `expected_http_host` allow-list,
+точные PSR services для включённых entry points/features, session storage,
+OpenAPI spec и реальный server build. Отсутствующий service выводится с точным
+именем interface. Exit codes стабильны для скриптов: `0` — здоров,
 `2` — config error, `3` — storage error, `4` — upstream error; берётся
 категория **первой** упавшей проверки (проверки идут от корневых причин, так
 что сломанный config отражается как config, хотя ломает и server build).
@@ -576,13 +586,19 @@ parameters/request body, output schemas - из success response (см. ниже)
         'base_url' => 'https://api.example.com',
         'operations' => ['getBlogTags', 'getPage'],   // allow-list, empty = nothing
         'headers' => ['Authorization' => 'Bearer ' . getenv('MCP_API_TOKEN')],
+        'cache_ttl' => 60,             // PSR-16 cache URL-спеки; 0 = загружать при каждом build
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
     ],
 ],
 ```
 
 DI wiring требует PSR-18/PSR-17 services (`ClientInterface`,
-`RequestFactoryInterface`, `StreamFactoryInterface`) в container. Request body
+`RequestFactoryInterface`, `StreamFactoryInterface`) и PSR-16 `CacheInterface`
+при `cache_ttl > 0`. Cache хранит raw document; allow-list и validation
+применяются при каждом server build. Ошибка cache даёт fallback на HTTP, но
+ошибка HTTP/spec остаётся fail-closed. Удалённая operation может оставаться
+доступной до TTL; для security-sensitive spec используйте local file или
+короткий TTL. Request body
 передаётся единым tool argument `body`; отсутствующий в document `operationId`
 вызывает `UnknownOperationException` при server build. Не-GET operation при
 `safe_methods_only` вызывает `UnsafeOperationException` (fail-fast). Локальные
@@ -593,8 +609,18 @@ parameters намеренно ограничены scalar schemas `string`, `int
 для query). Header/cookie parameters, external или non-scalar parameter
 schemas, custom serialization, non-default `explode` и `allowReserved=true`
 приводят к `InvalidSpecException` при выборе operation. Фиксированные upstream
-headers задаются через `headers`/`HttpOperationExecutor::defaultHeaders`; более
-сложные контракты требуют custom tool. Дублирующиеся `operationId` также
+headers задаются через `headers`/`HttpOperationExecutor::defaultHeaders`.
+**Bridged operations исполняются с настроенными upstream credentials. Upstream
+API автоматически не наследует identity MCP caller или RBAC decision. Не
+публикуйте user/tenant-scoped operations с более широким service token.**
+
+Для delegated authorization настройте вместе `identity_provider` и
+`delegated_header_provider`. Первый возвращает immutable `ExecutionIdentity`,
+второй на каждом call обменивает её на headers и получает только operation
+id/method/path и identity, но никогда raw MCP shared secret. Не прокидывайте
+входящий `Authorization` вслепую. Ошибка provider останавливает вызов до HTTP
+(fail-closed), dynamic headers перекрывают одноимённые static headers и не
+переиспользуются между calls. Дублирующиеся `operationId` также
 отклоняются при индексировании document. Tool arguments индексируются по
 имени: operation с path и query parameter одного имени, либо parameter `body`
 одновременно с request body, не может быть bridged и бросает

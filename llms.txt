@@ -162,9 +162,9 @@ sorted object keys) for CI diffs and external automation.
 
 ### McpDoctorCommand (configuration health check)
 
-`mcp:doctor` — runs Doctor\McpDoctor: endpoint secret configured, session
-directory writable, session round-trip via the configured store, OpenAPI spec
-loadable, server build. Output never contains the secret or header values.
+`mcp:doctor` — runs Doctor\McpDoctor: endpoint secret, optional expected HTTP
+host, exact conditional PSR-17/18/16 bindings, session storage, OpenAPI spec,
+and real server build. Output never contains the secret or header values.
 Exit codes (stable): 0 healthy, 2 config, 3 storage, 4 upstream — the
 category of the FIRST failing check (diagnosis order = root causes first).
 `--json` — machine-readable {healthy, exitCode, checks: [{name, category,
@@ -209,6 +209,11 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 - Calls are real HTTP requests against the API — its middleware stack
   (validation, rate limiting, auth) applies. Non-2xx =>
   `OperationFailedException` => MCP tool error envelope.
+- Static `defaultHeaders` are service-token mode: upstream does NOT inherit the
+  MCP caller/RBAC identity. Do not expose tenant/user data with a broader token.
+  Delegated mode configures both ExecutionIdentityProviderInterface and
+  DelegatedHeaderProviderInterface; identity is immutable, headers resolve per
+  call, provider failure is fail-closed, raw MCP secrets are never passed.
 - Unknown operationId => `UnknownOperationException` at build time.
 - Non-GET operation with `safeMethodsOnly` => `UnsafeOperationException`
   at build time.
@@ -222,8 +227,9 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `InvalidSpecException` when selected. Put fixed upstream headers in
   `HttpOperationExecutor::defaultHeaders`; use a custom tool for richer input.
 - Duplicate operationId values => `InvalidSpecException` while indexing.
-- Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) / `base_url` / `operations` /
-  `headers` (needs PSR-18/17 services in the container).
+- Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
+  `base_url` / `operations` / `headers` / `cache_ttl` (PSR-16, raw document,
+  0 disables) / `identity_provider` / `delegated_header_provider`.
 
 ### Tool-call interceptors
 
@@ -348,7 +354,9 @@ secrets; mutually exclusive with endpoint_secret), `secret_header`,
 `resource_interceptors`, `configurators`, `tool_visibility`,
 `prompt_visibility`, `resource_visibility`,
 `visibility.deny`, `visibility.allow`, `prompts_path`,
-`openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`.
+`openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`,
+`openapi.cache_ttl`, `openapi.identity_provider`,
+`openapi.delegated_header_provider`, `expected_http_host`.
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,
 applied after the core's prompts/openapi configurators — generic extension
