@@ -42,6 +42,23 @@ final class OpenApiServerConfiguratorTest
         Assert::same($byName['getBlogTagBySlug']['inputSchema']['required'], ['slug']);
     }
 
+    public function argumentLessOperationServesPropertiesAsJsonObject(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['getSitemap']);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 9, 'method' => 'tools/list'], $sessionId);
+
+        // asserted on the wire, not on the decoded body: json_decode with
+        // associative: true turns {} back into [] and hides the difference
+        // that makes clients reject the whole tools/list
+        Assert::string($this->raw($response))->contains('"properties":{}');
+
+        /** @var \stdClass $body */
+        $body = json_decode($this->raw($response), flags: JSON_THROW_ON_ERROR);
+        Assert::instanceOf($body->result->tools[0]->inputSchema->properties, \stdClass::class);
+    }
+
     public function toolsCallExecutesHttpRequestAgainstUpstream(): void
     {
         $client = new FakeHttpClient(body: '[{"slug":"php"}]');
@@ -227,6 +244,12 @@ final class OpenApiServerConfiguratorTest
      */
     private function decode(ResponseInterface $response): array
     {
+        /** @var array<string, mixed> */
+        return json_decode($this->raw($response), associative: true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    private function raw(ResponseInterface $response): string
+    {
         $raw = (string) $response->getBody();
 
         if (str_starts_with(trim($raw), 'event:') || str_starts_with(trim($raw), 'data:')) {
@@ -234,7 +257,6 @@ final class OpenApiServerConfiguratorTest
             $raw = $matches[1] ?? '';
         }
 
-        /** @var array<string, mixed> */
-        return json_decode($raw, associative: true, flags: JSON_THROW_ON_ERROR);
+        return $raw;
     }
 }

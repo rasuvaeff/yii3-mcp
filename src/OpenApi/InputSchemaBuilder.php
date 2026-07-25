@@ -23,7 +23,7 @@ final readonly class InputSchemaBuilder
     public const string BODY_ARGUMENT = 'body';
 
     /**
-     * @return array{type: 'object', properties: array<string, mixed>, required: list<string>}
+     * @return array{type: 'object', properties: array<string, mixed>|\stdClass, required: list<string>}
      */
     public function build(Operation $operation): array
     {
@@ -68,12 +68,15 @@ final readonly class InputSchemaBuilder
             }
         }
 
-        // the SDK's Tool normalizes empty properties to {} on serialization;
+        // an operation without arguments must serialize as "properties": {},
+        // not "[]" — clients validate the schema as a record and reject the
+        // whole tools/list otherwise. The SDK only normalizes this inside
+        // Tool::fromArray(), which the bridge does not use, so do it here.
         // required stays a (possibly empty) array — null breaks the SDK's
         // opis/json-schema argument validation at call time
         return [
             'type' => 'object',
-            'properties' => $properties,
+            'properties' => $properties === [] ? new \stdClass() : $properties,
             'required' => $required,
         ];
     }

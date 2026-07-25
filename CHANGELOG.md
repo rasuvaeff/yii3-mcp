@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Fix: an OpenAPI operation without parameters and without a request body now
+  serves `"properties": {}` instead of `"properties": []` in its `inputSchema`.
+  `mcp/sdk` normalizes empty properties only inside `Tool::fromArray()`, which
+  the bridge does not use, so clients validating the schema as a record
+  (`expected record, received array`) rejected the whole `tools/list`.
+- Fix: an object-typed success response declaring no properties no longer
+  advertises an empty `properties` map in `outputSchema` — the key is optional
+  and an empty array would serialize the same broken way.
+
 ## 1.7.0 — 2026-07-25
 
 - Ship an AI agent skill (`resources/skills/rasuvaeff-yii3-mcp/SKILL.md` +

@@ -200,7 +200,12 @@ final readonly class SpecIndex
                 }
             }
 
-            $output['properties'] = $named;
+            // an empty map would serialize as [] and be rejected as "not a
+            // record" by clients validating the schema; the key is optional,
+            // so an object without declared properties simply omits it
+            if ($named !== []) {
+                $output['properties'] = $named;
+            }
         }
 
         /** @var mixed $required */
