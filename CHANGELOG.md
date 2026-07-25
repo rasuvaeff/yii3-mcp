@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.7.2 — 2026-07-25
+
+- Reject trailing newlines in `DeclarativeToolVisibility` pattern matching:
+  anchor the compiled glob-regex with `\z` instead of `$` (PCRE `$` matches
+  before a trailing `\n`, which let a tool name ending in `\n` slip past an
+  exact-match deny/allow pattern).
+
 ## 1.7.1 — 2026-07-25
 
 - Fix: an OpenAPI operation without parameters and without a request body now

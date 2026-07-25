@@ -75,7 +75,7 @@ final readonly class DeclarativeToolVisibility implements ToolVisibilityInterfac
                 throw new InvalidArgumentException('Visibility pattern must not be empty');
             }
 
-            $compiled[] = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '$/';
+            $compiled[] = '/^' . str_replace('\*', '.*', preg_quote($pattern, '/')) . '\z/';
         }
 
         return $compiled;
