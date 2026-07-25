@@ -9,6 +9,10 @@ use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Symfony\Component\Uid\Uuid;
@@ -32,6 +36,8 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class McpDoctor
 {
+    private const array LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+
     /**
      * @param ContainerInterface $container used to build the real {@see Server} definition lazily
      * @param string $sessionDirectory the effective session directory (defaults already resolved)
@@ -46,17 +52,145 @@ final readonly class McpDoctor
         private string $openApiSpecPath,
         private array $openApiHeaders = [],
         private array $clientSecretIds = [],
+        private bool $httpEntryPointEnabled = true,
+        private bool $consoleEntryPointEnabled = true,
+        private bool $openApiOperationsEnabled = false,
+        private int $openApiCacheTtl = 0,
+        private string $expectedHttpHost = '',
+        private array $allowedHosts = [],
     ) {}
 
     public function diagnose(bool $probeUpstream = false): DoctorReport
     {
         return new DoctorReport([
             $this->checkEndpointSecret(),
+            $this->checkAllowedHost(),
+            ...$this->checkServices(),
             $this->checkSessionDirectory(),
             $this->checkSessionStore(),
             $this->checkOpenApiSpec($probeUpstream),
             $this->checkServerBuild($probeUpstream),
         ]);
+    }
+
+    private function checkAllowedHost(): CheckResult
+    {
+        if ($this->expectedHttpHost === '') {
+            return new CheckResult(
+                name: 'allowed_host',
+                category: CheckCategory::Config,
+                status: CheckStatus::Skip,
+                details: 'No expected HTTP host configured; localhost and stdio are valid without an extra allow-list entry',
+            );
+        }
+
+        $host = strtolower($this->expectedHttpHost);
+        $allowedHosts = array_map(strtolower(...), [...self::LOCAL_HOSTS, ...$this->allowedHosts]);
+
+        if (!in_array($host, $allowedHosts, true)) {
+            return new CheckResult(
+                name: 'allowed_host',
+                category: CheckCategory::Config,
+                status: CheckStatus::Fail,
+                details: sprintf('Expected HTTP host "%s" is missing from allowed_hosts', $this->expectedHttpHost),
+            );
+        }
+
+        return new CheckResult(
+            name: 'allowed_host',
+            category: CheckCategory::Config,
+            status: CheckStatus::Pass,
+            details: sprintf('Expected HTTP host is allowed: %s', $this->expectedHttpHost),
+        );
+    }
+
+    /**
+     * @return list<CheckResult>
+     */
+    private function checkServices(): array
+    {
+        /** @var array<string, list<string>> $requirements */
+        $requirements = [];
+
+        if ($this->httpEntryPointEnabled) {
+            $requirements[ResponseFactoryInterface::class][] = 'McpAction';
+            $requirements[StreamFactoryInterface::class][] = 'McpAction';
+        }
+
+        if ($this->consoleEntryPointEnabled) {
+            $requirements[ServerRequestFactoryInterface::class][] = 'McpListCommand/McpTester';
+            $requirements[ResponseFactoryInterface::class][] = 'McpListCommand/McpTester';
+            $requirements[StreamFactoryInterface::class][] = 'McpListCommand/McpTester';
+        }
+
+        if ($this->isUrl($this->openApiSpecPath)) {
+            $requirements[ClientInterface::class][] = 'URL OpenAPI spec';
+            $requirements[RequestFactoryInterface::class][] = 'URL OpenAPI spec';
+
+            if ($this->openApiCacheTtl > 0) {
+                $requirements[CacheInterface::class][] = 'URL OpenAPI cache';
+            }
+        }
+
+        if ($this->openApiOperationsEnabled) {
+            $requirements[ClientInterface::class][] = 'OpenAPI operation execution';
+            $requirements[RequestFactoryInterface::class][] = 'OpenAPI operation execution';
+            $requirements[StreamFactoryInterface::class][] = 'OpenAPI operation execution';
+        }
+
+        $checks = [];
+
+        foreach ($requirements as $interface => $features) {
+            $checks[] = $this->checkService($interface, array_values(array_unique($features)));
+        }
+
+        return $checks;
+    }
+
+    /**
+     * @param list<string> $features
+     */
+    private function checkService(string $interface, array $features): CheckResult
+    {
+        $name = 'service_' . strtolower(str_replace(['Psr\\', '\\'], ['', '_'], $interface));
+        $requiredBy = implode(', ', $features);
+
+        if (!$this->container->has($interface)) {
+            return new CheckResult(
+                name: $name,
+                category: CheckCategory::Config,
+                status: CheckStatus::Fail,
+                details: sprintf('Missing %s; required by %s', $interface, $requiredBy),
+            );
+        }
+
+        try {
+            /** @var mixed $service */
+            $service = $this->container->get($interface);
+        } catch (\Throwable $failure) {
+            return new CheckResult(
+                name: $name,
+                category: CheckCategory::Config,
+                status: CheckStatus::Fail,
+                details: sprintf('Resolving %s for %s threw %s: %s', $interface, $requiredBy, $failure::class, $failure->getMessage()),
+            );
+        }
+
+        if (!$service instanceof $interface) {
+            return new CheckResult(
+                name: $name,
+                category: CheckCategory::Config,
+                status: CheckStatus::Fail,
+                details: sprintf('%s resolves to %s; required by %s', $interface, get_debug_type($service), $requiredBy),
+            );
+        }
+
+        return new CheckResult(
+            name: $name,
+            category: CheckCategory::Config,
+            status: CheckStatus::Pass,
+            details: sprintf('%s is available for %s', $interface, $requiredBy),
+        );
     }
 
     private function checkEndpointSecret(): CheckResult

@@ -283,7 +283,11 @@ final class ConfigWiringTest
         // the real store location, not a different one.
         $report = $doctor->diagnose();
         $checks = $report->toArray()['checks'];
-        Assert::string($checks[1]['details'])->contains('yii3-mcp-sessions');
+        $sessionDirectory = array_values(array_filter(
+            $checks,
+            static fn(array $check): bool => $check['name'] === 'session_directory',
+        ));
+        Assert::string($sessionDirectory[0]['details'])->contains('yii3-mcp-sessions');
     }
 
     /**

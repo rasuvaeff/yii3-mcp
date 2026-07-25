@@ -32,11 +32,17 @@ final readonly class HttpOperationExecutor
         private StreamFactoryInterface $streamFactory,
         string $baseUrl,
         private array $defaultHeaders = [],
+        private ?ExecutionIdentityProviderInterface $identityProvider = null,
+        private ?DelegatedHeaderProviderInterface $delegatedHeaderProvider = null,
     ) {
         $normalized = rtrim(trim($baseUrl), '/');
 
         if ($normalized === '') {
             throw new InvalidArgumentException('Base URL must not be empty');
+        }
+
+        if (($identityProvider === null) !== ($delegatedHeaderProvider === null)) {
+            throw new InvalidArgumentException('Execution identity provider and delegated header provider must be configured together');
         }
 
         $this->baseUrl = $normalized;
@@ -52,7 +58,21 @@ final readonly class HttpOperationExecutor
             $this->baseUrl . $this->buildPath($operation, $arguments),
         );
 
-        foreach ($this->defaultHeaders as $name => $value) {
+        $headers = $this->defaultHeaders;
+
+        if ($this->identityProvider !== null && $this->delegatedHeaderProvider !== null) {
+            $headers = array_replace(
+                $headers,
+                $this->delegatedHeaderProvider->headers(
+                    operationId: $operation->operationId,
+                    method: $operation->method,
+                    path: $operation->path,
+                    identity: $this->identityProvider->current(),
+                ),
+            );
+        }
+
+        foreach ($headers as $name => $value) {
             $request = $request->withHeader($name, $value);
         }
 

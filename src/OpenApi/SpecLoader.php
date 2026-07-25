@@ -6,6 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 
 /**
@@ -25,10 +26,27 @@ final readonly class SpecLoader
         private ClientInterface $httpClient,
         private RequestFactoryInterface $requestFactory,
         private array $headers = [],
-    ) {}
+        private ?CacheInterface $cache = null,
+        private int $cacheTtl = 0,
+    ) {
+        if ($cacheTtl < 0) {
+            throw new \InvalidArgumentException(sprintf('Cache TTL must not be negative, %d given', $cacheTtl));
+        }
+    }
 
     public function fromUrl(string $url): SpecIndex
     {
+        $cacheKey = $this->cacheKey($url);
+        $document = $this->readCache($cacheKey);
+
+        if ($document !== null) {
+            try {
+                return SpecIndex::fromJson($document);
+            } catch (InvalidSpecException) {
+                // A corrupt cache entry is a cache failure; retry upstream.
+            }
+        }
+
         $request = $this->requestFactory->createRequest('GET', $url)
             ->withHeader('Accept', 'application/json');
 
@@ -46,6 +64,52 @@ final readonly class SpecLoader
             ));
         }
 
-        return SpecIndex::fromJson((string) $response->getBody());
+        $document = (string) $response->getBody();
+        $index = SpecIndex::fromJson($document);
+        $this->writeCache($cacheKey, $document);
+
+        return $index;
+    }
+
+    private function cacheKey(string $url): string
+    {
+        $headers = [];
+
+        foreach ($this->headers as $name => $value) {
+            $headers[strtolower($name)] = $value;
+        }
+
+        ksort($headers);
+
+        return 'yii3-mcp.openapi.' . hash('sha256', $url . "\0" . json_encode($headers, JSON_THROW_ON_ERROR));
+    }
+
+    private function readCache(string $key): ?string
+    {
+        if ($this->cache === null || $this->cacheTtl === 0) {
+            return null;
+        }
+
+        try {
+            /** @var mixed $value */
+            $value = $this->cache->get($key);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return is_string($value) ? $value : null;
+    }
+
+    private function writeCache(string $key, string $document): void
+    {
+        if ($this->cache === null || $this->cacheTtl === 0) {
+            return;
+        }
+
+        try {
+            $this->cache->set($key, $document, $this->cacheTtl);
+        } catch (\Throwable) {
+            // Cache availability must not become OpenAPI availability.
+        }
     }
 }

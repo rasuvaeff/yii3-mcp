@@ -189,9 +189,19 @@ included) in the `SchemaSnapshot` normalized form — item order and object
 keys are stable, so the output diffs cleanly in CI and feeds external
 automation.
 
-The command (like `McpTester`) needs PSR-17 factories
-(`ServerRequestFactoryInterface`, `ResponseFactoryInterface`,
-`StreamFactoryInterface`) in the container.
+The command (like `McpTester`) needs PSR-17 factories in the container. Keep
+these services in every config group that builds `Mcp\Server`, including the
+console group:
+
+| Entry point / feature | Required services |
+|---|---|
+| `McpAction` | `ResponseFactoryInterface`, `StreamFactoryInterface` |
+| `McpListCommand`, `McpTester` | `ServerRequestFactoryInterface`, `ResponseFactoryInterface`, `StreamFactoryInterface` |
+| URL OpenAPI spec | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface` |
+| OpenAPI operation execution | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface`, `StreamFactoryInterface` |
+
+`ServerRequestFactoryInterface` and `RequestFactoryInterface` are distinct
+PSR-17 contracts; binding one does not satisfy the other.
 
 ### Diagnostics: mcp:doctor
 
@@ -205,9 +215,10 @@ header values:
 ./yii mcp:doctor --probe   # also fetch a URL OpenAPI spec over the network
 ```
 
-Checks, in diagnosis order: endpoint secret configured, session directory
-writable, a session round-trip through the configured store, OpenAPI spec
-loadable, server build. Exit codes are stable for scripting: `0` healthy,
+Checks include endpoint secret, the optional `expected_http_host` allow-list,
+every PSR service required by enabled entry points/features, session storage,
+the OpenAPI spec and a real server build. Missing services are reported by
+their exact interface. Exit codes are stable for scripting: `0` healthy,
 `2` config error, `3` storage error, `4` upstream error — the category of the
 **first** failing check (checks run root-causes-first, so a broken config
 reports as config even though it also breaks the server build).
@@ -579,13 +590,19 @@ limiting, auth) — unlike hand-written tools that invoke handlers directly.
         'base_url' => 'https://api.example.com',
         'operations' => ['getBlogTags', 'getPage'],   // allow-list, empty = nothing
         'headers' => ['Authorization' => 'Bearer ' . getenv('MCP_API_TOKEN')],
+        'cache_ttl' => 60,             // PSR-16 URL-spec cache; 0 = fetch every build
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
     ],
 ],
 ```
 
 The DI wiring requires PSR-18/PSR-17 services (`ClientInterface`,
-`RequestFactoryInterface`, `StreamFactoryInterface`) in the container.
+`RequestFactoryInterface`, `StreamFactoryInterface`) in the container and a
+PSR-16 `CacheInterface` when `cache_ttl > 0`. The cache stores the raw document;
+allow-listing and validation run on every server build. Cache failures fall back
+to HTTP, while HTTP/spec failures remain fail-closed. A removed operation can
+remain callable for up to the TTL, so use a local file or a short TTL for
+security-sensitive specs.
 Request bodies are passed as a single `body` tool argument; an operationId
 missing from the document throws `UnknownOperationException` at server build
 time, a non-GET operation under `safe_methods_only` throws
@@ -597,8 +614,20 @@ OpenAPI defaults (`simple` path, `form` query). Header/cookie parameters,
 external or non-scalar parameter schemas, custom serialization, non-default
 `explode` and `allowReserved=true` throw `InvalidSpecException` when the
 operation is selected. Fixed upstream headers belong in `headers`/
-`HttpOperationExecutor::defaultHeaders`; more complex contracts need a custom
-tool. Duplicate `operationId` values also fail while indexing the document.
+`HttpOperationExecutor::defaultHeaders`. **Bridged operations execute with the
+configured upstream credentials. The upstream API does not automatically
+inherit the MCP caller identity or RBAC decision. Do not expose user/tenant-
+scoped operations with a broader service token.**
+
+For delegated authorization configure both `identity_provider` and
+`delegated_header_provider`. The first returns an immutable
+`ExecutionIdentity`; the second exchanges it for headers on every operation
+call and receives only operation id/method/path plus that identity, never the
+raw MCP shared secret. Do not forward the inbound `Authorization` header
+verbatim. Provider failures stop the call before HTTP (fail-closed), and
+dynamic headers override matching static headers without cross-call reuse.
+
+Duplicate `operationId` values also fail while indexing the document.
 Tool arguments are keyed by name, so an operation with a
 path and a query parameter sharing one name — or a parameter named `body`
 alongside a request body — cannot be bridged and throws

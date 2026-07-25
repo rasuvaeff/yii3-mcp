@@ -11,7 +11,12 @@ use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Yii3Mcp\Doctor\CheckResult;
 use Rasuvaeff\Yii3Mcp\Doctor\CheckStatus;
+use Rasuvaeff\Yii3Mcp\Doctor\DoctorReport;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
@@ -53,12 +58,9 @@ final class McpDoctorTest
 
         Assert::true($report->healthy());
         Assert::same($report->exitCode(), 0);
-        Assert::same(
-            array_column($report->toArray()['checks'], 'name'),
-            ['endpoint_secret', 'session_directory', 'session_store', 'openapi_spec', 'server_build'],
-        );
+        Assert::true(in_array('service_http_message_serverrequestfactoryinterface', array_column($report->toArray()['checks'], 'name'), true));
         // Disabled OpenAPI bridge is a skip, not a pass.
-        Assert::same($report->checks[3]->status, CheckStatus::Skip);
+        Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Skip);
     }
 
     public function emptySecretFailsWithConfigExitCode(): void
@@ -67,25 +69,25 @@ final class McpDoctorTest
 
         Assert::false($report->healthy());
         Assert::same($report->exitCode(), 2);
-        Assert::same($report->checks[0]->status, CheckStatus::Fail);
+        Assert::same($this->check($report, 'endpoint_secret')->status, CheckStatus::Fail);
     }
 
     public function clientSecretsSatisfyTheSecretCheck(): void
     {
         $report = $this->doctor(secret: '', clientIds: ['ci', 'claude'])->diagnose();
 
-        Assert::same($report->checks[0]->status, CheckStatus::Pass);
-        Assert::string($report->checks[0]->details)->contains('2 client(s)');
-        Assert::string($report->checks[0]->details)->contains('claude');
+        Assert::same($this->check($report, 'endpoint_secret')->status, CheckStatus::Pass);
+        Assert::string($this->check($report, 'endpoint_secret')->details)->contains('2 client(s)');
+        Assert::string($this->check($report, 'endpoint_secret')->details)->contains('claude');
     }
 
     public function bothSecretFormsTogetherFailTheSecretCheck(): void
     {
         $report = $this->doctor(secret: 'single', clientIds: ['ci'])->diagnose();
 
-        Assert::same($report->checks[0]->status, CheckStatus::Fail);
+        Assert::same($this->check($report, 'endpoint_secret')->status, CheckStatus::Fail);
         Assert::same($report->exitCode(), 2);
-        Assert::string($report->checks[0]->details)->contains('exactly one');
+        Assert::string($this->check($report, 'endpoint_secret')->details)->contains('exactly one');
     }
 
     public function uncreatableSessionDirectoryFailsWithStorageExitCode(): void
@@ -102,7 +104,7 @@ final class McpDoctorTest
 
         Assert::false($report->healthy());
         Assert::same($report->exitCode(), 3);
-        Assert::string($report->checks[1]->details)->contains($file);
+        Assert::string($this->check($report, 'session_directory')->details)->contains($file);
     }
 
     public function throwingSessionStoreFailsWithStorageExitCode(): void
@@ -111,7 +113,7 @@ final class McpDoctorTest
 
         Assert::false($report->healthy());
         Assert::same($report->exitCode(), 3);
-        Assert::string($report->checks[2]->details)->contains('disk on fire');
+        Assert::string($this->check($report, 'session_store')->details)->contains('disk on fire');
     }
 
     public function missingSpecFileFailsWithConfigExitCode(): void
@@ -120,7 +122,7 @@ final class McpDoctorTest
 
         Assert::false($report->healthy());
         Assert::same($report->exitCode(), 2);
-        Assert::same($report->checks[3]->status, CheckStatus::Fail);
+        Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Fail);
     }
 
     public function urlSpecIsSkippedWithoutProbeAndTheReportStaysHealthy(): void
@@ -130,8 +132,8 @@ final class McpDoctorTest
         Assert::true($report->healthy());
         // Both the spec fetch and the server build (which loads the spec
         // eagerly) stay off the network without --probe.
-        Assert::same($report->checks[3]->status, CheckStatus::Skip);
-        Assert::same($report->checks[4]->status, CheckStatus::Skip);
+        Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Skip);
+        Assert::same($this->check($report, 'server_build')->status, CheckStatus::Skip);
     }
 
     public function probeFetchesTheUrlSpecAndPasses(): void
@@ -140,7 +142,7 @@ final class McpDoctorTest
 
         $report = $this->doctor(specPath: 'https://api.example.test/openapi.json', httpClient: $client)->diagnose(probeUpstream: true);
 
-        Assert::same($report->checks[3]->status, CheckStatus::Pass);
+        Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Pass);
     }
 
     public function probeFailureIsReportedWithUpstreamExitCode(): void
@@ -158,7 +160,7 @@ final class McpDoctorTest
         $report = $this->doctor(withServer: false)->diagnose();
 
         Assert::false($report->healthy());
-        Assert::same($report->checks[4]->status, CheckStatus::Fail);
+        Assert::same($this->check($report, 'server_build')->status, CheckStatus::Fail);
         Assert::same($report->exitCode(), 2);
     }
 
@@ -172,7 +174,7 @@ final class McpDoctorTest
             umask($previousUmask);
         }
 
-        Assert::same($report->checks[1]->status, CheckStatus::Pass);
+        Assert::same($this->check($report, 'session_directory')->status, CheckStatus::Pass);
         Assert::same(substr(sprintf('%o', (int) fileperms($this->sessionDir)), -3), '775');
     }
 
@@ -182,7 +184,7 @@ final class McpDoctorTest
 
         $report = $this->doctor(store: $store)->diagnose();
 
-        Assert::same($report->checks[2]->status, CheckStatus::Pass);
+        Assert::same($this->check($report, 'session_store')->status, CheckStatus::Pass);
         Assert::same(glob($this->sessionDir . '/*'), []);
     }
 
@@ -191,8 +193,8 @@ final class McpDoctorTest
         $report = $this->doctor(store: new LyingSessionStore())->diagnose();
 
         Assert::false($report->healthy());
-        Assert::same($report->checks[2]->status, CheckStatus::Fail);
-        Assert::string($report->checks[2]->details)->contains('did not read back');
+        Assert::same($this->check($report, 'session_store')->status, CheckStatus::Fail);
+        Assert::string($this->check($report, 'session_store')->details)->contains('did not read back');
     }
 
     public function probeWithAMisboundRequestFactoryReportsTheBindingProblem(): void
@@ -210,8 +212,8 @@ final class McpDoctorTest
 
         $report = $doctor->diagnose(probeUpstream: true);
 
-        Assert::same($report->checks[3]->status, CheckStatus::Fail);
-        Assert::string($report->checks[3]->details)->contains('must be bound in the container');
+        Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Fail);
+        Assert::string($this->check($report, 'openapi_spec')->details)->contains('must be bound in the container');
     }
 
     public function reportNeverContainsTheSecret(): void
@@ -238,6 +240,50 @@ final class McpDoctorTest
         Assert::false(str_contains($json, 'token-value'));
     }
 
+    public function reportsTheExactMissingConsoleFactory(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: new InMemorySessionStore(),
+        ))->create([GreetingTool::class]);
+        $doctor = new McpDoctor(
+            container: new SimpleContainer([
+                Server::class => $server,
+                ResponseFactoryInterface::class => $factory,
+                StreamFactoryInterface::class => $factory,
+            ]),
+            sessionStore: new InMemorySessionStore(),
+            endpointSecret: 'test-secret',
+            sessionDirectory: $this->sessionDir,
+            openApiSpecPath: '',
+        );
+
+        $check = $this->check($doctor->diagnose(), 'service_http_message_serverrequestfactoryinterface');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains(ServerRequestFactoryInterface::class);
+        Assert::false(str_contains($check->details, RequestFactoryInterface::class . ';'));
+    }
+
+    public function expectedProductionHostMustBeAllowListed(): void
+    {
+        $report = $this->doctor(expectedHttpHost: 'mcp.example.test')->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Fail);
+        Assert::string($this->check($report, 'allowed_host')->details)->contains('mcp.example.test');
+    }
+
+    public function expectedProductionHostPassesWhenAllowListed(): void
+    {
+        $report = $this->doctor(
+            expectedHttpHost: 'mcp.example.test',
+            allowedHosts: ['mcp.example.test'],
+        )->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
+    }
+
     /**
      * @param array<string, string> $headers
      * @param list<string> $clientIds
@@ -251,11 +297,16 @@ final class McpDoctorTest
         bool $withServer = true,
         array $headers = [],
         array $clientIds = [],
+        string $expectedHttpHost = '',
+        array $allowedHosts = [],
     ): McpDoctor {
         $factory = new Psr17Factory();
         $definitions = [
             ClientInterface::class => $httpClient ?? new FakeHttpClient(),
             RequestFactoryInterface::class => $factory,
+            ServerRequestFactoryInterface::class => $factory,
+            ResponseFactoryInterface::class => $factory,
+            StreamFactoryInterface::class => $factory,
         ];
 
         if ($withServer) {
@@ -273,6 +324,19 @@ final class McpDoctorTest
             openApiSpecPath: $specPath,
             openApiHeaders: $headers,
             clientSecretIds: $clientIds,
+            expectedHttpHost: $expectedHttpHost,
+            allowedHosts: $allowedHosts,
         );
+    }
+
+    private function check(DoctorReport $report, string $name): CheckResult
+    {
+        foreach ($report->checks as $check) {
+            if ($check->name === $name) {
+                return $check;
+            }
+        }
+
+        throw new \LogicException(sprintf('Doctor check "%s" was not found', $name));
     }
 }

@@ -9,6 +9,9 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -94,7 +97,7 @@ final class McpDoctorCommandTest
         $display = $tester->getDisplay();
         $decoded = json_decode($display, associative: true, flags: JSON_THROW_ON_ERROR);
         Assert::same($decoded['healthy'], true);
-        Assert::same(count($decoded['checks']), 5);
+        Assert::true(count($decoded['checks']) >= 5);
         Assert::false(str_contains($display, 'super-secret-value'));
         // Pretty-printed with unescaped slashes: the session directory path
         // appears verbatim, ready for grep.
@@ -126,6 +129,9 @@ final class McpDoctorCommandTest
                 Server::class => $server,
                 ClientInterface::class => new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)),
                 RequestFactoryInterface::class => $factory,
+                ServerRequestFactoryInterface::class => $factory,
+                ResponseFactoryInterface::class => $factory,
+                StreamFactoryInterface::class => $factory,
             ]),
             sessionStore: new InMemorySessionStore(),
             endpointSecret: $secret,

@@ -10,6 +10,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
@@ -23,6 +24,8 @@ use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
+use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
+use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
@@ -59,7 +62,7 @@ return [
         'definition' => static function (McpServerFactory $factory, ContainerInterface $container) use ($params): Server {
             /** @var list<class-string> $tools */
             $tools = $params['rasuvaeff/yii3-mcp']['tools'];
-            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, safe_methods_only?: bool} $openapi */
+            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             $configurators = [];
@@ -72,15 +75,25 @@ return [
             }
 
             if ($openapi['spec_path'] !== '' && $openapi['operations'] !== []) {
-                // http(s) source: fetched with the same headers as the calls,
-                // so a spec endpoint behind auth works and is always current
+                $cacheTtl = $openapi['cache_ttl'] ?? 0;
+
                 $spec = str_starts_with($openapi['spec_path'], 'http://') || str_starts_with($openapi['spec_path'], 'https://')
                     ? (new SpecLoader(
                         httpClient: $container->get(ClientInterface::class),
                         requestFactory: $container->get(RequestFactoryInterface::class),
                         headers: $openapi['headers'],
+                        cache: $cacheTtl > 0 ? $container->get(CacheInterface::class) : null,
+                        cacheTtl: $cacheTtl,
                     ))->fromUrl($openapi['spec_path'])
                     : SpecIndex::fromFile($openapi['spec_path']);
+
+                $identityProviderClass = $openapi['identity_provider'] ?? '';
+                $delegatedHeaderProviderClass = $openapi['delegated_header_provider'] ?? '';
+
+                /** @var ?ExecutionIdentityProviderInterface $identityProvider */
+                $identityProvider = $identityProviderClass === '' ? null : $container->get($identityProviderClass);
+                /** @var ?DelegatedHeaderProviderInterface $delegatedHeaderProvider */
+                $delegatedHeaderProvider = $delegatedHeaderProviderClass === '' ? null : $container->get($delegatedHeaderProviderClass);
 
                 $configurators[] = new OpenApiServerConfigurator(
                     spec: $spec,
@@ -90,6 +103,8 @@ return [
                         streamFactory: $container->get(StreamFactoryInterface::class),
                         baseUrl: $openapi['base_url'],
                         defaultHeaders: $openapi['headers'],
+                        identityProvider: $identityProvider,
+                        delegatedHeaderProvider: $delegatedHeaderProvider,
                     ),
                     operations: $openapi['operations'],
                     safeMethodsOnly: $openapi['safe_methods_only'] ?? false,
@@ -205,7 +220,7 @@ return [
             /** @var array{dir?: string} $session */
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
             $dir = $session['dir'] ?? '';
-            /** @var array{spec_path: string, headers: array<string, string>} $openapi */
+            /** @var array{spec_path: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             /** @var array<string, string|list<string>> $clientSecrets */
@@ -219,6 +234,10 @@ return [
                 openApiSpecPath: $openapi['spec_path'],
                 openApiHeaders: $openapi['headers'],
                 clientSecretIds: array_map(strval(...), array_keys($clientSecrets)),
+                openApiOperationsEnabled: $openapi['operations'] !== [],
+                openApiCacheTtl: $openapi['cache_ttl'] ?? 0,
+                expectedHttpHost: $params['rasuvaeff/yii3-mcp']['expected_http_host'] ?? '',
+                allowedHosts: $params['rasuvaeff/yii3-mcp']['allowed_hosts'],
             );
         },
     ],

@@ -13,6 +13,8 @@ final class FakeHttpClient implements ClientInterface
 {
     public ?RequestInterface $lastRequest = null;
 
+    public int $requestCount = 0;
+
     public function __construct(
         private readonly int $statusCode = 200,
         private readonly string $body = '{"ok":true}',
@@ -22,6 +24,7 @@ final class FakeHttpClient implements ClientInterface
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
         $this->lastRequest = $request;
+        ++$this->requestCount;
 
         return new Response($this->statusCode, ['Content-Type' => 'application/json'], $this->body);
     }

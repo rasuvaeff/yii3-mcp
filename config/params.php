@@ -25,6 +25,9 @@ return [
         // (localhost is always allowed); required when the endpoint is
         // served from a real domain, e.g. ['api.example.com']
         'allowed_hosts' => [],
+        // Optional production hostname expected by mcp:doctor. Empty means no
+        // host-policy check (localhost and stdio remain valid deployments).
+        'expected_http_host' => '',
         'session' => [
             // empty => sys_get_temp_dir() . '/yii3-mcp-sessions'
             'dir' => '',
@@ -86,6 +89,13 @@ return [
             'base_url' => '',
             'operations' => [],
             'headers' => [],
+            // PSR-16 TTL for URL specs. 0 preserves fetch-on-every-build.
+            'cache_ttl' => 0,
+            // Optional delegated mode. Configure both application services;
+            // they are resolved on every operation call. Static headers stay
+            // the backward-compatible service-token mode.
+            'identity_provider' => '',
+            'delegated_header_provider' => '',
             // read-only bridge: reject non-GET operations at build time
             'safe_methods_only' => false,
         ],
