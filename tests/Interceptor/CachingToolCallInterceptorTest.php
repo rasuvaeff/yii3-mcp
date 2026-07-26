@@ -21,7 +21,7 @@ final class CachingToolCallInterceptorTest
 {
     public function uncachedToolAlwaysCallsNext(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: []);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: [], namespace: 'test-app');
         $calls = 0;
 
         $interceptor->intercept($this->context('otherTool'), static function () use (&$calls): string {
@@ -40,7 +40,7 @@ final class CachingToolCallInterceptorTest
 
     public function secondCallWithTheSameArgumentsIsServedFromCache(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): string {
             ++$calls;
@@ -58,7 +58,7 @@ final class CachingToolCallInterceptorTest
 
     public function differentToolsGetDifferentCacheEntries(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['toolA' => 60, 'toolB' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['toolA' => 60, 'toolB' => 60], namespace: 'test-app');
 
         $first = $interceptor->intercept($this->context('toolA'), static fn(): string => 'from-a');
         $second = $interceptor->intercept($this->context('toolB'), static fn(): string => 'from-b');
@@ -71,7 +71,7 @@ final class CachingToolCallInterceptorTest
     {
         // without a separator, ('a','bc') and ('ab','c') concatenate to the
         // same "abc" — the key must keep them apart
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['bc' => 60, 'c' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['bc' => 60, 'c' => 60], namespace: 'test-app');
 
         $first = $interceptor->intercept($this->context('bc', clientId: 'a'), static fn(): string => 'first');
         $second = $interceptor->intercept($this->context('c', clientId: 'ab'), static fn(): string => 'second');
@@ -82,7 +82,7 @@ final class CachingToolCallInterceptorTest
 
     public function allArgumentKeysAreConsideredNotJustTheFirst(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -98,7 +98,7 @@ final class CachingToolCallInterceptorTest
 
     public function nestedArgumentKeyOrderIsCanonicalizedRecursively(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -114,7 +114,7 @@ final class CachingToolCallInterceptorTest
 
     public function differentArgumentsGetDifferentCacheEntries(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -130,7 +130,7 @@ final class CachingToolCallInterceptorTest
 
     public function argumentKeyOrderDoesNotAffectTheCacheKey(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -146,7 +146,7 @@ final class CachingToolCallInterceptorTest
 
     public function differentClientsNeverShareACacheEntry(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -160,9 +160,9 @@ final class CachingToolCallInterceptorTest
         Assert::same($calls, 2);
     }
 
-    public function nullClientIdFallsBackToAnonymousAndStillCaches(): void
+    public function nullClientIdStillCachesUnderItsOwnPartition(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -179,7 +179,7 @@ final class CachingToolCallInterceptorTest
     public function ttlIsPassedToTheCache(): void
     {
         $cache = new FakeCache();
-        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 42]);
+        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 42], namespace: 'test-app');
 
         $interceptor->intercept($this->context('cachedTool'), static fn(): string => 'x');
 
@@ -188,7 +188,7 @@ final class CachingToolCallInterceptorTest
 
     public function thrownExceptionsAreNeverCached(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): string {
             ++$calls;
@@ -217,7 +217,7 @@ final class CachingToolCallInterceptorTest
 
     public function cacheReadFailureFailsOpen(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(throwOnRead: true), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(throwOnRead: true), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
 
         Assert::same($interceptor->intercept($this->context('cachedTool'), static fn(): string => 'ok'), 'ok');
     }
@@ -225,7 +225,7 @@ final class CachingToolCallInterceptorTest
     public function cacheReadFailureSkipsTheWriteBackToo(): void
     {
         $cache = new FakeCache(throwOnRead: true);
-        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
 
         $interceptor->intercept($this->context('cachedTool'), static fn(): string => 'ok');
 
@@ -234,7 +234,7 @@ final class CachingToolCallInterceptorTest
 
     public function cacheWriteFailureFailsOpen(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(throwOnWrite: true), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(throwOnWrite: true), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
 
         Assert::same($interceptor->intercept($this->context('cachedTool'), static fn(): string => 'ok'), 'ok');
     }
@@ -245,7 +245,7 @@ final class CachingToolCallInterceptorTest
         // identity differs; a shared entry would serve one end user's
         // upstream response to another
         $provider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1'));
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], identityProvider: $provider);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app', identityProvider: $provider);
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -263,7 +263,7 @@ final class CachingToolCallInterceptorTest
     public function everyIdentityFieldPartitionsTheCacheKey(): void
     {
         $provider = new MutableExecutionIdentityProvider(new ExecutionIdentity());
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], identityProvider: $provider);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app', identityProvider: $provider);
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -283,7 +283,7 @@ final class CachingToolCallInterceptorTest
     public function sameExecutionIdentityIsServedFromCache(): void
     {
         $provider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1', tenantId: 'tenant-a'));
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], identityProvider: $provider);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app', identityProvider: $provider);
         $calls = 0;
         $handler = static function () use (&$calls): int {
             ++$calls;
@@ -303,7 +303,7 @@ final class CachingToolCallInterceptorTest
         // the exact cross-identity leak the key exists to prevent — unlike
         // a cache outage, this must NOT fail open
         $cache = new FakeCache();
-        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], identityProvider: new ThrowingExecutionIdentityProvider());
+        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], namespace: 'test-app', identityProvider: new ThrowingExecutionIdentityProvider());
         $calls = 0;
         $caught = null;
 
@@ -321,7 +321,7 @@ final class CachingToolCallInterceptorTest
 
     public function identityProviderFailureDoesNotAffectUncachedTools(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: [], identityProvider: new ThrowingExecutionIdentityProvider());
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: [], namespace: 'test-app', identityProvider: new ThrowingExecutionIdentityProvider());
 
         Assert::same($interceptor->intercept($this->context('otherTool'), static fn(): string => 'ok'), 'ok');
     }
@@ -335,9 +335,10 @@ final class CachingToolCallInterceptorTest
         $withIdentity = new CachingToolCallInterceptor(
             $cache,
             ttlSeconds: ['t' => 60],
+            namespace: 'test-app',
             identityProvider: new MutableExecutionIdentityProvider(new ExecutionIdentity()),
         );
-        $plain = new CachingToolCallInterceptor($cache, ttlSeconds: ['t[null,null,null]' => 60]);
+        $plain = new CachingToolCallInterceptor($cache, ttlSeconds: ['t[null,null,null]' => 60], namespace: 'test-app');
 
         $first = $withIdentity->intercept($this->context('t'), static fn(): string => 'identity-scoped');
         $second = $plain->intercept($this->context('t[null,null,null]'), static fn(): string => 'plain');
@@ -349,7 +350,7 @@ final class CachingToolCallInterceptorTest
     public function cacheKeyIsPsr16SafeAndFormatStable(): void
     {
         $cache = new FakeCache();
-        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
 
         $interceptor->intercept($this->context('cachedTool', ['id' => 1]), static fn(): string => 'x');
 
@@ -360,12 +361,73 @@ final class CachingToolCallInterceptorTest
         // caching; the format is pinned so an accidental change (which
         // orphans every deployed cache entry) fails a test, not silently
         Assert::same(strlen($key), 64);
-        Assert::same($key, 'yii3-mcp.toolcache.' . substr(hash('sha256', 'client|cachedTool||{"id":1}'), 0, 45));
+        $material = json_encode([
+            'v' => 2,
+            'namespace' => 'test-app',
+            'client' => 'client',
+            'tool' => 'cachedTool',
+            'identity' => null,
+            'arguments' => ['id' => 1],
+        ], JSON_THROW_ON_ERROR);
+        Assert::same($key, 'yii3-mcp.toolcache.' . substr(hash('sha256', $material), 0, 45));
+    }
+
+    public function anonymousCallerNeverSharesAPartitionWithAClientNamedAnonymous(): void
+    {
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        // a real client literally named "anonymous" must not read what an
+        // identity-less (stdio) caller cached — absence is typed, not spelled
+        $first = $interceptor->intercept($this->context('cachedTool', clientId: null), $handler);
+        $second = $interceptor->intercept($this->context('cachedTool', clientId: 'anonymous'), $handler);
+
+        Assert::same($first, 1);
+        Assert::same($second, 2);
+    }
+
+    public function differentNamespacesNeverShareACacheEntry(): void
+    {
+        $cache = new FakeCache();
+        $appA = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], namespace: 'app-a');
+        $appB = new CachingToolCallInterceptor($cache, ttlSeconds: ['cachedTool' => 60], namespace: 'app-b');
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        // two applications sharing one backend (a common Redis) with
+        // same-named tools must never read each other's results
+        $first = $appA->intercept($this->context('cachedTool'), $handler);
+        $second = $appB->intercept($this->context('cachedTool'), $handler);
+
+        Assert::same($first, 1);
+        Assert::same($second, 2);
+    }
+
+    public function emptyNamespaceIsRejected(): void
+    {
+        $caught = null;
+
+        try {
+            new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: [], namespace: '');
+        } catch (\InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('namespace');
     }
 
     public function nullResultIsCachedAndDistinguishedFromAMiss(): void
     {
-        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60]);
+        $interceptor = new CachingToolCallInterceptor(new FakeCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
         $calls = 0;
         $handler = static function () use (&$calls): mixed {
             ++$calls;

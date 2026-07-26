@@ -38,8 +38,9 @@ final class RateLimitInterceptorTest
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('claude');
-        Assert::string($caught->getMessage())->contains('greet');
+        // exact message: the quoting around the client id is part of the
+        // contract (an unquoted id would be ambiguous next to the tool name)
+        Assert::same($caught->getMessage(), 'Rate limit exceeded for client "claude" on tool "greet"');
     }
 
     public function limiterOutageFailsClosed(): void
@@ -61,17 +62,43 @@ final class RateLimitInterceptorTest
         Assert::notNull($caught);
         Assert::false($called);
         Assert::string($caught->getMessage())->contains('fails closed');
+        Assert::same($caught->getCode(), 0);
         Assert::instanceOf($caught->getPrevious(), \RuntimeException::class);
     }
 
-    public function transportWithoutIdentityUsesTheFallbackClientId(): void
+    public function transportWithoutIdentityPassesTypedAbsence(): void
     {
         $limiter = new RecordingLimiter(allow: true);
-        $interceptor = new RateLimitInterceptor($limiter, fallbackClientId: 'stdio');
+        $interceptor = new RateLimitInterceptor($limiter);
 
         $interceptor->intercept($this->context(clientId: null), static fn(): string => 'ran');
 
-        Assert::same($limiter->seen, [['stdio', 'greet']]);
+        Assert::same($limiter->seen, [[null, 'greet']]);
+    }
+
+    public function anonymousClientNeverSharesABucketWithAClientNamedAnonymous(): void
+    {
+        $limiter = new RecordingLimiter(allow: true);
+        $interceptor = new RateLimitInterceptor($limiter);
+
+        $interceptor->intercept($this->context(clientId: 'anonymous'), static fn(): string => 'ran');
+        $interceptor->intercept($this->context(clientId: null), static fn(): string => 'ran');
+
+        Assert::same($limiter->seen, [['anonymous', 'greet'], [null, 'greet']]);
+    }
+
+    public function rejectedAnonymousCallSaysAnonymous(): void
+    {
+        $interceptor = new RateLimitInterceptor(new RecordingLimiter(allow: false));
+        $caught = null;
+
+        try {
+            $interceptor->intercept($this->context(clientId: null), static fn(): string => 'ran');
+        } catch (ToolCallException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('(anonymous)');
     }
 
     private function context(?string $clientId): ToolCallContext
@@ -82,7 +109,7 @@ final class RateLimitInterceptorTest
 
 final class RecordingLimiter implements ToolCallLimiterInterface
 {
-    /** @var list<array{0: string, 1: string}> */
+    /** @var list<array{0: ?string, 1: string}> */
     public array $seen = [];
 
     public function __construct(
@@ -91,7 +118,7 @@ final class RecordingLimiter implements ToolCallLimiterInterface
     ) {}
 
     #[\Override]
-    public function allow(string $clientId, string $toolName): bool
+    public function allow(?string $clientId, string $toolName): bool
     {
         if ($this->failure instanceof \Throwable) {
             throw $this->failure;

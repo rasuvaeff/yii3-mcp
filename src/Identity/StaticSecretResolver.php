@@ -16,6 +16,12 @@ use InvalidArgumentException;
  * Every comparison uses {@see hash_equals()}; the presented secret is never
  * stored or reported.
  *
+ * A secret shared by two DIFFERENT client ids is rejected at construction:
+ * resolution returns the first match, so a duplicate would silently
+ * attribute one client's calls (audit, rate limits, cache partitions,
+ * session ownership) to the other. A duplicate within one client's own
+ * list is rejected too — it is always a configuration mistake.
+ *
  * @api
  */
 final readonly class StaticSecretResolver implements SecretResolverInterface
@@ -35,6 +41,8 @@ final readonly class StaticSecretResolver implements SecretResolverInterface
         }
 
         $normalized = [];
+        /** @var list<array{string, string}> $seen [client id, secret] pairs already accepted */
+        $seen = [];
 
         foreach ($secrets as $clientId => $clientSecrets) {
             if ($clientId === '') {
@@ -51,6 +59,16 @@ final readonly class StaticSecretResolver implements SecretResolverInterface
                 if ($secret === '') {
                     throw new InvalidArgumentException(sprintf('Client "%s" has an empty secret', $clientId));
                 }
+
+                foreach ($seen as [$seenClientId, $seenSecret]) {
+                    if (hash_equals($seenSecret, $secret)) {
+                        throw new InvalidArgumentException($seenClientId === $clientId
+                            ? sprintf('Client "%s" lists the same secret twice', $clientId)
+                            : sprintf('Clients "%s" and "%s" share a secret; resolution would silently attribute one client\'s calls to the other', $seenClientId, $clientId));
+                    }
+                }
+
+                $seen[] = [$clientId, $secret];
             }
 
             $normalized[$clientId] = $list;

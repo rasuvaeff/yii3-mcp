@@ -56,6 +56,11 @@ return [
         // user, since the key otherwise identifies the client alone.
         'cache' => [
             'tools' => [],
+            // stable application/server identity isolating this server's
+            // entries on a cache backend shared between applications (two
+            // apps on one Redis with same-named tools must never read each
+            // other's results). Empty = server_name.
+            'namespace' => '',
         ],
         // tool-call interceptor FQCNs (resolved through the container,
         // applied in order, first = outermost); each implements

@@ -168,10 +168,18 @@ return [
                 // needs re-limiting. The identity provider (when delegated
                 // auth is configured) partitions the key by ExecutionIdentity:
                 // upstream responses fetched with one identity's credentials
-                // must never be served to another, even under one client id
+                // must never be served to another, even under one client id.
+                // The namespace isolates this server's entries on a cache
+                // backend shared between applications; server_name is the
+                // stable per-application identity unless overridden.
+                /** @var string $cacheNamespace */
+                $cacheNamespace = $params['rasuvaeff/yii3-mcp']['cache']['namespace'] ?? '';
+                /** @var string $serverName */
+                $serverName = $params['rasuvaeff/yii3-mcp']['server_name'];
                 $interceptors[] = new CachingToolCallInterceptor(
                     $container->get(CacheInterface::class),
                     $cacheTools,
+                    namespace: $cacheNamespace === '' ? $serverName : $cacheNamespace,
                     identityProvider: $identityProvider,
                 );
             }
