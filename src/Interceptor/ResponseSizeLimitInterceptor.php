@@ -21,6 +21,15 @@ use Rasuvaeff\Yii3Mcp\Utf8;
  * rather than reaching the SDK's envelope encoding and failing there
  * opaquely.
  *
+ * Semantics of the limit: for a STRING result it counts the raw string's
+ * bytes BEFORE JSON encoding — control characters and non-ASCII expand on
+ * the wire (up to ~6x for a control-character-heavy payload), so this is a
+ * result-size budget, not an exact wire-size cap. For array/object results
+ * it counts the JSON-encoded bytes (there is no raw form to measure). It
+ * bounds what reaches the agent's context window; the memory of producing
+ * the result is bounded separately (the OpenAPI executor's
+ * `max_response_bytes` reads incrementally and stops at its cap).
+ *
  * @api
  */
 final readonly class ResponseSizeLimitInterceptor implements ToolCallInterceptorInterface

@@ -180,9 +180,22 @@ final readonly class SchemaSnapshot
     {
         $json = json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
 
-        // a partial write would leave a valid-looking but stale snapshot
-        if (@file_put_contents($path, $json) !== strlen($json)) {
+        // write-then-rename: a crash mid-write must never leave a truncated
+        // but valid-looking snapshot at the final path — rename() within one
+        // directory is atomic, so the snapshot is either the old file or the
+        // complete new one
+        $tmp = $path . '.tmp';
+
+        if (@file_put_contents($tmp, $json) !== strlen($json)) {
+            @unlink($tmp);
+
             throw new RuntimeException(sprintf('Cannot write MCP schema snapshot to "%s"', $path));
+        }
+
+        if (!@rename($tmp, $path)) {
+            @unlink($tmp);
+
+            throw new RuntimeException(sprintf('Cannot move MCP schema snapshot into place at "%s"', $path));
         }
     }
 

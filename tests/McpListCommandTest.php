@@ -34,6 +34,9 @@ final class McpListCommandTest
         Assert::string($display)->contains('Resources (1)');
         Assert::string($display)->contains('Resource templates (1)');
         Assert::string($display)->contains('Prompts (3)');
+        // the human view must SAY it is the default/unauthenticated view —
+        // with per-session visibility a real client may see a different set
+        Assert::string($display)->contains('unauthenticated');
     }
 
     public function printsFullHeaderRowForEverySection(): void

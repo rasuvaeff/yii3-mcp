@@ -11,21 +11,16 @@
         </ignoreFiles>
     </projectFiles>
 
-    <issueHandlers>
-        <!--
-            mcp/sdk's ToolInputSchema declares `properties` as array<string, mixed>,
-            yet the SDK itself stores a \stdClass there (Tool::normalizeSchemaProperties,
-            SchemaGenerator) so that an argument-less tool serializes as {} and not [].
-            The OpenAPI bridge builds Tool directly, so it must normalize explicitly —
-            psalm flags that correct value against the SDK's own inaccurate docblock.
-            Scoped to the one constructor; still present in ~0.7.0 (verified by
-            temporarily removing this suppression — same ArgumentTypeCoercion error).
-            Revisit whenever the pin moves again.
-        -->
-        <ArgumentTypeCoercion>
-            <errorLevel type="suppress">
-                <referencedFunction name="Mcp\Schema\Tool::__construct"/>
-            </errorLevel>
-        </ArgumentTypeCoercion>
-    </issueHandlers>
+    <!--
+        Not a suppression: the stub CORRECTS mcp/sdk's inaccurate docblock.
+        ToolInputSchema declares `properties` as array<string, mixed>, yet the
+        SDK itself stores a \stdClass there (Tool::normalizeSchemaProperties,
+        SchemaGenerator) so an argument-less tool serializes as {} and not [].
+        The OpenAPI bridge builds Tool directly and must pass exactly that
+        value; the stub makes the accepted type honest. Revisit whenever the
+        SDK pin moves.
+    -->
+    <stubs>
+        <file name="stubs/Tool.phpstub"/>
+    </stubs>
 </psalm>

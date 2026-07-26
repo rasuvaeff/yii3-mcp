@@ -65,6 +65,11 @@ final class McpListCommand extends Command
 
         $io = new SymfonyStyle($input, $output);
 
+        // McpTester drives a synthetic session with no client identity: with
+        // per-session visibility or RBAC wired in, a real client's view can
+        // differ from this default one — say so instead of implying otherwise
+        $io->note('Default (unauthenticated) capability view; per-session visibility rules may show a real client a different set');
+
         $this->section($io, 'Tools', $tester->listTools(), ['Name', 'Description', 'Arguments'], $this->toolRow(...));
         $this->section($io, 'Resources', $tester->listResources(), ['URI', 'Name', 'MIME type', 'Description'], $this->resourceRow(...));
         $this->section($io, 'Resource templates', $tester->listResourceTemplates(), ['URI template', 'Name', 'Description'], $this->templateRow(...));
