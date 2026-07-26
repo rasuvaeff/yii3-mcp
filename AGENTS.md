@@ -91,6 +91,21 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   hex chars for that reason; a longer key makes a strict PSR-16
   implementation throw on every call, silently disabling caching through
   the fail-open catch.
+- **Never cut a string with `substr()` on a path that reaches the client.**
+  Everything this package truncates (an over-limit tool result in
+  `ResponseSizeLimitInterceptor`, the upstream error-body excerpt in
+  `HttpOperationExecutor`) ends up inside a JSON-RPC response the SDK encodes
+  with `JSON_THROW_ON_ERROR`; a half-written multi-byte character makes that
+  encode fail, and `Mcp\Server\Protocol::queueOutgoing()` then **drops the
+  response silently** (only the sessionless stdio path gets an
+  `INTERNAL_ERROR` fallback, so the failure is invisible on Streamable HTTP).
+  Use `Utf8::cut()` (`@internal`, byte-wise on purpose — `mb_strcut` would
+  pull `ext-mbstring` into the package requirements and into every CI job's
+  extension list for two call sites). `cut()` only avoids SPLITTING a
+  character; it does not repair input that was never UTF-8, so a foreign body
+  (a legacy-encoded upstream error page) is validated separately with
+  `preg_match('//u', …)` and replaced by a byte-count placeholder. Tests must
+  assert with PCRE, not `mb_check_encoding` — mbstring is absent from CI.
 - **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
   A pattern starting with `tag:` matches the tool's tags (`_meta['rasuvaeff/yii3-mcp']['tags']`,
   populated by the OpenAPI bridge from OpenAPI `tags`) instead of its name;

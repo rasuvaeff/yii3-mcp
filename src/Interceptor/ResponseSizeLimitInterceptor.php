@@ -6,6 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use InvalidArgumentException;
 use Mcp\Exception\ToolCallException;
+use Rasuvaeff\Yii3Mcp\Utf8;
 
 /**
  * Guards against a tool result burning an agent's context window — a bridged
@@ -51,7 +52,11 @@ final readonly class ResponseSizeLimitInterceptor implements ToolCallInterceptor
             return $result;
         }
 
-        return substr($result, 0, $this->maxBytes) . sprintf(' …[truncated, showing %d of %d bytes]', $this->maxBytes, $size);
+        // the kept size is reported from the cut itself, not from the limit:
+        // Utf8::cut backs off up to three bytes rather than split a character
+        $kept = Utf8::cut($result, $this->maxBytes);
+
+        return $kept . sprintf(' …[truncated, showing %d of %d bytes]', strlen($kept), $size);
     }
 
     private function assertWithinLimit(ToolCallContext $context, mixed $result): void

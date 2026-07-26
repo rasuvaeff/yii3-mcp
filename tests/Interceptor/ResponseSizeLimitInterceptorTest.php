@@ -37,6 +37,21 @@ final class ResponseSizeLimitInterceptorTest
         Assert::false(str_contains((string) $result, 'fghij'));
     }
 
+    public function multiByteResultIsCutOnACharacterBoundary(): void
+    {
+        // 'привет' is 12 bytes; a byte-wise cut at 5 would split the third
+        // character and make the SDK's json_encode of the whole response fail
+        $interceptor = new ResponseSizeLimitInterceptor(maxBytes: 5);
+
+        $result = (string) $interceptor->intercept($this->context(), static fn(): string => 'привет');
+
+        Assert::true(str_starts_with($result, 'пр'));
+        Assert::same(preg_match('//u', $result), 1);
+        json_encode($result, JSON_THROW_ON_ERROR);
+        // the marker reports what was actually kept (4 bytes), not the limit
+        Assert::string($result)->contains('truncated, showing 4 of 12 bytes');
+    }
+
     public function arrayResultAtTheLimitIsReturnedUnchanged(): void
     {
         $payload = ['a' => 1];

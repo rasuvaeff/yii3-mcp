@@ -62,6 +62,13 @@ sessions) come from `mcp/sdk` (`~0.7.0`, minor = breaking) — never invent them
    the client id. An identity provider failure fails closed for cached
    tools.
 
+8. **Never truncate with `substr()` on a path that reaches the client.**
+   Every truncated string ends up in a JSON-RPC response the SDK encodes
+   with `JSON_THROW_ON_ERROR`; a split multi-byte character makes the encode
+   fail and the Streamable HTTP transport then drops the response silently.
+   Use `Utf8::cut()`; validate foreign bytes (an upstream error body)
+   separately with `preg_match('//u', …)`.
+
 ## Canonical usage
 
 ```php

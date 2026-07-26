@@ -256,6 +256,44 @@ final class HttpOperationExecutorTest
         Assert::false(str_contains($caught->getMessage(), '…'));
     }
 
+    public function longMultiByteErrorBodyStaysEncodable(): void
+    {
+        // 2800 bytes of two-byte characters: the 2000-byte cut lands inside a
+        // character, and a broken sequence would make the SDK fail to encode
+        // the tool-error envelope — silently dropping the whole response
+        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat('привет ', 400)));
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same(preg_match('//u', $caught->getMessage()), 1);
+        json_encode($caught->getMessage(), JSON_THROW_ON_ERROR);
+        Assert::string($caught->getMessage())->contains('…');
+    }
+
+    public function nonUtf8ErrorBodyIsReplacedWithAPlaceholder(): void
+    {
+        // an upstream error page in a legacy encoding is unencodable however
+        // it is cut, so the excerpt is dropped in favour of its byte count
+        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: "\xEF\xF0\xE8\xE2\xE5\xF2"));
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same(preg_match('//u', $caught->getMessage()), 1);
+        Assert::string($caught->getMessage())->contains('<non-UTF-8 response body, 6 bytes>');
+    }
+
     public function nullQueryArgumentIsSkipped(): void
     {
         $client = new FakeHttpClient();

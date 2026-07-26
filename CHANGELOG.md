@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Truncation no longer splits a multi-byte character. Both places that cut a
+  string short — `ResponseSizeLimitInterceptor` (`limits.tool_result_bytes`)
+  and the upstream error-body excerpt in the OpenAPI bridge — used a byte-wise
+  `substr`, so any non-ASCII payload could end in a half-written UTF-8
+  sequence. The SDK encodes the JSON-RPC response with `JSON_THROW_ON_ERROR`
+  and drops an unencodable one silently on the Streamable HTTP transport, so a
+  successful tool call could simply never reach the client. The size limit
+  stays a byte budget: a character that does not fit whole is dropped and the
+  truncation marker now reports the bytes actually kept.
+- OpenAPI bridge: an upstream error body that is not valid UTF-8 (a legacy
+  encoded error page, a binary payload) is reported as
+  `<non-UTF-8 response body, N bytes>` instead of being embedded verbatim —
+  it would have made the tool-error envelope unencodable regardless of length.
 - `CachingToolCallInterceptor`: the cache key now also includes the resolved
   `ExecutionIdentity` when `openapi.identity_provider` is configured —
   delegated upstream credentials can make results identity-specific below

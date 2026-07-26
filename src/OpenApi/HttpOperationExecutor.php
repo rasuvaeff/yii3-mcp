@@ -9,6 +9,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+use Rasuvaeff\Yii3Mcp\Utf8;
 
 /**
  * Executes a bridged operation as a real HTTP call against the upstream
@@ -57,7 +58,7 @@ final readonly class HttpOperationExecutor
             }
         }
 
-        if ((!$identityProvider instanceof ExecutionIdentityProviderInterface) !== (!$delegatedHeaderProvider instanceof \Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface)) {
+        if ((!$identityProvider instanceof ExecutionIdentityProviderInterface) !== (!$delegatedHeaderProvider instanceof DelegatedHeaderProviderInterface)) {
             throw new InvalidArgumentException('Execution identity provider and delegated header provider must be configured together');
         }
 
@@ -106,7 +107,7 @@ final readonly class HttpOperationExecutor
 
         $headers = $this->defaultHeaders;
 
-        if ($this->identityProvider instanceof ExecutionIdentityProviderInterface && $this->delegatedHeaderProvider instanceof \Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface) {
+        if ($this->identityProvider instanceof ExecutionIdentityProviderInterface && $this->delegatedHeaderProvider instanceof DelegatedHeaderProviderInterface) {
             $headers = array_replace(
                 $headers,
                 $this->delegatedHeaderProvider->headers(
@@ -140,9 +141,7 @@ final readonly class HttpOperationExecutor
                 'Operation "%s" failed with HTTP %d: %s',
                 $operation->operationId,
                 $response->getStatusCode(),
-                strlen($body) > self::MAX_ERROR_BODY_LENGTH
-                    ? substr($body, 0, self::MAX_ERROR_BODY_LENGTH) . '…'
-                    : $body,
+                $this->errorExcerpt($body),
             ));
         }
 
@@ -151,6 +150,25 @@ final readonly class HttpOperationExecutor
         } catch (\JsonException) {
             return $body;
         }
+    }
+
+    /**
+     * The excerpt travels to the client inside a tool-error envelope the SDK
+     * encodes with JSON_THROW_ON_ERROR, so it must be valid UTF-8: cutting
+     * mid-character (Utf8::cut prevents that) or an upstream body that was
+     * never UTF-8 in the first place (an HTML error page in a legacy
+     * encoding, a binary payload) would make the whole response unencodable —
+     * silently dropped on the Streamable HTTP transport.
+     */
+    private function errorExcerpt(string $body): string
+    {
+        $excerpt = Utf8::cut($body, self::MAX_ERROR_BODY_LENGTH);
+
+        if (preg_match('//u', $excerpt) !== 1) {
+            return sprintf('<non-UTF-8 response body, %d bytes>', strlen($body));
+        }
+
+        return strlen($body) > strlen($excerpt) ? $excerpt . '…' : $excerpt;
     }
 
     /**

@@ -418,6 +418,12 @@ invalid JSON, not a smaller valid one:
 ],
 ```
 
+The limit is a byte budget applied to the content: a multi-byte character
+that does not fit whole is dropped rather than split (a broken UTF-8
+sequence would make the JSON-RPC response unencodable, and the Streamable
+HTTP transport drops such a response silently), and the marker itself is
+appended on top of the budget. The marker reports the bytes actually kept.
+
 For read-heavy tools called repeatedly with the same arguments inside a
 session (a lookup table, an OpenAPI GET), `cache.tools` skips the handler
 entirely on a hit — opt in by tool name (for the OpenAPI bridge, the

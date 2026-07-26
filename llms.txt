@@ -215,7 +215,10 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   still arrive as structuredContent either way.
 - Calls are real HTTP requests against the API — its middleware stack
   (validation, rate limiting, auth) applies. Non-2xx =>
-  `OperationFailedException` => MCP tool error envelope.
+  `OperationFailedException` => MCP tool error envelope. The message carries
+  at most 2000 bytes of the upstream body, cut on a character boundary; a body
+  that is not valid UTF-8 is replaced by `<non-UTF-8 response body, N bytes>`
+  (the envelope must stay JSON-encodable).
 - Static `defaultHeaders` are service-token mode: upstream does NOT inherit the
   MCP caller/RBAC identity. Do not expose tenant/user data with a broader token.
   Delegated mode configures both ExecutionIdentityProviderInterface and
@@ -309,8 +312,9 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // exhausted => tool error "Session tool-call budget of N is exhausted..."
 
 // Result size limit (context-overflow guard) — a string over the limit is
-// truncated with a marker; any other result (array/object) throws instead
-// (truncated JSON is invalid JSON):
+// truncated with a marker (byte budget, but never mid-character; the marker
+// is added on top of the budget and reports the bytes actually kept); any
+// other result (array/object) throws instead (truncated JSON is invalid JSON):
 // params: 'limits' => ['tool_result_bytes' => 0]  // 0 = unlimited (default)
 
 // Result caching (PSR-16, opt-in by tool name — for the OpenAPI bridge, the
