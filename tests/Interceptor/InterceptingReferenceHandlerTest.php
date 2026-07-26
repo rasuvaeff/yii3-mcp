@@ -102,6 +102,40 @@ final class InterceptingReferenceHandlerTest
         Assert::same($recording->lastContext?->clientId, 'claude');
     }
 
+    public function sessionOwnerRefusesAConflictingArmedIdentity(): void
+    {
+        $recording = new RecordingInterceptor();
+        $tester = $this->tester([$recording]);
+
+        ClientIdentityContext::arm('claude');
+
+        try {
+            $tester->callTool('greet', ['name' => 'Yii']);
+        } finally {
+            ClientIdentityContext::disarm();
+        }
+
+        // Fiber-interleaving regression: request B's identity lands in the
+        // process-local slot while session A's call executes. The session's
+        // immutable owner wins and the call fails closed instead of being
+        // silently re-attributed to B.
+        ClientIdentityContext::arm('mallory');
+        $failedClosed = false;
+
+        try {
+            $result = $tester->callTool('greet', ['name' => 'Yii']);
+            $failedClosed = ($result['isError'] ?? false) === true;
+        } catch (\Throwable) {
+            $failedClosed = true;
+        } finally {
+            ClientIdentityContext::disarm();
+        }
+
+        Assert::true($failedClosed);
+        // the interceptor chain never observed the conflicting identity
+        Assert::same($recording->lastContext?->clientId, 'claude');
+    }
+
     public function withoutIdentityTheContextClientIdIsNull(): void
     {
         $recording = new RecordingInterceptor();

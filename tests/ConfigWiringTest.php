@@ -14,6 +14,7 @@ use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
+use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
@@ -376,12 +377,20 @@ final class ConfigWiringTest
         Assert::instanceOf($server, Server::class);
     }
 
-    public function actionDefinitionUsesFqcnKeyAndEmptyAllowedHosts(): void
+    public function actionDefinitionWiresTheSessionStoreForOwnershipEnforcement(): void
     {
-        /** @var array{'__construct()': array{allowedHosts: list<string>}} $definition */
-        $definition = $this->di()[\Rasuvaeff\Yii3Mcp\McpAction::class];
+        /** @var array{definition: Closure} $definition */
+        $definition = $this->di()[McpAction::class];
 
-        Assert::same($definition['__construct()']['allowedHosts'], []);
+        $psr17 = new Psr17Factory();
+        $action = $definition['definition'](
+            (new McpServerFactory(container: new SimpleContainer([]), sessionStore: new InMemorySessionStore()))->create([]),
+            $psr17,
+            $psr17,
+            new InMemorySessionStore(),
+        );
+
+        Assert::instanceOf($action, McpAction::class);
     }
 
     public function middlewareDefinitionCarriesFailClosedDefaults(): void

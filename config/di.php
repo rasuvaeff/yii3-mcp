@@ -245,9 +245,27 @@ return [
         },
     ],
     McpAction::class => [
-        '__construct()' => [
-            'allowedHosts' => $params['rasuvaeff/yii3-mcp']['allowed_hosts'],
-        ],
+        'definition' => static function (
+            Server $server,
+            ResponseFactoryInterface $responseFactory,
+            \Psr\Http\Message\StreamFactoryInterface $streamFactory,
+            SessionStoreInterface $sessionStore,
+        ) use ($params): McpAction {
+            /** @var list<string> $allowedHosts */
+            $allowedHosts = $params['rasuvaeff/yii3-mcp']['allowed_hosts'];
+
+            // the session store is passed so sessions are BOUND to the client
+            // that created them (owner stamped at initialize, verified on
+            // every POST/DELETE) — without it any authenticated client could
+            // replay another client's Mcp-Session-Id
+            return new McpAction(
+                server: $server,
+                responseFactory: $responseFactory,
+                streamFactory: $streamFactory,
+                allowedHosts: $allowedHosts,
+                sessionStore: $sessionStore,
+            );
+        },
     ],
     SharedSecretMiddleware::class => [
         'definition' => static function (ResponseFactoryInterface $responseFactory) use ($params): SharedSecretMiddleware {

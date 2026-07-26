@@ -12,8 +12,20 @@ namespace Rasuvaeff\Yii3Mcp\Identity;
  * {@see \Rasuvaeff\Yii3Mcp\McpAction} arms this holder before running the
  * transport and disarms it in a finally block.
  *
- * FPM-safe: a PHP-FPM worker handles one request at a time, and the
- * arm/disarm bracket guarantees no identity leaks into the next request.
+ * This holder is deliberately NOT the primary identity source: capability
+ * calls read the client id from the session's immutable owner (stamped at
+ * `initialize` by McpAction), which travels with the request and stays
+ * correct when requests interleave. The holder covers only the fallback
+ * paths — sessionless calls and sessions with no recorded owner — and a
+ * disagreement between holder and owner fails closed
+ * ({@see \Rasuvaeff\Yii3Mcp\Exception\SessionOwnershipException}).
+ *
+ * Concurrency contract: one mutable slot per PHP process. Safe under
+ * PHP-FPM/CLI (one request at a time, arm/disarm bracketed). In a
+ * concurrent or reentrant runtime (Swoole, AMPHP, RoadRunner with
+ * interleaved Fibers) the FALLBACK paths above may observe another
+ * request's id — do not rely on unstamped-session attribution there; the
+ * owner-stamped main path is unaffected.
  *
  * @internal
  */
