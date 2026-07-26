@@ -16,6 +16,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -38,9 +39,12 @@ final class HttpOperationExecutorTest
     {
         $client = new FakeHttpClient();
 
-        $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => 'a b/c']);
+        // a separator inside the value is rejected outright (see
+        // routeEscapingPathArgumentProvider), so encoding is exercised with
+        // the reserved characters that stay legal
+        $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => 'a b+c?']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/a%20b%2Fc');
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/a%20b%2Bc%3F');
     }
 
     public function missingPathParameterThrows(): void
@@ -435,26 +439,36 @@ final class HttpOperationExecutorTest
         Assert::same($client->requestCount, 1);
     }
 
-    public function dotSegmentPathArgumentIsRejected(): void
+    #[DataProvider('routeEscapingPathArgumentProvider')]
+    public function routeEscapingPathArgumentIsRejected(string $value): void
     {
         $client = new FakeHttpClient();
+        $caught = null;
 
-        // rawurlencode leaves "." verbatim: ".." would climb out of the
-        // allow-listed route on upstreams that normalize dot segments; ""
-        // is the same escape one level up ("/users/" = the collection
-        // route instead of the allow-listed item route)
-        foreach (['..', '.', ''] as $value) {
-            $caught = null;
-
-            try {
-                $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
-            } catch (InvalidArgumentException $caught) {
-            }
-
-            Assert::notNull($caught);
+        try {
+            $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
+        } catch (InvalidArgumentException $caught) {
         }
 
+        Assert::notNull($caught);
         Assert::same($client->requestCount, 0);
+    }
+
+    public static function routeEscapingPathArgumentProvider(): iterable
+    {
+        // rawurlencode leaves "." verbatim and encodes "/" as %2F, which
+        // upstreams decoding before path normalization hand back as a real
+        // separator — so containing ".." or a separator is as dangerous as
+        // being one
+        yield 'dot segment' => ['..'];
+        yield 'current directory' => ['.'];
+        yield 'empty' => [''];
+        yield 'compound traversal' => ['../..'];
+        yield 'traversal after a segment' => ['x/..'];
+        yield 'backslash traversal' => ['..\\..'];
+        yield 'plain separator' => ['a/b'];
+        yield 'plain backslash' => ['a\\b'];
+        yield 'trailing traversal' => ['tag..'];
     }
 
     public function pathArgumentContainingDotsIsNotADotSegment(): void

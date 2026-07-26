@@ -192,16 +192,23 @@ final readonly class HttpOperationExecutor
             $value = $this->stringifyArgument($operation, $name, $arguments[$name]);
 
             if ($parameter['in'] === 'path') {
-                // rawurlencode keeps "." verbatim, so a "." or ".." value
-                // would survive into the upstream path and let a caller
-                // climb out of the allow-listed route on servers that
-                // normalize dot segments — with the bridge's credentials.
-                // An empty value is the same escape one level up: "/users/"
-                // is typically the collection route, not the allow-listed
-                // item route
-                if ($value === '' || $value === '.' || $value === '..') {
+                // rawurlencode keeps "." verbatim and turns "/" into "%2F",
+                // which upstreams that decode before normalizing the path
+                // (Apache with AllowEncodedSlashes, some proxies and servlet
+                // containers) hand back as a real separator — so a value
+                // merely CONTAINING ".." or a separator can climb out of the
+                // allow-listed route with the bridge's credentials, not only
+                // a value equal to a dot segment. An empty value is the same
+                // escape one level up: "/users/" is typically the collection
+                // route, not the allow-listed item route
+                if ($value === ''
+                    || $value === '.'
+                    || str_contains($value, '..')
+                    || str_contains($value, '/')
+                    || str_contains($value, '\\')
+                ) {
                     throw new InvalidArgumentException(sprintf(
-                        'Argument "%s" of operation "%s" must not be empty or a dot segment',
+                        'Argument "%s" of operation "%s" must not be empty, a dot segment, or contain ".." or a path separator',
                         $name,
                         $operation->operationId,
                     ));

@@ -768,12 +768,16 @@ parameters намеренно ограничены scalar schemas `string`, `int
 и `boolean` со стандартной OpenAPI serialization (`simple` для path, `form`
 для query). Header/cookie parameters, external или non-scalar parameter
 schemas, custom serialization, non-default `explode` и `allowReserved=true`
-приводят к `InvalidSpecException` при выборе operation. Path argument,
-пустой или являющийся голым dot segment (`.` или `..`), отклоняется при
-вызове - `rawurlencode` оставляет точки как есть, и значение `..` позволило
-бы выйти за пределы allow-listed route на upstream, нормализующем dot
-segments, - с credentials бриджа; пустое значение - тот же escape на уровень
-выше (`/users/` - обычно collection route, а не allow-listed item route). Base URL не должен содержать credentials (userinfo),
+приводят к `InvalidSpecException` при выборе operation. Path argument
+отклоняется при вызове, если он пустой или `.`, либо содержит `..`, `/` или
+`\` - `rawurlencode` оставляет точки как есть, а `/` кодирует в `%2F`,
+который upstream, декодирующий до нормализации пути (Apache с
+`AllowEncodedSlashes`, часть прокси и servlet-контейнеров), возвращает
+настоящим разделителем; значение вида `../..` позволило бы выйти за пределы
+allow-listed route - с credentials бриджа; пустое значение - тот же escape на
+уровень выше (`/users/` - обычно collection route, а не allow-listed item
+route). Одиночные точки допустимы (`v1.2` - валидный slug); значение, которому
+нужен слеш или `..` внутри, через path argument не пробросить. Base URL не должен содержать credentials (userinfo),
 query string или fragment - dry-run preview возвращает полный URL
 вызывающему, поэтому base URL никогда не может быть носителем credentials.
 Фиксированные upstream

@@ -147,14 +147,19 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   Dry-run does not relax
   `safeMethodsOnly` — a write operation still needs it disabled to be
   exposed, dry-run or not.
-- **Bridged path arguments reject empty values and bare dot segments
-  (`""`/`.`/`..`).** `rawurlencode` keeps dots verbatim, so a `..` value
-  would reach the upstream path literally and climb out of the allow-listed
-  route on servers that normalize dot segments — with the bridge's
-  credentials; an empty value is the same escape one level up (`/users/` is
-  typically the collection route, not the allow-listed item route). The
-  check lives in `HttpOperationExecutor::buildPath()`; do not "simplify" it
-  away.
+- **Bridged path arguments reject `""`, `"."`, and anything CONTAINING `..`,
+  `/` or `\`.** `rawurlencode` keeps dots verbatim and encodes `/` as `%2F`,
+  which upstreams that decode before normalizing the path (Apache with
+  `AllowEncodedSlashes`, some proxies and servlet containers) hand back as a
+  real separator — so equality checks against `.`/`..` alone were narrower
+  than the threat they document: `../..` and `x/..` survived them and could
+  climb out of the allow-listed route with the bridge's credentials. An empty
+  value is the same escape one level up (`/users/` is typically the
+  collection route, not the allow-listed item route). Accepted trade-off: a
+  legitimate identifier containing `..` (`a..b`) cannot be bridged as a path
+  argument; single dots still pass (`v1.2`). The check lives in
+  `HttpOperationExecutor::buildPath()`; do not "simplify" it back to equality
+  comparisons.
 - **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect

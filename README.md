@@ -772,12 +772,16 @@ limited to scalar `string`, `integer`, `number` and `boolean` schemas with the
 OpenAPI defaults (`simple` path, `form` query). Header/cookie parameters,
 external or non-scalar parameter schemas, custom serialization, non-default
 `explode` and `allowReserved=true` throw `InvalidSpecException` when the
-operation is selected. A path argument that is empty or a bare dot segment
-(`.` or `..`) is rejected at call time — `rawurlencode` keeps dots verbatim,
-and a `..` value would climb out of the allow-listed route on upstreams that
-normalize dot segments, with the bridge's credentials; an empty value is the
-same escape one level up (`/users/` is typically the collection route, not
-the allow-listed item route). The base URL must not
+operation is selected. A path argument is rejected at call time when it is
+empty or `.`, or when it contains `..`, `/` or `\` — `rawurlencode` keeps
+dots verbatim and encodes `/` as `%2F`, which upstreams that decode before
+normalizing the path (Apache with `AllowEncodedSlashes`, some proxies and
+servlet containers) hand back as a real separator, so a value like `../..`
+could climb out of the allow-listed route with the bridge's credentials; an
+empty value is the same escape one level up (`/users/` is typically the
+collection route, not the allow-listed item route). Single dots are fine
+(`v1.2` is a valid slug); a value that needs a slash or `..` inside it cannot
+be bridged as a path argument. The base URL must not
 embed credentials (userinfo) or carry a query string/fragment — dry-run
 previews return the full URL to the caller, so the base URL is never allowed
 to be a credential carrier. Fixed upstream headers belong in `headers`/

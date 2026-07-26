@@ -32,11 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAPI bridge: a dry-run-enabled operation now rejects a
   present-but-non-boolean `dryRun` value with an error instead of executing
   the real call — a malformed preview intent must never become a real write.
-- OpenAPI bridge: path arguments that are empty or bare dot segments
-  (`.`/`..`) are rejected at call time — `rawurlencode` keeps dots verbatim,
-  and `..` could climb out of the allow-listed route on upstreams that
-  normalize dot segments; an empty value turns an allow-listed item route
-  into the collection route.
+- OpenAPI bridge: a path argument is rejected at call time when it is empty
+  or `.`, or when it *contains* `..`, `/` or `\`. `rawurlencode` keeps dots
+  verbatim and encodes `/` as `%2F`, which upstreams that decode before
+  normalizing the path hand back as a real separator, so comparing the value
+  against `.`/`..` for equality was narrower than the escape it was meant to
+  prevent — `../..` and `x/..` passed it. An empty value turns an
+  allow-listed item route into the collection route. Trade-off: an
+  identifier containing `..` can no longer be used as a path argument;
+  single dots (`v1.2`) still can.
 - OpenAPI bridge: the dry-run preview mirrors the real-send condition for
   `body` — a stray `body` argument on a bodyless operation is no longer
   shown as if it would be sent.
