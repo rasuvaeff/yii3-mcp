@@ -12,6 +12,7 @@ use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -135,14 +136,20 @@ final readonly class McpServerFactory
             ));
         }
 
+        // every server gets its own registry wrapped in the duplicate guard:
+        // the SDK registry is last-write-wins, so a name collision between ANY
+        // two registration paths (attribute tools, configurators, the OpenAPI
+        // bridge, Markdown prompts) would silently drop one handler while
+        // name-keyed rules (visibility, cache, RBAC, audit) keep matching —
+        // the guard turns that into a build-time DuplicateCapabilityException
+        $registry = new GuardedRegistry(new Registry(logger: $this->logger ?? new NullLogger()));
+        $builder->setRegistry($registry);
+
         if ($anyVisibility) {
             // owning the registry lets the filtering list handlers read it;
             // custom request handlers run ahead of the SDK's own
-            $registry = new Registry(logger: $this->logger ?? new NullLogger());
-            $builder->setRegistry($registry);
-
             if ($toolVisibility instanceof ToolVisibilityInterface) {
-                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+                /** @var RequestHandlerInterface<mixed> $listHandler */
                 $listHandler = new FilteredListToolsHandler(
                     registry: $registry,
                     visibility: $toolVisibility,
@@ -152,7 +159,7 @@ final readonly class McpServerFactory
             }
 
             if ($promptVisibility instanceof PromptVisibilityInterface) {
-                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+                /** @var RequestHandlerInterface<mixed> $listHandler */
                 $listHandler = new FilteredListPromptsHandler(
                     registry: $registry,
                     visibility: $promptVisibility,
@@ -162,14 +169,14 @@ final readonly class McpServerFactory
             }
 
             if ($resourceVisibility instanceof ResourceVisibilityInterface) {
-                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $listHandler */
+                /** @var RequestHandlerInterface<mixed> $listHandler */
                 $listHandler = new FilteredListResourcesHandler(
                     registry: $registry,
                     visibility: $resourceVisibility,
                     pageSize: self::PAGE_SIZE,
                 );
                 $builder->addRequestHandler($listHandler);
-                /** @var \Mcp\Server\Handler\Request\RequestHandlerInterface<mixed> $templatesHandler */
+                /** @var RequestHandlerInterface<mixed> $templatesHandler */
                 $templatesHandler = new FilteredListResourceTemplatesHandler(
                     registry: $registry,
                     visibility: $resourceVisibility,
