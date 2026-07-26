@@ -211,6 +211,13 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   (`Tool`, `ToolAnnotations`, `Registry`, `NameValidator`) was byte-for-byte
   unchanged; do the same verification on any future bump, don't assume a minor
   is safe from the changelog alone.
+- **The SDK's `DnsRebindingProtectionMiddleware::isAllowedHost()` does not
+  strip a trailing dot from an FQDN.** A client sending `Host:
+  app.example.com.` (trailing dot — legal DNS, some clients/resolvers add it)
+  gets a 403 even when `app.example.com` is allow-listed. This lives in
+  `mcp/sdk`, not in this package; `Doctor\McpDoctor`'s `checkAllowedHost`
+  mirrors the SDK's port-stripping but cannot compensate for an SDK-side gap
+  it doesn't own. Not something to "fix" here.
 - **Empty JSON Schema `properties` must serialize as `{}`.** The SDK
   normalizes `[]` → `\stdClass` only inside `Tool::fromArray()`; the OpenAPI
   bridge builds `Tool` directly, so `InputSchemaBuilder` does it explicitly and

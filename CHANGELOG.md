@@ -146,6 +146,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`{"type": ["string", "null"]}`) on scalar parameter schemas, and
   (`{"type": ["object", "null"]}`) on the response schema advertised as
   `outputSchema`, alongside the plain 3.0 type strings.
+- Known limitations reviewed and accepted, not fixed (each is a narrow edge
+  case, a delegated concern, or a documented trade-off):
+  - `HttpOperationExecutor::errorExcerpt()`'s UTF-8 placeholder can be
+    bypassed only by an upstream error body over 2000 bytes composed
+    entirely of stray continuation bytes (`0x80`-`0xBF`) — `Utf8::cut`
+    backs that off to an empty string, which trivially passes the
+    validity check. A real legacy-encoded body (Latin-1, CP1251) has lead
+    bytes that stop the back-off well before this, so the placeholder
+    fires correctly for the cases the feature actually targets.
+  - Delegated/default headers are not validated for embedded CRLF; a
+    conforming PSR-7 implementation (Guzzle, Nyholm) already rejects a
+    CRLF-containing header value at `withHeader()` time, so this is the
+    PSR-7 layer's job, not this package's.
+  - `Identity\StaticSecretResolver`'s early-exit-on-first-match lookup
+    reveals which configured client matched through the number of
+    `hash_equals` calls made (each call itself stays constant-time). Not
+    exploitable in this package's threat model — the client list is
+    admin configuration, not attacker-visible.
+  - `mcp/sdk`'s `DnsRebindingProtectionMiddleware::isAllowedHost()` does
+    not strip a trailing dot from an FQDN (`app.example.com.` is rejected
+    even when `app.example.com` is allow-listed); this lives in `mcp/sdk`,
+    not in this package's code.
+  - `InterceptingReferenceHandler`'s session-mirrored client id attribution
+    can survive a secret's revocation from `client_secrets` until the
+    session's own TTL expires — the mirror is a convenience for
+    audit/telemetry, not a live-revocation check; revoking access
+    immediately requires also invalidating the affected sessions.
+  - Two concurrent cold-miss calls for the same cache key both execute the
+    tool and both write; the second write wins. A performance
+    inefficiency (one extra tool execution), not a correctness or security
+    issue — the cache stays partitioned per client/identity regardless.
 
 ## 1.8.0 — 2026-07-25
 

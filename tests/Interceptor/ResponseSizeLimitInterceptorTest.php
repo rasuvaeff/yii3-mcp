@@ -52,6 +52,41 @@ final class ResponseSizeLimitInterceptorTest
         Assert::string($result)->contains('truncated, showing 4 of 12 bytes');
     }
 
+    public function nonUtf8StringWithinTheLimitThrows(): void
+    {
+        // Utf8::cut is not even reached here (the string is within the
+        // limit) — the check must not be conditional on truncation actually
+        // happening, or a short foreign body would still crash the SDK's
+        // envelope encoding later, just less often
+        $interceptor = new ResponseSizeLimitInterceptor(maxBytes: 10);
+
+        $caught = null;
+
+        try {
+            $interceptor->intercept($this->context(toolName: 'legacyTool'), static fn(): string => "\x80\x80");
+        } catch (ToolCallException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('legacyTool');
+        Assert::string($caught->getMessage())->contains('not valid UTF-8');
+    }
+
+    public function nonUtf8StringOverTheLimitThrowsInsteadOfBeingTruncated(): void
+    {
+        // 0xFF is never a valid UTF-8 byte, but Utf8::cut's lead-byte
+        // classification (a simple >= range match, not a real validator)
+        // misreads it as a 4-byte lead and keeps it — along with just
+        // enough trailing bytes to satisfy that (wrong) byte count — because
+        // the naive check "enough bytes remain" is satisfied. The result is
+        // still invalid UTF-8 and must not be returned as if it were fine.
+        $interceptor = new ResponseSizeLimitInterceptor(maxBytes: 6);
+
+        Expect::exception(ToolCallException::class);
+
+        $interceptor->intercept($this->context(), static fn(): string => "ab\xFFxyzEXTRA");
+    }
+
     public function arrayResultAtTheLimitIsReturnedUnchanged(): void
     {
         $payload = ['a' => 1];

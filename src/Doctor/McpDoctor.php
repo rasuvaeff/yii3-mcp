@@ -85,7 +85,17 @@ final readonly class McpDoctor
             );
         }
 
-        $host = strtolower($this->expectedHttpHost);
+        // mirror the SDK's own DnsRebindingProtectionMiddleware::isAllowedHost():
+        // allowedHosts entries are hostnames without a port, but the real Host
+        // header at runtime can carry one — it strips the port before
+        // comparing, so an expected_http_host configured WITH a port
+        // (e.g. "api.example.com:8080") must be stripped here too, or this
+        // check false-negatives on a host the runtime actually allows.
+        // IPv6 stays bracketed ("[::1]") and is never port-stripped.
+        $host = str_starts_with($this->expectedHttpHost, '[')
+            ? $this->expectedHttpHost
+            : explode(':', $this->expectedHttpHost, 2)[0];
+        $host = strtolower($host);
         $allowedHosts = array_map(strtolower(...), [...self::LOCAL_HOSTS, ...$this->allowedHosts]);
 
         if (!in_array($host, $allowedHosts, true)) {

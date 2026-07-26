@@ -31,7 +31,11 @@ use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
  * The client id resolved by {@see SharedSecretMiddleware} is read off the
  * request, exposed on every context and mirrored into the session
  * ({@see self::CLIENT_ID_SESSION_KEY}) so audit/telemetry bridges can
- * attribute calls without ever seeing the raw secret.
+ * attribute calls without ever seeing the raw secret. The mirror is a
+ * convenience for attribution, not a live revocation check: if a client's
+ * secret is removed from `client_secrets` mid-session, its already-mirrored
+ * id survives in the session until the session's own TTL expires. Revoking
+ * access immediately requires also invalidating the affected sessions.
  *
  * @api
  */

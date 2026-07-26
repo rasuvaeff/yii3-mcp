@@ -374,8 +374,44 @@ final class HttpOperationExecutorTest
         );
 
         Assert::same($client->requestCount, 0);
-        /** @var array{body: mixed} $plan */
+        /** @var array<string, mixed> $plan */
         $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
+        Assert::false(array_key_exists('body', $plan));
+    }
+
+    public function dryRunPreviewOmitsTheBodyKeyWhenNoBodyArgumentWasPassed(): void
+    {
+        // "no body argument at all" and "a body argument explicitly null"
+        // are different real-call outcomes (the latter still sends
+        // Content-Type + a literal JSON "null" body) — the preview must
+        // distinguish them by whether the "body" key is present at all,
+        // not by showing null either way
+        $client = new FakeHttpClient();
+
+        $result = $this->executor($client)->execute(
+            $this->operation('createSubscriber'),
+            ['dryRun' => true],
+            dryRunnable: true,
+        );
+
+        /** @var array<string, mixed> $plan */
+        $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
+        Assert::false(array_key_exists('body', $plan));
+    }
+
+    public function dryRunPreviewIncludesAnExplicitNullBodyArgument(): void
+    {
+        $client = new FakeHttpClient();
+
+        $result = $this->executor($client)->execute(
+            $this->operation('createSubscriber'),
+            ['body' => null, 'dryRun' => true],
+            dryRunnable: true,
+        );
+
+        /** @var array<string, mixed> $plan */
+        $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
+        Assert::true(array_key_exists('body', $plan));
         Assert::null($plan['body']);
     }
 
@@ -519,6 +555,24 @@ final class HttpOperationExecutorTest
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/#fragment',
+        );
+    }
+
+    public function unparseableBaseUrlThrows(): void
+    {
+        // parse_url() returns false, not an array, for a genuinely malformed
+        // URL — the credentials/query/fragment guards above must fail
+        // closed here too, not silently skip themselves because there was
+        // no array to read from
+        $factory = new Psr17Factory();
+
+        Expect::exception(InvalidArgumentException::class);
+
+        new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'http://example.com:notaport',
         );
     }
 

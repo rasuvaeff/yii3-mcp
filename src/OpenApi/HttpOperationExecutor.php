@@ -44,18 +44,23 @@ final readonly class HttpOperationExecutor
 
         $parts = parse_url($normalized);
 
-        if (is_array($parts)) {
-            // dry-run previews return the full URL to the caller, so the
-            // base URL must never be a credential carrier; parse_url sets
-            // "user" (possibly empty) whenever a userinfo section exists,
-            // so this single check covers user:pass and :pass forms alike
-            if (isset($parts['user'])) {
-                throw new InvalidArgumentException('Base URL must not embed credentials; pass them via default or delegated headers');
-            }
+        // an unparseable URL must fail closed, not silently skip the guards
+        // below — parse_url is lenient and rarely returns false, but a guard
+        // that disables itself on the failure path is fragile by construction
+        if (!is_array($parts)) {
+            throw new InvalidArgumentException('Base URL is not a valid URL');
+        }
 
-            if (isset($parts['query']) || isset($parts['fragment'])) {
-                throw new InvalidArgumentException('Base URL must not contain a query string or fragment');
-            }
+        // dry-run previews return the full URL to the caller, so the base
+        // URL must never be a credential carrier; parse_url sets "user"
+        // (possibly empty) whenever a userinfo section exists, so this
+        // single check covers user:pass and :pass forms alike
+        if (isset($parts['user'])) {
+            throw new InvalidArgumentException('Base URL must not embed credentials; pass them via default or delegated headers');
+        }
+
+        if (isset($parts['query']) || isset($parts['fragment'])) {
+            throw new InvalidArgumentException('Base URL must not contain a query string or fragment');
         }
 
         if ((!$identityProvider instanceof ExecutionIdentityProviderInterface) !== (!$delegatedHeaderProvider instanceof DelegatedHeaderProviderInterface)) {
@@ -89,18 +94,26 @@ final readonly class HttpOperationExecutor
         $path = $this->buildPath($operation, $arguments);
 
         if ($dryRunnable && ($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false) === true) {
-            return json_encode([
+            // mirror the real-send condition below EXACTLY, including key
+            // presence, not just value: `?? null` cannot tell "no body
+            // argument" (real call sends nothing) apart from "body argument
+            // explicitly null" (real call still sends Content-Type +
+            // literal JSON "null"). Omitting the "body" field entirely
+            // when no body would be sent — rather than showing it as null
+            // either way — makes the preview distinguish the two
+            $preview = [
                 'dryRun' => true,
                 'operationId' => $operation->operationId,
                 'method' => $operation->method,
                 'url' => $this->baseUrl . $path,
-                // mirror the real-send condition below: a bodyless operation
-                // ignores a stray `body` argument, so the preview must not
-                // claim it would be sent
-                'body' => $operation->requestBodySchema !== null
-                    ? ($arguments[InputSchemaBuilder::BODY_ARGUMENT] ?? null)
-                    : null,
-            ], JSON_THROW_ON_ERROR);
+            ];
+
+            if ($operation->requestBodySchema !== null && array_key_exists(InputSchemaBuilder::BODY_ARGUMENT, $arguments)) {
+                /** @var mixed */
+                $preview['body'] = $arguments[InputSchemaBuilder::BODY_ARGUMENT];
+            }
+
+            return json_encode($preview, JSON_THROW_ON_ERROR);
         }
 
         $request = $this->requestFactory->createRequest($operation->method, $this->baseUrl . $path);

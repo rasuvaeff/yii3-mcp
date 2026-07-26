@@ -342,6 +342,27 @@ final class McpDoctorTest
         Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
     }
 
+    public function expectedHostWithAPortMatchesTheAllowListedHostname(): void
+    {
+        // the SDK's own runtime check (DnsRebindingProtectionMiddleware)
+        // strips the port from the real Host header before comparing against
+        // a port-less allowedHosts entry — the Doctor check must do the same,
+        // or it false-negatives on a host the runtime actually allows
+        $report = $this->doctor(
+            expectedHttpHost: 'mcp.example.test:8080',
+            allowedHosts: ['mcp.example.test'],
+        )->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
+    }
+
+    public function expectedIpv6HostStaysBracketedAndIsNotPortStripped(): void
+    {
+        $report = $this->doctor(expectedHttpHost: '[::1]')->diagnose();
+
+        Assert::same($this->check($report, 'allowed_host')->status, CheckStatus::Pass);
+    }
+
     /**
      * @param array<string, string> $headers
      * @param list<string> $clientIds
