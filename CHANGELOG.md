@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+Security-hardening pass over the 2026-07-26 external review (REVIEW-2026-07-26).
+Several changes are **breaking** — see `UPGRADE.md`.
+
+- **[breaking, security] Sessions are bound to the client that created
+  them.** The SDK only checks that a presented `Mcp-Session-Id` exists, so
+  any authenticated client could act inside — or DELETE — another client's
+  session by replaying its id (verified end-to-end). `McpAction` now stamps
+  the resolved client id into the session as an immutable owner at
+  `initialize` and verifies it on every POST/DELETE before the transport
+  runs; a foreign or ownerless session gets the SDK's own 404 shape,
+  indistinguishable from an expired one. `InterceptingReferenceHandler`
+  enforces the same binding as defence in depth (before visibility) and
+  throws the new `Exception\SessionOwnershipException` on a mismatch.
+  Sessions created before the upgrade have no owner and are rejected for
+  authenticated clients — clients simply re-initialize.
+- **[security] Client identity now travels with the session, not through
+  process state.** The session's immutable owner is the primary identity
+  source for capability calls; the process-local `ClientIdentityContext` is
+  only a fallback for sessions without a recorded owner. This keeps
+  attribution correct in concurrent/Fiber-interleaving runtimes, where the
+  static slot could observe another request's id.
+- **[breaking, security] `CachingToolCallInterceptor` requires a cache
+  namespace and uses typed key material.** Two applications sharing one
+  cache backend (a common Redis) with same-named tools could read each
+  other's results; a real client literally named `anonymous` shared a
+  partition with identity-less (stdio) callers. The key is now derived from
+  a versioned, typed JSON structure (namespace, client id as `null|string`,
+  tool, identity, canonicalized arguments). The namespace comes from the
+  new `cache.namespace` param, defaulting to `server_name`. All previously
+  cached entries miss once after the upgrade (by design — the format
+  version is part of the key).
+- **[breaking] `ToolCallLimiterInterface::allow()` takes `?string
+  $clientId`.** Absence of identity is typed, never spelled as a reserved
+  string; `RateLimitInterceptor` lost its `$fallbackClientId` parameter and
+  passes `null` through — how anonymous calls are bucketed is the
+  application limiter's decision.
+- **[security] `StaticSecretResolver` rejects a secret shared by two client
+  ids** (and a duplicate within one client's list): resolution returns the
+  first match, so a shared secret silently attributed one client's calls —
+  audit, rate limits, cache partitions, session ownership — to the other.
+- **[security] Capability-name collisions fail the build on every
+  registration path.** `McpServerFactory` now always installs a
+  duplicate-guarding registry decorator: a tool/resource/template/prompt
+  registered twice (attribute classes, configurators, the OpenAPI bridge,
+  Markdown prompts — any combination) throws the new
+  `Exception\DuplicateCapabilityException` instead of the SDK's silent
+  last-write-wins that left name-keyed rules (visibility, cache, RBAC,
+  audit) describing a vanished handler. The reserved-names handshake stays
+  for its earlier, more specific error messages.
+- **[breaking, security] The default session store is owner-only and
+  application-specific.** The SDK's `FileSessionStore` creates a `0775`
+  directory and umask-mode (`0644`) files — another OS user could read
+  session JSON (client metadata, replayable session state). The new
+  `Session\PrivateFileSessionStore` creates the directory `0700` (chmod
+  after mkdir, immune to the umask) and clamps session files to `0600`;
+  the default directory is now derived from `server_name`
+  (`yii3-mcp-sessions-<slug>-<hash>`), so two applications on one host no
+  longer share it. `mcp:doctor` fails the session-directory check when the
+  directory is accessible to group/others, not only when it is unwritable.
+- **[security] OpenAPI upstream responses are bounded before allocation.**
+  `HttpOperationExecutor` used to materialize the whole body
+  (`(string) $body` + `json_decode`) before any size check could run. It now
+  reads incrementally and fails the call the moment the body crosses the new
+  `openapi.max_response_bytes` cap (default 4 MiB); an advertised size over
+  the cap is rejected without reading a byte, JSON decoding is depth-capped,
+  and the error-path read is capped at excerpt size.
+- **[security] Prompt substitution is budgeted before it happens.** One
+  `prompts/get` argument is inserted at every occurrence of its placeholder
+  (N-fold amplification). The expanded size is now computed arithmetically
+  and checked against the new `limits.prompt_result_bytes` param (default
+  1 MiB, 0 = unlimited) before the substituted string is built.
+- **[breaking, security] Spec-fetch and operation-call credentials are
+  separate scopes.** `openapi.headers` used to be sent to the spec host
+  too — with `spec_path` and `base_url` on different origins, the API token
+  went to the spec server. `headers` now authenticates operation calls
+  only; the spec fetch uses the new `openapi.spec_headers` (empty by
+  default). `SpecLoader` additionally rejects a spec URL embedding userinfo
+  credentials, and `mcp:doctor` redacts userinfo from any URL it prints.
+- **[security] The OpenAPI document itself is resource-bounded.** Size cap
+  (10 MiB) for URL and file sources (the URL fetch reads incrementally),
+  and `$ref` inlining now runs under an explicit node budget on top of the
+  existing depth limit — a hostile or degenerate remote spec cannot make
+  indexing recurse or allocate without bound.
+- **[new] `openapi.opaque_errors`** suppresses the upstream error-body
+  excerpt in bridged failures for service-token deployments where the
+  upstream's error details are not the MCP caller's to see.
+- `SpecIndex` decomposed into focused collaborators (`JsonPointerResolver`,
+  `OutputSchemaProjector`, `OperationContractValidator`, all `@internal`) so
+  resource limits and trust decisions each live in one place. No behavior
+  change beyond the new budgets above.
+- The package's only Psalm suppression is gone: `stubs/Tool.phpstub` corrects
+  the SDK's inaccurate `ToolInputSchema` docblock instead of suppressing
+  `ArgumentTypeCoercion`.
+- `Prompts\PromptFile` restores its error handler in a `finally`;
+  `Testing\SchemaSnapshot` writes via temp-file + atomic rename (a crash can
+  no longer leave a truncated snapshot); `mcp:list` states that it shows the
+  default (unauthenticated) capability view; `mcp:doctor` truncates and
+  redacts exception details and no longer promises the impossible about
+  third-party exception messages; `ResponseSizeLimitInterceptor` documents
+  its raw-bytes-vs-wire-bytes semantics.
 - A bridged tool whose name collides with an attribute tool's now fails the
   server build instead of vanishing. The SDK's registry is last-write-wins
   and its loaders register explicit tools (the OpenAPI bridge) *before*

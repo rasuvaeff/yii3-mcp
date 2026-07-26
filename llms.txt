@@ -18,7 +18,19 @@ composer require rasuvaeff/yii3-mcp
   `mcp/sdk` (`~0.7.0`, experimental — tilde pin, minor = breaking).
 - The core registers no tools; the application lists tool FQCNs in params.
 - Default session store is file-based (FPM-safe): MCP sessions span requests,
-  the SDK in-memory default loses them between FPM workers.
+  the SDK in-memory default loses them between FPM workers. It is owner-only
+  (`Session\PrivateFileSessionStore`: 0700 dir, 0600 files, app-specific
+  default dir derived from server_name).
+- Sessions are BOUND to the client that created them: McpAction stamps the
+  resolved client id as an immutable owner at initialize and answers 404 to
+  a POST/DELETE presenting another client's (or an ownerless) Mcp-Session-Id.
+- Capability names are unique across the whole server, enforced: any
+  collision (attribute tools, configurators, OpenAPI bridge, prompts) fails
+  the build with Exception\DuplicateCapabilityException.
+- Caller-influenced output is bounded BEFORE allocation: upstream bodies
+  (`openapi.max_response_bytes`, incremental read), substituted prompts
+  (`limits.prompt_result_bytes`, arithmetic pre-check), spec documents
+  (10 MiB + $ref depth/node budget), tool results (`limits.tool_result_bytes`).
 
 ## API reference
 
@@ -267,8 +279,13 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   embed credentials (userinfo) or carry a query string/fragment — dry-run
   previews return the full URL to the caller.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
-  `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers` /
-  `cache_ttl` (PSR-16, raw document, 0 disables) / `identity_provider` /
+  `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers`
+  (operation calls only) / `spec_headers` (spec fetch only, empty default —
+  separate credential scopes so an API token never reaches a foreign spec
+  host; a spec URL with userinfo is rejected) /
+  `cache_ttl` (PSR-16, raw document, 0 disables) / `max_response_bytes`
+  (upstream body cap, incremental read, default 4 MiB) / `opaque_errors`
+  (suppress upstream error bodies) / `identity_provider` /
   `delegated_header_provider` / `dry_run` (list of operationIds).
 - Dry-run: an operationId in `dry_run` (or `dryRunOperations`) gets an extra
   `dryRun: boolean` inputSchema argument. Calling with `dryRun: true` returns
@@ -322,7 +339,9 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // Result caching (PSR-16, opt-in by tool name — for the OpenAPI bridge, the
 // SERVED name after any tool_names rename):
 // params: 'cache' => ['tools' => ['blog_tags_list' => 60]]  // toolName => TTL seconds
-// Key always includes the resolved client id (never shared across clients);
+//         'cache' => ['namespace' => '']  // '' => server_name; isolates apps sharing one backend
+// Typed key: mandatory namespace + resolved client id (null = typed absence,
+// never the string 'anonymous'; never shared across clients);
 // with openapi.identity_provider configured, the resolved ExecutionIdentity
 // is part of the key too (delegated credentials => identity-specific
 // results, possibly finer-grained than the client id).
@@ -341,9 +360,10 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // no limiter storage):
 use Rasuvaeff\Yii3Mcp\Interceptor\RateLimitInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
-// implement ToolCallLimiterInterface::allow(string $clientId, string $toolName): bool
+// implement ToolCallLimiterInterface::allow(?string $clientId, string $toolName): bool
 // over yiisoft/rate-limiter / Redis; bind it in DI; add RateLimitInterceptor
-// to 'interceptors'. Keys: resolved client id (fallback 'anonymous') + tool.
+// to 'interceptors'. Keys: resolved client id + tool; a transport without
+// identity (stdio) passes null — typed absence, never a reserved string.
 // false => ToolCallException "Rate limit exceeded"; limiter throws =>
 // fail-closed ToolCallException (enforced quota never silently unlimited).
 
@@ -437,19 +457,24 @@ CallOutcome::fromThrowable($e);   // ToolCallException/PromptGetException/Resour
 ### DI (config-plugin)
 
 Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
-(FileSessionStore, dir from `session.dir` param or sys temp), `Server` (via
-factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
+(`Session\PrivateFileSessionStore` — 0700 dir/0600 files, dir from
+`session.dir` param or an app-specific sys-temp default), `Server` (via
+factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`,
+`McpAction` (with the session store, for session-ownership enforcement).
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `client_secrets` (client id => secret|list of active
-secrets; mutually exclusive with endpoint_secret), `secret_header`,
+secrets; mutually exclusive with endpoint_secret; a secret shared by two
+client ids is rejected), `secret_header`,
 `allowed_hosts`, `session.dir`, `session.ttl`,
-`session.budget`, `limits.tool_result_bytes`, `cache.tools`, `interceptors`,
+`session.budget`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
+`cache.tools`, `cache.namespace`, `interceptors`,
 `prompt_interceptors`,
 `resource_interceptors`, `configurators`, `tool_visibility`,
 `prompt_visibility`, `resource_visibility`,
 `visibility.deny`, `visibility.allow`, `prompts_path`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`,
 `openapi.tool_names`, `openapi.operation_modifier`, `openapi.headers`,
+`openapi.spec_headers`, `openapi.max_response_bytes`, `openapi.opaque_errors`,
 `openapi.cache_ttl`, `openapi.identity_provider`,
 `openapi.delegated_header_provider`, `openapi.safe_methods_only`,
 `expected_http_host`.

@@ -189,6 +189,11 @@ included) in the `SchemaSnapshot` normalized form — item order and object
 keys are stable, so the output diffs cleanly in CI and feeds external
 automation.
 
+The listing is the **default (unauthenticated) view** — the command drives a
+synthetic session with no client identity, and says so in its output: with
+per-session visibility or RBAC wired in, a real client may see a different
+capability set.
+
 The command (like `McpTester`) needs PSR-17 factories in the container. Keep
 these services in every config group that builds `Mcp\Server`, including the
 console group:
@@ -206,8 +211,10 @@ PSR-17 contracts; binding one does not satisfy the other.
 ### Diagnostics: mcp:doctor
 
 `mcp:doctor` checks the MCP server configuration end-to-end and reports each
-check as pass/skip/fail — the output never contains the secret or configured
-header values:
+check as pass/skip/fail — the output never contains the configured secret or
+header values, and printed URLs are stripped of userinfo credentials
+(exception messages from application services pass through truncated, so
+treat the report as operator-facing diagnostics):
 
 ```bash
 ./yii mcp:doctor           # human-readable table
@@ -216,8 +223,10 @@ header values:
 ```
 
 Checks include endpoint secret, the optional `expected_http_host` allow-list,
-every PSR service required by enabled entry points/features, session storage,
-the OpenAPI spec and a real server build. Missing services are reported by
+every PSR service required by enabled entry points/features, session storage
+(including **confidentiality**: a session directory readable by group/others
+fails the check, not just an unwritable one), the OpenAPI spec and a real
+server build. Missing services are reported by
 their exact interface. Exit codes are stable for scripting: `0` healthy,
 `2` config error, `3` storage error, `4` upstream error — the category of the
 **first** failing check (checks run root-causes-first, so a broken config
@@ -232,8 +241,13 @@ eagerly) are reported as skipped.
 The MCP Streamable HTTP session spans several HTTP requests (`initialize`
 first, then `tools/call` with the returned `Mcp-Session-Id`). The SDK's
 default in-memory store would lose the session between FPM workers, so this
-package **defaults to a file-based store** (`sys_get_temp_dir()`, override via
-`session.dir` param). For multi-host setups rebind the interface:
+package **defaults to a file-based store** — the shipped
+`Session\PrivateFileSessionStore` keeps it owner-only: the directory is
+created `0700` (an application-specific default under `sys_get_temp_dir()`,
+derived from `server_name`; override via `session.dir`) and every session
+file is clamped to `0600`, because session JSON carries client metadata and
+everything needed to replay a session id. For multi-host setups rebind the
+interface:
 
 ```php
 // config/common/di/mcp.php
@@ -245,6 +259,19 @@ return [
         new Psr16SessionStore($cache),
 ];
 ```
+
+#### Sessions are bound to the client that created them
+
+The SDK itself only checks that a presented `Mcp-Session-Id` exists — any
+authenticated client could otherwise act inside (or `DELETE`) another
+client's session by replaying its id, which leaks into proxy and client
+logs via the HTTP header. When `client_secrets` (or `endpoint_secret`) is
+configured, `McpAction` stamps the resolved client id into the session as an
+**immutable owner at `initialize`** and verifies it on every `POST`/`DELETE`
+before the transport runs. A foreign — or ownerless — session is answered
+with the same 404 the SDK uses for a missing one, indistinguishable from an
+expired session. Deployments without client identity (network-ACL-only) are
+unaffected.
 
 ### Prompts from Markdown files
 
@@ -279,6 +306,13 @@ Declared `{{argument}}` placeholders are substituted from the request
 intact. Malformed frontmatter, an unreadable file or a duplicate prompt
 name fail the server build with `Prompts\Exception\InvalidPromptFileException`
 — never a silently missing prompt.
+
+Substitution amplifies caller input — one argument value is inserted at
+every occurrence of its placeholder — so the expanded prompt is bounded by
+the `limits.prompt_result_bytes` param (default 1 MiB, `0` = unlimited).
+The size is computed arithmetically and checked **before** the substituted
+string is built: an over-budget `prompts/get` fails without performing the
+allocation it refuses.
 
 > The file format is intentionally compatible with — and inspired by —
 > [vjik/my-prompts-mcp](https://github.com/vjik/my-prompts-mcp) by Sergei
@@ -425,6 +459,11 @@ that does not fit whole is dropped rather than split (a broken UTF-8
 sequence would make the JSON-RPC response unencodable, and the Streamable
 HTTP transport drops such a response silently), and the marker itself is
 appended on top of the budget. The marker reports the bytes actually kept.
+For a string result the budget counts the **raw** string's bytes, before
+JSON encoding (control characters expand on the wire, up to ~6x); for
+arrays/objects it counts the JSON-encoded bytes. It bounds what reaches the
+agent's context window — worker memory during production of the result is
+bounded separately by `openapi.max_response_bytes`.
 
 For read-heavy tools called repeatedly with the same arguments inside a
 session (a lookup table, an OpenAPI GET), `cache.tools` skips the handler
@@ -441,7 +480,14 @@ entirely on a hit — opt in by tool name (for the OpenAPI bridge, the
 
 Requires a PSR-16 `CacheInterface` in the container. The cache key always
 includes the resolved client id — a shared cache between distinct clients
-would leak one client's result to another. When `openapi.identity_provider`
+would leak one client's result to another. The key material is typed: an
+absent client id (stdio) encodes as `null` and can never collide with a
+real client that happens to be named `anonymous`. The key also carries a
+mandatory **namespace** (`cache.namespace` param, defaulting to
+`server_name`): two applications sharing one cache backend — a common
+Redis — with same-named tools must never read each other's results, and an
+external PSR-16 prefix is defence in depth, not the primary isolation.
+When `openapi.identity_provider`
 is configured, the resolved `ExecutionIdentity` is part of the key too:
 delegated upstream credentials mean the same tool and arguments can produce
 identity-specific results, and the identity may be finer-grained than the
@@ -486,11 +532,14 @@ is revoked immediately):
 `Identity\SecretResolverInterface` (every comparison is `hash_equals()`,
 constant-time) and passes the resolved **client id** — never the raw
 secret — down the pipeline: interceptors see it as
-`ToolCallContext::$clientId`, and it is mirrored into the session for
-audit/telemetry bridges. The single `endpoint_secret` form keeps working
+`ToolCallContext::$clientId`, and it is stamped into the session as its
+immutable owner for audit/telemetry bridges and session-ownership
+enforcement. The single `endpoint_secret` form keeps working
 unchanged as one client named `default`; configuring both forms at once is a
-fail-fast error. On stdio (`mcp:serve`) there is no HTTP request, so
-`$clientId` is `null`.
+fail-fast error, and so is a secret shared by two different client ids —
+resolution returns the first match, so a duplicate would silently attribute
+one client's calls to the other. On stdio (`mcp:serve`) there is no HTTP
+request, so `$clientId` is `null`.
 
 ### Per-client rate limits (bring your own limiter)
 
@@ -504,9 +553,9 @@ final readonly class AppToolCallLimiter implements ToolCallLimiterInterface
 {
     public function __construct(private CounterInterface $counter) {}
 
-    public function allow(string $clientId, string $toolName): bool
+    public function allow(?string $clientId, string $toolName): bool
     {
-        return $this->counter->hit($clientId . ':' . $toolName)->isAllowed();
+        return $this->counter->hit(($clientId ?? 'no-client') . ':' . $toolName)->isAllowed();
     }
 }
 
@@ -517,9 +566,11 @@ final readonly class AppToolCallLimiter implements ToolCallLimiterInterface
 // di: bind ToolCallLimiterInterface => AppToolCallLimiter
 ```
 
-The interceptor keys calls by the resolved client id (falling back to
-`anonymous` on transports without one) plus the tool name, so per-client and
-per-tool limits come from your limiter's configuration. **Fail-closed**: when
+The interceptor keys calls by the resolved client id plus the tool name, so
+per-client and per-tool limits come from your limiter's configuration. A
+transport without identity (stdio) passes `null` — typed absence, never a
+reserved string a real client id could collide with; how anonymous calls are
+bucketed is the limiter's decision. **Fail-closed**: when
 the limiter backend throws, the call is rejected — an enforced quota must not
 silently become "unlimited" during an outage.
 
@@ -743,19 +794,31 @@ handlers directly.
 'rasuvaeff/yii3-mcp' => [
     'openapi' => [
         // file path OR http(s) URL — e.g. the app's own spec endpoint,
-        // always current; fetched with the same `headers` (auth included)
+        // always current; fetched with `spec_headers`, NOT with `headers`
         'spec_path' => 'https://api.example.com/rest/json-url',
         'base_url' => 'https://api.example.com',
         'operations' => ['getBlogTags', 'getPage'],   // allow-list, empty = nothing
         // rename an ugly generated operationId into an LLM-friendly tool
         // name; unmapped operations keep their operationId
         'tool_names' => ['getBlogTags' => 'blog_tags_list'],
+        // operation-call credentials, sent to base_url only
         'headers' => ['Authorization' => 'Bearer ' . getenv('MCP_API_TOKEN')],
+        // spec-fetch credentials, sent to spec_path only (empty by default)
+        'spec_headers' => [],
         'cache_ttl' => 60,             // PSR-16 URL-spec cache; 0 = fetch every build
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
+        'max_response_bytes' => 4_194_304, // upstream body cap, read incrementally
+        'opaque_errors' => false,      // true = suppress upstream error bodies
     ],
 ],
 ```
+
+Credential scopes are separate on purpose: `headers` authenticates operation
+calls against `base_url`, `spec_headers` authenticates the spec fetch against
+`spec_path` — when the two point at different origins, a shared header set
+would hand the API token to the spec host. A spec URL embedding credentials
+(userinfo) is rejected outright: such a URL ends up in diagnostics and
+exception messages.
 
 `tool_names` only renames what MCP clients see as the tool name — the
 allow-list, handler execution and delegated-header calls all stay keyed by
@@ -824,6 +887,17 @@ Tool arguments are keyed by name, so an operation with a
 path and a query parameter sharing one name — or a parameter named `body`
 alongside a request body — cannot be bridged and throws
 `InvalidSpecException` at build time.
+
+Resource bounds are enforced **before** allocation, not after: the upstream
+response body is read incrementally and the call fails the moment it crosses
+`max_response_bytes` (an advertised `Content-Length` over the cap is rejected
+without reading at all); JSON decoding is depth-capped; the OpenAPI document
+itself is size-bounded (10 MiB) for URL and file sources alike, and `$ref`
+inlining runs under an explicit depth + node budget, so a hostile or
+degenerate remote spec cannot make indexing recurse or allocate without
+bound. Upstream error bodies are excerpted (bounded, UTF-8-safe) into the
+tool error — or suppressed entirely with `opaque_errors` when upstream error
+details are not the MCP caller's to see.
 
 An `operationId` that cannot serve as an MCP tool name (space, unicode,
 over 64 characters — `^[A-Za-z0-9._/-]{1,64}$`) throws `InvalidSpecException`
@@ -930,7 +1004,10 @@ write action requires the same permission as actually calling it.
 | Class | Role |
 |---|---|
 | `McpServerFactory` | list of tool FQCNs → configured SDK `Server` (reads `#[McpTool]`/`#[McpResource]` attributes, wires the DI container and session store) |
-| `McpAction` | PSR-15 handler running the SDK `StreamableHttpTransport` for the current request |
+| `McpAction` | PSR-15 handler running the SDK `StreamableHttpTransport` for the current request; stamps the immutable session owner at `initialize` and rejects foreign-session POST/DELETE with a 404 |
+| `Session\PrivateFileSessionStore` | owner-only file session store: directory created `0700`, session files clamped `0600` (the shipped default) |
+| `Exception\SessionOwnershipException` | a capability call arrived with a client identity different from the session's immutable owner (fail-closed) |
+| `Exception\DuplicateCapabilityException` | two capability registrations resolved to one identity — the build fails instead of the SDK's silent last-write-wins |
 | `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; an empty secret rejects every request with an explanatory 503 — an unprotected endpoint must be an explicit decision; resolves the client id via `Identity\SecretResolverInterface` |
 | `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver` | several clients per endpoint + secret rotation (multiple active secrets per client id); constant-time comparison, the raw secret never travels past the middleware |
 | `Interceptor\ToolCallLimiterInterface` / `Interceptor\RateLimitInterceptor` | port + adapter delegating per-client/per-tool limits to the application's rate limiter; fail-closed on limiter outage |
@@ -948,7 +1025,7 @@ write action requires the same permission as actually calling it.
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | caps tool result size (`limits.tool_result_bytes` param) — truncates strings, rejects oversized arrays/objects |
-| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); key includes the client id and, with delegated auth, the `ExecutionIdentity` |
+| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); typed key includes a mandatory application namespace, the client id and, with delegated auth, the `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
 | `Interceptor\ArgumentMasker` | shared sensitive-argument masking (`password`/`token`/… at every nesting level) for anything leaving the process |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter (`tool_visibility` param): tools/list omits, tools/call fail-closed rejects |
@@ -971,6 +1048,22 @@ write action requires the same permission as actually calling it.
   not leaked as 500 traces.
 - The core registers **no tools by default**; every exposed operation is an
   explicit entry in `params['rasuvaeff/yii3-mcp']['tools']`.
+- **Sessions are bound to the client that created them** (immutable owner
+  stamped at `initialize`, verified before every POST/DELETE): a leaked
+  `Mcp-Session-Id` alone does not let another authenticated client act in —
+  or destroy — a foreign session. Session files are owner-only (`0700` dir,
+  `0600` files) in an application-specific directory.
+- **Capability names are unique across the whole server, enforced.** A
+  collision between any registration paths (attribute tools, configurators,
+  the OpenAPI bridge, Markdown prompts) fails the build with
+  `DuplicateCapabilityException` — never the SDK's silent last-write-wins,
+  which would leave visibility/cache/RBAC/audit rules describing a vanished
+  handler.
+- All caller-influenced output is size-bounded **before** allocation:
+  upstream response bodies (`openapi.max_response_bytes`, incremental read),
+  substituted prompts (`limits.prompt_result_bytes`, arithmetic pre-check),
+  spec documents (10 MiB + `$ref` depth/node budget) and tool results
+  (`limits.tool_result_bytes`).
 - OAuth from the MCP authorization spec is deliberately out of scope until it
   stabilizes; shared-secret/ACL only.
 

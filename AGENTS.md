@@ -17,6 +17,8 @@ Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
 `Doctor\{McpDoctor, DoctorReport, CheckResult, CheckStatus, CheckCategory}`,
 `Identity\{SecretResolverInterface, StaticSecretResolver;
 ClientIdentityContext is @internal}`,
+`Session\{PrivateFileSessionStore; SessionDirectory is @internal}`,
+`GuardedRegistry is @internal`,
 `ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `ReservedToolNamesAwareInterface`,
 `Testing\McpTester`, `Testing\SchemaSnapshot`,
@@ -31,7 +33,9 @@ PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
 FilteredListResourcesHandler, FilteredListResourceTemplatesHandler are
 @internal}`,
-`OpenApi\{SpecIndex, ToolNameValidator are @internal; OpenApiServerConfigurator,
+`OpenApi\{SpecIndex, ToolNameValidator, JsonPointerResolver,
+OutputSchemaProjector, OperationContractValidator are @internal;
+OpenApiServerConfigurator,
 SpecLoader, Operation, OperationModifierInterface, ExecutionIdentity,
 ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface}`,
 `Prompts\MarkdownPromptsConfigurator` (file format is
@@ -87,14 +91,18 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   per-client quota belongs in an application-level rate limiter with a
   proper atomic store, not here.
 - **`CachingToolCallInterceptor`'s cache key MUST include everything the
-  result's identity depends on: the resolved client id AND, when
-  `openapi.identity_provider` is configured, the resolved
-  `ExecutionIdentity`.** A cache shared across distinct clients leaks one
-  client's result to another — this is not a configurable trade-off; with
-  delegated upstream credentials the identity can be finer-grained than the
-  client id (many end users behind one MCP client), so the client id alone
-  is NOT enough. A missing client id falls back to `'anonymous'` (stdio),
-  never to a shared key. An identity provider failure fails CLOSED for
+  result's identity depends on: the mandatory application namespace, the
+  resolved client id AND, when `openapi.identity_provider` is configured,
+  the resolved `ExecutionIdentity`.** A cache shared across distinct clients
+  leaks one client's result to another — this is not a configurable
+  trade-off; with delegated upstream credentials the identity can be
+  finer-grained than the client id (many end users behind one MCP client),
+  so the client id alone is NOT enough. The key material is a typed JSON
+  structure carrying a format version — an ABSENT client id encodes as
+  `null`, never as a sentinel string a real client id (`anonymous`) could
+  collide with; the namespace (default: `server_name`) isolates
+  applications sharing one cache backend. An identity provider failure
+  fails CLOSED for
   cached tools (a cache outage fails open — availability; not knowing whose
   result it is — never). Cached values are wrapped (`['v' => $result]`)
   specifically to distinguish a genuine `null` tool result from a cache
@@ -135,21 +143,29 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   serve as the read-only context passed to `OperationModifierInterface::modify()`.**
   It stays a small readonly VO — do not grow it into a general-purpose object;
   add fields only when the modifier genuinely needs them.
-- **Tool names must be unique across the WHOLE server, and the SDK will not
-  tell you otherwise.** `Registry::registerTool()` is last-write-wins with no
-  duplicate check, and `Builder::build()` runs its explicit loader
-  (`Builder::add()`, used by configurators) BEFORE the reflected one
-  (`Builder::addTool()`, used for `#[McpTool]` methods) — so on a collision
-  the attribute tool wins and the **bridged tool silently disappears** from
-  `tools/list`, which was verified empirically, not inferred. `McpServerFactory`
-  therefore collects the attribute tools' names (mirroring the SDK's own rule:
-  the attribute's `name`, else the method name, else the class short name for
-  `__invoke`) and hands them to every configurator implementing
-  `ReservedToolNamesAwareInterface` before `configure()`;
-  `OpenApiServerConfigurator` seeds its `$usedNames` map with them so a
-  `tool_names`/modifier rename onto a taken name fails fast. If the SDK's
-  naming rule drifts on a pin bump, `reservedNamesFollowTheSdkDefaultNamingRule`
-  is the test that catches it.
+- **Capability identities must be unique across the WHOLE server, and the
+  SDK will not tell you otherwise.** `Registry::registerTool()` is
+  last-write-wins with no duplicate check, and `Builder::build()` runs its
+  explicit loader (`Builder::add()`, used by configurators) BEFORE the
+  reflected one (`Builder::addTool()`, used for `#[McpTool]` methods) — so
+  on a collision the attribute tool wins and the **bridged tool silently
+  disappears** from `tools/list`, which was verified empirically, not
+  inferred. Two layers of defence, keep BOTH:
+  1. `McpServerFactory` always installs `GuardedRegistry` (@internal, wraps
+     the SDK registry via `Builder::setRegistry()`) — the single point every
+     registration path converges on; ANY live duplicate (tools, resources,
+     templates, prompts) throws `Exception\DuplicateCapabilityException` at
+     build time. Re-register after an explicit unregister stays allowed.
+     Side effect: the registry is always eagerly loaded — intended.
+  2. The reserved-names handshake gives BETTER error messages earlier:
+     `McpServerFactory` collects the attribute tools' names (mirroring the
+     SDK's own rule: the attribute's `name`, else the method name, else the
+     class short name for `__invoke`) and hands them to every configurator
+     implementing `ReservedToolNamesAwareInterface` before `configure()`;
+     `OpenApiServerConfigurator` seeds its `$usedNames` map with them so a
+     `tool_names`/modifier rename onto a taken name fails fast. If the SDK's
+     naming rule drifts on a pin bump,
+     `reservedNamesFollowTheSdkDefaultNamingRule` is the test that catches it.
 - **A tool-name change is validated identically wherever it happens.** Both a
   `tool_names` rename and an `OperationModifierInterface`-returned name reuse
   `OpenApi\ToolNameValidator` (`@internal`, shared with `SpecIndex`) and are
@@ -224,14 +240,32 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   `SpecIndex` omits an empty `properties` from `outputSchema`. `[]` on the wire
   makes clients reject the entire `tools/list` (`expected record, received
   array`). The SDK's own `ToolInputSchema` docblock contradicts what the SDK
-  stores there, so `psalm.xml` suppresses `ArgumentTypeCoercion` for
-  `Mcp\Schema\Tool::__construct` — the package's only suppression; still
-  present in 0.7.0 (confirmed by temporarily removing it), revisit whenever
-  the pin moves again.
-- **Session store default must be FPM-safe.** MCP Streamable HTTP sessions
-  span requests (`initialize` → `Mcp-Session-Id` → subsequent calls); the
-  SDK's `InMemorySessionStore` default silently breaks under PHP-FPM.
-  `config/di.php` binds `FileSessionStore`; do not "simplify" it away.
+  stores there — corrected by `stubs/Tool.phpstub` (registered in
+  `psalm.xml`), NOT by a suppression: the stub declares the honest accepted
+  type (`array<string, mixed>|\stdClass` for `properties`). Revisit the stub
+  whenever the SDK pin moves.
+- **Session store default must be FPM-safe AND owner-only.** MCP Streamable
+  HTTP sessions span requests (`initialize` → `Mcp-Session-Id` → subsequent
+  calls); the SDK's `InMemorySessionStore` default silently breaks under
+  PHP-FPM, and its `FileSessionStore` creates a `0775` directory with
+  umask-mode files — readable by other OS users. `config/di.php` binds
+  `Session\PrivateFileSessionStore` (0700 dir, 0600 files) with an
+  application-specific default directory (`Session\SessionDirectory`,
+  derived from `server_name`); do not "simplify" either away.
+- **Sessions are bound to the client that created them; the binding is
+  immutable and enforced in TWO places — keep both.** The SDK only checks
+  that a presented session UUID exists, and the UUID leaks into proxy/client
+  logs via the HTTP header. (1) `McpAction` stamps
+  `InterceptingReferenceHandler::CLIENT_ID_SESSION_KEY` as the owner right
+  AFTER the initialize response (never first-call binding — whoever replays
+  a fresh session id first would claim it) and answers the SDK's own 404
+  shape to a POST/DELETE presenting a foreign or ownerless session when a
+  client id is resolved. (2) `InterceptingReferenceHandler::clientId()`
+  reads identity FROM THE SESSION first and throws
+  `Exception\SessionOwnershipException` on an owner/holder mismatch — this
+  runs BEFORE visibility, so a foreign session is never consulted for what
+  the caller may see, and it keeps identity correct under Fiber-interleaved
+  runtimes where the process-local holder cannot be trusted.
 - **`McpServerFactory` reads attributes itself** (reflection over public
   methods) because the SDK's attribute discovery is file-scan based
   (`setDiscovery`), which doesn't fit DI-listed classes. Registration goes
@@ -251,9 +285,12 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   handler the JSON-RPC request, not the PSR-7 one, so the client id resolved
   by `SharedSecretMiddleware` cannot travel as a request attribute all the
   way down. `McpAction` arms it before `Server::run()` and disarms in a
-  `finally`; FPM-safe because a worker handles one request at a time. Do not
-  read it outside `InterceptingReferenceHandler`, and never store the raw
-  secret in it.
+  `finally`. It is deliberately NOT the primary identity source — the
+  session's immutable owner is (it travels with the request and survives
+  Fiber interleaving); the holder covers only sessionless calls and
+  sessions with no recorded owner, and a holder/owner disagreement fails
+  closed. Do not read it outside `InterceptingReferenceHandler`, and never
+  store the raw secret in it.
 - `#[McpTool]` on `GreetingTool::explode` in tests intentionally throws:
   the assertion is that tool failures surface as MCP error envelopes
   (`isError`/`error`), not HTTP 500 with a trace.
