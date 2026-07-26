@@ -109,7 +109,8 @@ return [
         // OpenAPI bridge: expose allow-listed REST operations as MCP tools.
         // Disabled while spec_path is empty; an empty operations list exposes nothing.
         // spec_path accepts a file path OR an http(s) URL (e.g. the app's own
-        // spec endpoint — always current; fetched with the same `headers`).
+        // spec endpoint — always current; fetched with `spec_headers`, NOT
+        // with the operation `headers`).
         'openapi' => [
             'spec_path' => '',
             'base_url' => '',
@@ -124,9 +125,24 @@ return [
             // tool_names rename to customize description/annotations/name
             // further. Empty = disabled.
             'operation_modifier' => '',
+            // operation-call headers, sent to base_url only (e.g. the API's
+            // service token). Deliberately NOT sent with the spec fetch:
+            // when spec_path lives on a different origin, a shared header
+            // set would hand the API token to the spec host.
             'headers' => [],
+            // spec-fetch headers, sent to spec_path only. Empty by default —
+            // set explicitly when the spec endpoint itself needs auth.
+            'spec_headers' => [],
             // PSR-16 TTL for URL specs. 0 preserves fetch-on-every-build.
             'cache_ttl' => 0,
+            // upper bound on an upstream response body the executor will
+            // buffer; the read stops (and the call fails) before a byte over
+            // the cap is materialized
+            'max_response_bytes' => 4_194_304,
+            // suppress the upstream error-body excerpt in bridged failures —
+            // for service-token deployments where the upstream's error
+            // details are not the MCP caller's to see
+            'opaque_errors' => false,
             // Optional delegated mode. Configure both application services;
             // they are resolved on every operation call. Static headers stay
             // the backward-compatible service-token mode.

@@ -9,11 +9,15 @@ use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
+use Rasuvaeff\Yii3Mcp\Tests\Support\EndlessStream;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDelegatedHeaderProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StreamBodyHttpClient;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StubStream;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -576,7 +580,7 @@ final class HttpOperationExecutorTest
         );
     }
 
-    private function multiQueryOperation(): \Rasuvaeff\Yii3Mcp\OpenApi\Operation
+    private function multiQueryOperation(): Operation
     {
         return (new SpecIndex([
             'paths' => ['/multi' => ['get' => [
@@ -594,6 +598,237 @@ final class HttpOperationExecutorTest
     /**
      * @param array<string, string> $headers
      */
+    public function successResponseOverTheAdvertisedSizeIsRejected(): void
+    {
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(body: str_repeat('a', 200)),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            maxResponseBytes: 100,
+        );
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('100-byte limit');
+    }
+
+    public function unboundedChunkedResponseStopsReadingAtTheCap(): void
+    {
+        // a size-less (chunked) endless body: the executor must abandon the
+        // read at the cap, not buffer until the worker dies
+        $stream = new EndlessStream();
+        $client = new class ($stream) implements \Psr\Http\Client\ClientInterface {
+            public function __construct(private readonly EndlessStream $stream) {}
+
+            #[\Override]
+            public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
+            {
+                return new \Nyholm\Psr7\Response(200, [], $this->stream);
+            }
+        };
+
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            maxResponseBytes: 10_000,
+        );
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // the read stopped right after crossing the cap — one chunk of slack,
+        // never an unbounded buffer
+        Assert::true($stream->servedBytes <= 10_000 + 8_192);
+    }
+
+    public function opaqueErrorsSuppressTheUpstreamErrorBody(): void
+    {
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(statusCode: 500, body: 'stack trace with internal hostnames'),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            opaqueErrors: true,
+        );
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('HTTP 500');
+        Assert::false(str_contains($caught->getMessage(), 'stack trace'));
+    }
+
+    public function responseCapOfOneByteIsAValidConfiguration(): void
+    {
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(body: '1'),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            maxResponseBytes: 1,
+        );
+
+        Assert::same($executor->execute($this->operation('getBlogTags'), []), 1);
+    }
+
+    public function advertisedOversizeIsRejectedWithoutReadingASingleByte(): void
+    {
+        // the stream THROWS on any read: the advertised-size rejection must
+        // happen before a byte is pulled, or this raises a LogicException
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: new StreamBodyHttpClient(new StubStream(content: 'x', advertisedSize: 101, throwOnRead: true)),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            maxResponseBytes: 100,
+        );
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('100-byte limit');
+    }
+
+    public function sizelessBodyExactlyAtTheCapSucceeds(): void
+    {
+        // chunked transfer (no advertised size), content EXACTLY at the cap:
+        // the incremental read must accept it, not reject the boundary
+        $body = '{"pad":"' . str_repeat('a', 90) . '"}';
+        Assert::same(strlen($body), 100);
+
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: new StreamBodyHttpClient(new StubStream(content: $body, advertisedSize: null)),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            maxResponseBytes: 100,
+        );
+
+        Assert::same($executor->execute($this->operation('getBlogTags'), []), ['pad' => str_repeat('a', 90)]);
+    }
+
+    public function advertisedBodyExactlyAtTheCapSucceeds(): void
+    {
+        $body = '{"pad":"' . str_repeat('b', 90) . '"}';
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: new FakeHttpClient(body: $body),
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            maxResponseBytes: 100,
+        );
+
+        Assert::same($executor->execute($this->operation('getBlogTags'), []), ['pad' => str_repeat('b', 90)]);
+    }
+
+    public function oversizedNonUtf8ErrorBodyReportsBytesActuallyRead(): void
+    {
+        // the error-path read is capped at excerpt size + 1 — the byte count
+        // in the placeholder reports what was read, marked as a lower bound
+        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat("\xFF", 2_002)));
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('<non-UTF-8 response body, over 2001 bytes>');
+    }
+
+    public function oversizedErrorBodyKeepsItsPrefixInTheExcerpt(): void
+    {
+        // an advertised size over the excerpt cap must not blank the excerpt
+        // — the first bytes of the error page are the diagnostic value
+        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat('e', 5_000)));
+
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())
+            ->contains(str_repeat('e', 100))
+            ->contains('…');
+    }
+
+    public function consumedSeekableBodyIsRewoundBeforeReading(): void
+    {
+        // a PSR-7 body may arrive already consumed (a middleware logged it);
+        // unlike a (string) cast, read() does not rewind by itself
+        $client = new class implements \Psr\Http\Client\ClientInterface {
+            #[\Override]
+            public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
+            {
+                $response = new \Nyholm\Psr7\Response(200, [], '{"ok":true}');
+                $response->getBody()->getContents(); // drain to EOF
+
+                return $response;
+            }
+        };
+
+        $result = $this->executor(new FakeHttpClient())->execute($this->operation('getBlogTags'), []);
+        Assert::same($result, ['ok' => true]);
+
+        $factory = new Psr17Factory();
+        $executor = new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+        );
+
+        Assert::same($executor->execute($this->operation('getBlogTags'), []), ['ok' => true]);
+    }
+
+    public function overlyNestedJsonFallsBackToTheRawString(): void
+    {
+        // json_decode is capped at depth 128; a deeper (still bounded) body
+        // is returned raw instead of recursing further
+        $body = str_repeat('[', 200) . str_repeat(']', 200);
+        $executor = $this->executor(new FakeHttpClient(body: $body));
+
+        $result = $executor->execute($this->operation('getBlogTags'), []);
+
+        Assert::same($result, $body);
+    }
+
     private function executor(FakeHttpClient $client, array $headers = []): HttpOperationExecutor
     {
         $factory = new Psr17Factory();
@@ -607,7 +842,7 @@ final class HttpOperationExecutorTest
         );
     }
 
-    private function operation(string $operationId): \Rasuvaeff\Yii3Mcp\OpenApi\Operation
+    private function operation(string $operationId): Operation
     {
         return (new SpecIndex(OpenApiFixture::spec()))->get($operationId);
     }

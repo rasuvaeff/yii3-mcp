@@ -6,10 +6,13 @@ namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
+use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StreamBodyHttpClient;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StubStream;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -205,6 +208,95 @@ final class SpecLoaderTest
     /**
      * @param array<string, string> $headers
      */
+    public function specUrlWithEmbeddedCredentialsIsRejected(): void
+    {
+        $client = new FakeHttpClient();
+        $caught = null;
+
+        try {
+            $this->loader($client)->fromUrl('https://token:hunter2@api.test/openapi.json');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('must not embed credentials');
+        // the credential-bearing URL is never fetched and never echoed back
+        Assert::same($client->requestCount, 0);
+        Assert::false(str_contains($caught->getMessage(), 'hunter2'));
+    }
+
+    public function oversizedSpecResponseIsRejected(): void
+    {
+        $body = '{"paths":{"pad":"' . str_repeat('a', SpecIndex::MAX_DOCUMENT_BYTES) . '"}}';
+        $caught = null;
+
+        try {
+            $this->loader(new FakeHttpClient(body: $body))->fromUrl('https://api.test/openapi.json');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // the advertised-size rejection names the size it refused — proof it
+        // fired before the read, not the generic mid-read message
+        Assert::string($caught->getMessage())->contains(sprintf('of %d bytes exceeds', strlen($body)));
+    }
+
+    public function specExactlyAtTheDocumentLimitParses(): void
+    {
+        $index = $this->loader(new FakeHttpClient(body: self::specPaddedTo(SpecIndex::MAX_DOCUMENT_BYTES)))
+            ->fromUrl('https://api.test/openapi.json');
+
+        Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
+    }
+
+    public function sizelessMultiChunkSpecBodyIsAccumulated(): void
+    {
+        // chunked transfer: no advertised size, body larger than one read
+        // chunk — the loader must accumulate the chunks, not keep the last
+        $body = self::specPaddedTo(20_000);
+        $loader = new SpecLoader(
+            httpClient: new StreamBodyHttpClient(new StubStream(content: $body, advertisedSize: null)),
+            requestFactory: new Psr17Factory(),
+        );
+
+        Assert::same($loader->fromUrl('https://api.test/openapi.json')->get('getBlogTags')->operationId, 'getBlogTags');
+    }
+
+    public function consumedSeekableSpecBodyIsRewoundBeforeReading(): void
+    {
+        $client = new class implements \Psr\Http\Client\ClientInterface {
+            #[\Override]
+            public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
+            {
+                $response = new \Nyholm\Psr7\Response(200, [], json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+                $response->getBody()->getContents(); // drain to EOF
+
+                return $response;
+            }
+        };
+
+        $loader = new SpecLoader(httpClient: $client, requestFactory: new Psr17Factory());
+
+        Assert::same($loader->fromUrl('https://api.test/openapi.json')->get('getBlogTags')->operationId, 'getBlogTags');
+    }
+
+    /**
+     * The fixture spec JSON padded (via an ignored top-level key) to exactly
+     * $bytes bytes.
+     */
+    private static function specPaddedTo(int $bytes): string
+    {
+        $spec = OpenApiFixture::spec();
+        $spec['x-pad'] = '';
+        $missing = $bytes - strlen(json_encode($spec, JSON_THROW_ON_ERROR));
+        $spec['x-pad'] = str_repeat('a', $missing);
+        $json = json_encode($spec, JSON_THROW_ON_ERROR);
+
+        Assert::same(strlen($json), $bytes);
+
+        return $json;
+    }
+
     private function loader(
         FakeHttpClient $client,
         array $headers = [],

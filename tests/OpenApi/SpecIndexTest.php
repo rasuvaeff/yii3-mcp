@@ -574,6 +574,137 @@ final class SpecIndexTest
         Assert::same($this->indexWithSchemaOfDepth(40)->get('op')->operationId, 'op');
     }
 
+    public function refFanOutBeyondTheNodeBudgetIsRejected(): void
+    {
+        // a compact document whose shared schemas EXPAND combinatorially:
+        // four levels of 20-way fan-out inline to ~20^4 nodes — a hostile or
+        // degenerate remote spec must hit the resolution budget, not OOM
+        $components = ['leaf' => ['type' => 'object', 'properties' => ['x' => ['type' => 'string']]]];
+        $previous = 'leaf';
+
+        foreach (['l1', 'l2', 'l3', 'l4'] as $level) {
+            $properties = [];
+
+            for ($i = 0; $i < 20; ++$i) {
+                $properties['p' . $i] = ['$ref' => '#/components/schemas/' . $previous];
+            }
+
+            $components[$level] = ['type' => 'object', 'properties' => $properties];
+            $previous = $level;
+        }
+
+        $caught = null;
+
+        try {
+            new SpecIndex([
+                'paths' => [
+                    '/fan' => ['post' => [
+                        'operationId' => 'fanOut',
+                        'requestBody' => ['content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/l4']]]],
+                    ]],
+                ],
+                'components' => ['schemas' => $components],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('reference-resolution budget');
+    }
+
+    public function oversizedDocumentIsRejectedBeforeDecoding(): void
+    {
+        $caught = null;
+
+        try {
+            SpecIndex::fromJson('{"pad":"' . str_repeat('a', SpecIndex::MAX_DOCUMENT_BYTES) . '"}');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('byte limit');
+    }
+
+    public function documentExactlyAtTheLimitParses(): void
+    {
+        $spec = OpenApiFixture::spec();
+        $spec['x-pad'] = '';
+        $missing = SpecIndex::MAX_DOCUMENT_BYTES - strlen(json_encode($spec, JSON_THROW_ON_ERROR));
+        $spec['x-pad'] = str_repeat('a', $missing);
+        $json = json_encode($spec, JSON_THROW_ON_ERROR);
+        Assert::same(strlen($json), SpecIndex::MAX_DOCUMENT_BYTES);
+
+        Assert::same(SpecIndex::fromJson($json)->get('getBlogTags')->operationId, 'getBlogTags');
+    }
+
+    public function fromFileLoadsAValidDocument(): void
+    {
+        $path = sys_get_temp_dir() . '/yii3-mcp-spec-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+
+        try {
+            Assert::same(SpecIndex::fromFile($path)->get('getBlogTags')->operationId, 'getBlogTags');
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function fromFileReportsAMissingFileAsUnreadable(): void
+    {
+        $caught = null;
+
+        try {
+            SpecIndex::fromFile(sys_get_temp_dir() . '/yii3-mcp-spec-void-' . bin2hex(random_bytes(8)) . '.json');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('is not readable');
+    }
+
+    public function fromFileRejectsAnOversizedDocumentByItsPath(): void
+    {
+        $path = sys_get_temp_dir() . '/yii3-mcp-spec-big-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, str_repeat('a', SpecIndex::MAX_DOCUMENT_BYTES + 1));
+
+        $caught = null;
+
+        try {
+            SpecIndex::fromFile($path);
+        } catch (InvalidSpecException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+        // rejected on filesize, BEFORE buffering: the message names the path
+        // and the size — the generic fromJson message has neither
+        Assert::string($caught->getMessage())
+            ->contains($path)
+            ->contains(sprintf('of %d bytes', SpecIndex::MAX_DOCUMENT_BYTES + 1));
+    }
+
+    public function operationWithoutTagsHasNoTags(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'op']]],
+        ]);
+
+        Assert::same($index->get('op')->tags, []);
+    }
+
+    public function parameterWithAnEmptyNameIsSkipped(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => [
+                'operationId' => 'op',
+                'parameters' => [['name' => '', 'in' => 'query', 'schema' => ['type' => 'string']]],
+            ]]],
+        ]);
+
+        Assert::same($index->get('op')->parameters, []);
+    }
+
     public function circularRefIsReportedAsTooDeepChain(): void
     {
         $caught = null;

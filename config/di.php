@@ -65,7 +65,7 @@ return [
         'definition' => static function (McpServerFactory $factory, ContainerInterface $container) use ($params): Server {
             /** @var list<class-string> $tools */
             $tools = $params['rasuvaeff/yii3-mcp']['tools'];
-            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>} $openapi */
+            /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, spec_headers?: array<string, string>, cache_ttl?: int, max_response_bytes?: int, opaque_errors?: bool, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             $configurators = [];
@@ -95,11 +95,15 @@ return [
             if ($openapi['spec_path'] !== '' && $openapi['operations'] !== []) {
                 $cacheTtl = $openapi['cache_ttl'] ?? 0;
 
+                // spec_headers is the spec fetch's OWN credential scope,
+                // empty by default: `headers` authenticates operation calls
+                // against base_url, and when spec_path lives on a different
+                // origin a shared set would send the API token to the spec host
                 $spec = str_starts_with($openapi['spec_path'], 'http://') || str_starts_with($openapi['spec_path'], 'https://')
                     ? (new SpecLoader(
                         httpClient: $container->get(ClientInterface::class),
                         requestFactory: $container->get(RequestFactoryInterface::class),
-                        headers: $openapi['headers'],
+                        headers: $openapi['spec_headers'] ?? [],
                         cache: $cacheTtl > 0 ? $container->get(CacheInterface::class) : null,
                         cacheTtl: $cacheTtl,
                     ))->fromUrl($openapi['spec_path'])
@@ -124,6 +128,8 @@ return [
                         defaultHeaders: $openapi['headers'],
                         identityProvider: $identityProvider,
                         delegatedHeaderProvider: $delegatedHeaderProvider,
+                        maxResponseBytes: $openapi['max_response_bytes'] ?? HttpOperationExecutor::DEFAULT_MAX_RESPONSE_BYTES,
+                        opaqueErrors: $openapi['opaque_errors'] ?? false,
                     ),
                     operations: $openapi['operations'],
                     safeMethodsOnly: $openapi['safe_methods_only'] ?? false,
