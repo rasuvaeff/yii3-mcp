@@ -89,7 +89,9 @@ return [
             $promptsPath = $params['rasuvaeff/yii3-mcp']['prompts_path'] ?? '';
 
             if ($promptsPath !== '') {
-                $configurators[] = new MarkdownPromptsConfigurator($promptsPath);
+                /** @var int $promptResultBytes */
+                $promptResultBytes = $params['rasuvaeff/yii3-mcp']['limits']['prompt_result_bytes'] ?? MarkdownPromptsConfigurator::DEFAULT_MAX_RESULT_BYTES;
+                $configurators[] = new MarkdownPromptsConfigurator($promptsPath, maxResultBytes: $promptResultBytes);
             }
 
             if ($openapi['spec_path'] !== '' && $openapi['operations'] !== []) {

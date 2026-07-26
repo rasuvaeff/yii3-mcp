@@ -42,6 +42,11 @@ return [
         // truncated JSON is invalid JSON, not a smaller valid one.
         'limits' => [
             'tool_result_bytes' => 0,
+            // cap on a substituted Markdown prompt's text: placeholder
+            // substitution multiplies a caller-supplied argument by its
+            // occurrence count, so the output is bounded BEFORE it is built
+            // (0 = unlimited)
+            'prompt_result_bytes' => 1_048_576,
         ],
         // PSR-16 cache for successful tool results: tool name => TTL in
         // seconds. Empty (default) = no caching. The cache key always

@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Prompts;
 
 use Mcp\Server;
+use Mcp\Server\ClientGateway;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Prompts\Exception\InvalidPromptFileException;
+use Rasuvaeff\Yii3Mcp\Prompts\FilePromptHandler;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -147,6 +150,90 @@ final class MarkdownPromptsConfiguratorTest
         $text = $content['text'] ?? '';
 
         return is_string($text) ? $text : '';
+    }
+
+    public function expansionOverTheBudgetFailsInsteadOfAllocating(): void
+    {
+        // ten occurrences of {{payload}} amplify the caller's bytes tenfold;
+        // the budget is checked arithmetically BEFORE the substituted string
+        // is built. The SDK reports handler failures opaquely, so the precise
+        // message is asserted at the handler level below.
+        $tester = $this->amplifyTester(maxResultBytes: 200);
+        $caught = null;
+
+        try {
+            $tester->request('prompts/get', [
+                'name' => 'amplify',
+                'arguments' => ['payload' => str_repeat('A', 50)],
+            ]);
+        } catch (\RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+    }
+
+    public function expansionBudgetIsComputedFromOccurrenceCountsNotBuilt(): void
+    {
+        $template = str_repeat('{{payload}} ', 10);
+        $handler = new FilePromptHandler(
+            content: $template,
+            argumentNames: ['payload'],
+            promptName: 'amplify',
+            maxResultBytes: 200,
+        );
+
+        $caught = null;
+
+        try {
+            $handler->get(['payload' => str_repeat('A', 50)], new ClientGateway(new FakeSession()));
+        } catch (\RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // 10 × 50 bytes + separators — the predicted size is exact
+        Assert::string($caught->getMessage())
+            ->contains('amplify')
+            ->contains('would expand to 510 bytes, over the 200-byte limit');
+    }
+
+    public function expansionWithinTheBudgetIsServed(): void
+    {
+        $tester = $this->amplifyTester(maxResultBytes: 200);
+
+        $result = $tester->request('prompts/get', [
+            'name' => 'amplify',
+            'arguments' => ['payload' => 'ok'],
+        ]);
+
+        Assert::string($this->messageText($result))->contains('ok ok');
+    }
+
+    public function zeroBudgetDisablesTheExpansionLimit(): void
+    {
+        $tester = $this->amplifyTester(maxResultBytes: 0);
+
+        $result = $tester->request('prompts/get', [
+            'name' => 'amplify',
+            'arguments' => ['payload' => str_repeat('A', 50)],
+        ]);
+
+        Assert::string($this->messageText($result))->contains(str_repeat('A', 50));
+    }
+
+    private function amplifyTester(int $maxResultBytes): McpTester
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+            name: 'prompts-suite',
+            version: '1.0.0',
+        ))->create([], [new MarkdownPromptsConfigurator(
+            \dirname(__DIR__) . '/Support/prompts-amplify',
+            maxResultBytes: $maxResultBytes,
+        )]);
+
+        return new McpTester(server: $server, requestFactory: $factory, responseFactory: $factory, streamFactory: $factory);
     }
 
     private function tester(): McpTester

@@ -34,8 +34,14 @@ final readonly class PromptFile
     public static function parse(string $path): self
     {
         set_error_handler(static fn(): bool => true);
-        $raw = file_get_contents($path);
-        restore_error_handler();
+
+        try {
+            $raw = file_get_contents($path);
+        } finally {
+            // without the finally, a stream-wrapper exception would leave the
+            // silencing handler installed for the rest of the process
+            restore_error_handler();
+        }
 
         if ($raw === false) {
             throw new InvalidPromptFileException(sprintf('Prompt file "%s" is not readable', $path));
