@@ -70,9 +70,20 @@ return [
 
             $configurators = [];
 
+            /** @var array<string, int> $cacheTools */
+            $cacheTools = $params['rasuvaeff/yii3-mcp']['cache']['tools'] ?? [];
+
+            // resolved once for its two consumers (the bridge executor and the
+            // tool cache) but only when one of them is actually configured —
+            // an identity provider is application code that may touch the
+            // request/session, so it must not be instantiated on servers that
+            // use neither
             $identityProviderClass = $openapi['identity_provider'] ?? '';
+            $identityProviderNeeded = ($openapi['spec_path'] !== '' && $openapi['operations'] !== []) || $cacheTools !== [];
             /** @var ?ExecutionIdentityProviderInterface $identityProvider */
-            $identityProvider = $identityProviderClass === '' ? null : $container->get($identityProviderClass);
+            $identityProvider = $identityProviderClass === '' || !$identityProviderNeeded
+                ? null
+                : $container->get($identityProviderClass);
 
             /** @var string $promptsPath */
             $promptsPath = $params['rasuvaeff/yii3-mcp']['prompts_path'] ?? '';
@@ -147,9 +158,6 @@ return [
             foreach ($interceptorClasses as $interceptorClass) {
                 $interceptors[] = $container->get($interceptorClass);
             }
-
-            /** @var array<string, int> $cacheTools */
-            $cacheTools = $params['rasuvaeff/yii3-mcp']['cache']['tools'] ?? [];
 
             if ($cacheTools !== []) {
                 // wraps the size limit (added next, further in): user

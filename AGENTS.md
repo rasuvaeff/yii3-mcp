@@ -115,6 +115,11 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   keep the early `continue` after appending the tag-kind entry). Tool names
   containing a literal `tag:` are indistinguishable from the prefix — none
   exist in this ecosystem, and this is an accepted, documented trade-off.
+  Note the trust boundary: tags come from the OpenAPI document, so over a URL
+  spec a `tag:`-based DENY rule can be disarmed by the upstream dropping the
+  tag (exposure stays bounded by the `operations` allow-list). Documented in
+  both READMEs — deny by name over a remote spec, keep `tag:` for allow-lists
+  and local files.
 - **`OpenApi\Operation` is `@api` (promoted from `@internal`) specifically to
   serve as the read-only context passed to `OperationModifierInterface::modify()`.**
   It stays a small readonly VO — do not grow it into a general-purpose object;

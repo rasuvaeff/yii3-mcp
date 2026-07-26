@@ -172,6 +172,24 @@ final class ConfigWiringTest
         Assert::same($tool->calls, 2);
     }
 
+    public function identityProviderIsNotResolvedWithoutTheBridgeOrTheToolCache(): void
+    {
+        // an identity provider is application code (it may read the request
+        // or session), so a server that configures neither the OpenAPI
+        // bridge nor the tool cache must not instantiate it
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        // the container has no entry for the provider: resolving it would throw
+        $container = new SimpleContainer([]);
+        $server = $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+
+        Assert::instanceOf($server, Server::class);
+    }
+
     public function serverDefinitionWiresToolVisibility(): void
     {
         $params = $this->params();

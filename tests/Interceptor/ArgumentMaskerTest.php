@@ -31,6 +31,15 @@ final class ArgumentMaskerTest
         yield 'api-key' => ['api-key'];
         yield 'x-api-key' => ['x-api-key'];
         yield 'X-Api-Key' => ['X-Api-Key'];
+        yield 'access_token' => ['access_token'];
+        yield 'accessToken' => ['accessToken'];
+        yield 'refresh_token' => ['refresh_token'];
+        yield 'refreshToken' => ['refreshToken'];
+        yield 'client_secret' => ['client_secret'];
+        yield 'clientSecret' => ['clientSecret'];
+        yield 'private_key' => ['private_key'];
+        yield 'privateKey' => ['privateKey'];
+        yield 'Authorization' => ['Authorization'];
         yield 'credit_card' => ['credit_card'];
     }
 

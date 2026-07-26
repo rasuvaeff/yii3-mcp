@@ -50,7 +50,10 @@ return [
         // resolved ExecutionIdentity (delegated credentials can make results
         // identity-specific below the client-id level). Opt in only tools
         // that are safe to cache (idempotent reads); the interceptor has no
-        // notion of which are.
+        // notion of which are. "Idempotent" is not enough on its own: a tool
+        // whose result depends on the application user behind the MCP client
+        // is only safe to cache when openapi.identity_provider resolves that
+        // user, since the key otherwise identifies the client alone.
         'cache' => [
             'tools' => [],
         ],

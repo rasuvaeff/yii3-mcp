@@ -375,7 +375,9 @@ $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
 // deny wins over allow; both empty (default) = all visible.
 // A 'tag:' prefix matches tags from the tool's _meta instead of its name
 // (e.g. 'tag:admin' — set by the OpenAPI bridge from OpenAPI `tags`); a tool
-// with no tags never matches a 'tag:' pattern.
+// with no tags never matches a 'tag:' pattern. Tags come from the OpenAPI
+// document, so over a URL spec a 'tag:' DENY rule can be disarmed upstream by
+// dropping the tag — deny by name there, keep 'tag:' for allow-lists.
 // Manual: new Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility(deny: [...], allow: [...])
 
 // Per-session (admin vs public client, tenant plans) — implement the interface:

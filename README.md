@@ -450,6 +450,13 @@ security gate. An identity **provider** failure, by contrast, fails
 **closed** for cached tools: serving a result without knowing whose it is
 would be exactly the leak the key exists to prevent.
 
+The key identifies the **MCP client**, not the application user behind it.
+A tool whose result depends on who is logged in (reading the current user
+from the application, not from the MCP identity) must therefore not be
+cached unless `openapi.identity_provider` resolves that user — "idempotent
+read" is not the same as "same answer for everyone". Bridged operations are
+covered by the identity provider; hand-written tools are yours to judge.
+
 Interceptor order is fixed: session budget (outermost) → configured
 `interceptors` → caching → result size limit (innermost, closest to the
 actual tool call). Configured interceptors (RBAC, audit) always run, even on
@@ -574,6 +581,13 @@ OpenAPI bridge propagates OpenAPI `tags` into the tool's `_meta`, so
 `'deny' => ['tag:admin']` hides every bridged operation tagged `admin`
 regardless of its `operationId`/`tool_names` name. A tool with no tags never
 matches a `tag:` pattern.
+
+Note where a tag comes from: the OpenAPI document. With a URL spec
+(`openapi.spec_path` pointing at http(s)), a document that drops the `admin`
+tag disarms a `deny: ['tag:admin']` rule — the exposure stays bounded by your
+`operations` allow-list, but the deny rule itself is only as trustworthy as
+the spec source. Prefer name patterns for deny rules over a remote spec, and
+keep `tag:` for allow-listing and for local spec files.
 
 Deny wins over allow; both lists empty (the default) means every tool is
 visible. When the decision depends on the **session** (admin vs public

@@ -55,6 +55,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `body` — a stray `body` argument on a bodyless operation is no longer
   shown as if it would be sent.
 - `Interceptor\ArgumentMasker`: the default sensitive-key list now also
+  covers the OAuth and key spellings its exact-match comparison would have
+  let through — `access_token`/`accessToken`, `refresh_token`/`refreshToken`,
+  `client_secret`/`clientSecret`, `private_key`/`privateKey` and
+  `authorization`. Audit/telemetry bridges will mask more arguments than
+  before.
+- The OpenAPI `identity_provider` is no longer resolved from the container on
+  servers that configure neither the bridge nor the tool cache.
+- Documented two trust boundaries that were implicit: a `tag:` visibility
+  rule is only as trustworthy as the OpenAPI document it reads tags from (a
+  URL spec that drops a tag disarms a `tag:` deny rule), and the tool cache
+  key identifies the MCP client, not the application user behind it — a tool
+  whose result depends on the logged-in user needs
+  `openapi.identity_provider` before it is safe to cache.
+- `Interceptor\ArgumentMasker`: the default sensitive-key list now also
   covers the common API-key spellings `apikey` (matches `ApiKey`
   case-insensitively), `api-key` and `x-api-key`.
 - OpenAPI bridge: `HttpOperationExecutor` rejects a base URL with embedded
