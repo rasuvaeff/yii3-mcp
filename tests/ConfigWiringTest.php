@@ -7,7 +7,6 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 use Closure;
 use LogicException;
 use Mcp\Server;
-use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -17,6 +16,7 @@ use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
+use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
@@ -37,12 +37,12 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 #[CoversNothing]
 final class ConfigWiringTest
 {
-    public function sessionStoreDefaultsToFpmSafeFileStore(): void
+    public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void
     {
         /** @var array{definition: Closure} $definition */
         $definition = $this->di()[SessionStoreInterface::class];
 
-        Assert::instanceOf($definition['definition'](), FileSessionStore::class);
+        Assert::instanceOf($definition['definition'](), PrivateFileSessionStore::class);
     }
 
     public function serverDefinitionBuildsFromFactoryAndParamsTools(): void

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Mcp\Server;
-use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
@@ -34,6 +33,8 @@ use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
+use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
+use Rasuvaeff\Yii3Mcp\Session\SessionDirectory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 
 /** @var array $params */
@@ -47,10 +48,15 @@ return [
         'definition' => static function () use ($params): SessionStoreInterface {
             /** @var array{dir?: string, ttl?: int} $session */
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
-            $dir = $session['dir'] ?? '';
+            /** @var string $serverName */
+            $serverName = $params['rasuvaeff/yii3-mcp']['server_name'];
 
-            return new FileSessionStore(
-                directory: $dir === '' ? sys_get_temp_dir() . '/yii3-mcp-sessions' : $dir,
+            // owner-only (0700 dir, 0600 files) and application-specific by
+            // default: session JSON carries client metadata and everything
+            // needed to replay a session id — it must not be readable by
+            // other OS users or shared between applications on one host
+            return new PrivateFileSessionStore(
+                directory: SessionDirectory::resolve($session['dir'] ?? '', $serverName),
                 ttl: $session['ttl'] ?? 3600,
             );
         },
@@ -300,8 +306,9 @@ return [
         'definition' => static function (ContainerInterface $container) use ($params): McpDoctor {
             /** @var array{dir?: string} $session */
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
-            $dir = $session['dir'] ?? '';
-            /** @var array{spec_path: string, operations: list<string>, headers: array<string, string>, cache_ttl?: int} $openapi */
+            /** @var string $serverName */
+            $serverName = $params['rasuvaeff/yii3-mcp']['server_name'];
+            /** @var array{spec_path: string, operations: list<string>, spec_headers?: array<string, string>, cache_ttl?: int} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             /** @var array<string, string|list<string>> $clientSecrets */
@@ -311,9 +318,9 @@ return [
                 container: $container,
                 sessionStore: $container->get(SessionStoreInterface::class),
                 endpointSecret: $params['rasuvaeff/yii3-mcp']['endpoint_secret'],
-                sessionDirectory: $dir === '' ? sys_get_temp_dir() . '/yii3-mcp-sessions' : $dir,
+                sessionDirectory: SessionDirectory::resolve($session['dir'] ?? '', $serverName),
                 openApiSpecPath: $openapi['spec_path'],
-                openApiHeaders: $openapi['headers'],
+                openApiHeaders: $openapi['spec_headers'] ?? [],
                 clientSecretIds: array_map(strval(...), array_keys($clientSecrets)),
                 openApiOperationsEnabled: $openapi['operations'] !== [],
                 openApiCacheTtl: $openapi['cache_ttl'] ?? 0,

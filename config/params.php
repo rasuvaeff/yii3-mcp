@@ -29,7 +29,9 @@ return [
         // host-policy check (localhost and stdio remain valid deployments).
         'expected_http_host' => '',
         'session' => [
-            // empty => sys_get_temp_dir() . '/yii3-mcp-sessions'
+            // empty => application-specific default under sys_get_temp_dir()
+            // (derived from server_name); created 0700, session files clamped
+            // to 0600 — session JSON must not be readable by other OS users
             'dir' => '',
             'ttl' => 3600,
             // max tools/call per session (0 = unlimited); anti-loop guard,

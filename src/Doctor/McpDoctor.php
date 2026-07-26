@@ -15,6 +15,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
+use Rasuvaeff\Yii3Mcp\Utf8;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -30,7 +31,12 @@ use Symfony\Component\Uid\Uuid;
  * spec fetch AND the server build (which loads the spec eagerly) are skipped
  * otherwise, so the base health check stays local.
  *
- * Details never contain the secret or configured header values.
+ * Details never contain the configured secret or header VALUES, and any URL
+ * printed is stripped of userinfo credentials. Exception messages from
+ * application services are passed through (truncated) — a blanket "no
+ * secrets ever" promise is not enforceable over arbitrary third-party
+ * exceptions, so treat doctor output as operator-facing diagnostics, not
+ * something to hand to untrusted parties.
  *
  * @api
  */
@@ -187,7 +193,7 @@ final readonly class McpDoctor
                 name: $name,
                 category: CheckCategory::Config,
                 status: CheckStatus::Fail,
-                details: sprintf('Resolving %s for %s threw %s: %s', $interface, $requiredBy, $failure::class, $failure->getMessage()),
+                details: sprintf('Resolving %s for %s threw %s', $interface, $requiredBy, $this->throwableDetail($failure)),
             );
         }
 
@@ -242,13 +248,18 @@ final readonly class McpDoctor
     {
         $directory = $this->sessionDirectory;
 
-        if (!is_dir($directory) && !@mkdir($directory, 0o775, true)) {
-            return new CheckResult(
-                name: 'session_directory',
-                category: CheckCategory::Storage,
-                status: CheckStatus::Fail,
-                details: sprintf('Cannot create session directory "%s"', $directory),
-            );
+        if (!is_dir($directory)) {
+            if (!@mkdir($directory, 0o700, true)) {
+                return new CheckResult(
+                    name: 'session_directory',
+                    category: CheckCategory::Storage,
+                    status: CheckStatus::Fail,
+                    details: sprintf('Cannot create session directory "%s"', $directory),
+                );
+            }
+
+            // an explicit chmod beats the umask, which mkdir cannot
+            @chmod($directory, 0o700);
         }
 
         if (!is_writable($directory)) {
@@ -260,11 +271,29 @@ final readonly class McpDoctor
             );
         }
 
+        // writability is not enough: session JSON carries client metadata and
+        // everything needed to replay a session id, so the directory must be
+        // confidential — no group/other access bits
+        $mode = fileperms($directory);
+
+        if ($mode !== false && ($mode & 0o077) !== 0) {
+            return new CheckResult(
+                name: 'session_directory',
+                category: CheckCategory::Storage,
+                status: CheckStatus::Fail,
+                details: sprintf(
+                    'Session directory "%s" is accessible to other OS users (mode %o); session data must be owner-only — chmod 0700 the directory (files are clamped to 0600 by the shipped store)',
+                    $directory,
+                    $mode & 0o777,
+                ),
+            );
+        }
+
         return new CheckResult(
             name: 'session_directory',
             category: CheckCategory::Storage,
             status: CheckStatus::Pass,
-            details: sprintf('Writable: %s', $directory),
+            details: sprintf('Writable and owner-only: %s', $directory),
         );
     }
 
@@ -281,7 +310,7 @@ final readonly class McpDoctor
                 name: 'session_store',
                 category: CheckCategory::Storage,
                 status: CheckStatus::Fail,
-                details: sprintf('Session round-trip threw %s: %s', $failure::class, $failure->getMessage()),
+                details: sprintf('Session round-trip threw %s', $this->throwableDetail($failure)),
             );
         }
 
@@ -332,7 +361,7 @@ final readonly class McpDoctor
                     name: 'openapi_spec',
                     category: CheckCategory::Upstream,
                     status: CheckStatus::Fail,
-                    details: sprintf('Fetching the spec from "%s" threw %s: %s', $path, $failure::class, $failure->getMessage()),
+                    details: sprintf('Fetching the spec from "%s" threw %s', $this->redactedUrl($path), $this->throwableDetail($failure)),
                 );
             }
 
@@ -340,7 +369,7 @@ final readonly class McpDoctor
                 name: 'openapi_spec',
                 category: CheckCategory::Upstream,
                 status: CheckStatus::Pass,
-                details: sprintf('Spec fetched and parsed from %s', $path),
+                details: sprintf('Spec fetched and parsed from %s', $this->redactedUrl($path)),
             );
         }
 
@@ -351,7 +380,7 @@ final readonly class McpDoctor
                 name: 'openapi_spec',
                 category: CheckCategory::Config,
                 status: CheckStatus::Fail,
-                details: sprintf('Loading the spec file "%s" threw %s: %s', $path, $failure::class, $failure->getMessage()),
+                details: sprintf('Loading the spec file "%s" threw %s', $path, $this->throwableDetail($failure)),
             );
         }
 
@@ -384,7 +413,7 @@ final readonly class McpDoctor
                 name: 'server_build',
                 category: CheckCategory::Config,
                 status: CheckStatus::Fail,
-                details: sprintf('Building the MCP server threw %s: %s', $failure::class, $failure->getMessage()),
+                details: sprintf('Building the MCP server threw %s', $this->throwableDetail($failure)),
             );
         }
 
@@ -415,5 +444,36 @@ final readonly class McpDoctor
     private function isUrl(string $path): bool
     {
         return str_starts_with($path, 'http://') || str_starts_with($path, 'https://');
+    }
+
+    /**
+     * Strips userinfo from a URL before it reaches terminal/JSON/CI output —
+     * a credential-bearing spec URL is rejected by SpecLoader anyway, but the
+     * rejection itself must not print what it rejects.
+     */
+    private function redactedUrl(string $url): string
+    {
+        return preg_replace('~^(https?://)[^/@]*@~', '$1***@', $url) ?? $url;
+    }
+
+    /**
+     * One-line failure detail: exception class + message, userinfo-redacted
+     * and truncated — doctor details are diagnostics, not a stack-trace dump.
+     */
+    private function throwableDetail(\Throwable $failure): string
+    {
+        $message = preg_replace('~(https?://)[^/@\s]*@~', '$1***@', $failure->getMessage()) ?? $failure->getMessage();
+
+        if (strlen($message) > 500) {
+            // Utf8::cut never splits a character: the detail may end up in
+            // the command's --json output, which must stay encodable
+            $message = Utf8::cut($message, 500) . '…';
+        }
+
+        if (preg_match('//u', $message) !== 1) {
+            $message = sprintf('<non-UTF-8 exception message, %d bytes>', strlen($failure->getMessage()));
+        }
+
+        return sprintf('%s: %s', $failure::class, $message);
     }
 }

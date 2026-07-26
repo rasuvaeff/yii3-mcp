@@ -164,8 +164,10 @@ final class McpDoctorTest
         Assert::same($report->exitCode(), 2);
     }
 
-    public function createsAMissingSessionDirectoryWithGroupWritablePermissions(): void
+    public function createsAMissingSessionDirectoryOwnerOnly(): void
     {
+        // even with the most permissive umask the created directory must be
+        // owner-only — session JSON is confidential
         $previousUmask = umask(0);
 
         try {
@@ -175,7 +177,76 @@ final class McpDoctorTest
         }
 
         Assert::same($this->check($report, 'session_directory')->status, CheckStatus::Pass);
-        Assert::same(substr(sprintf('%o', (int) fileperms($this->sessionDir)), -3), '775');
+        Assert::same(substr(sprintf('%o', (int) fileperms($this->sessionDir)), -3), '700');
+    }
+
+    public function groupReadableSessionDirectoryFailsTheConfidentialityCheck(): void
+    {
+        mkdir($this->sessionDir, 0o750, true);
+        chmod($this->sessionDir, 0o750);
+
+        $report = $this->doctor()->diagnose();
+
+        $check = $this->check($report, 'session_directory');
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)
+            ->contains('accessible to other OS users')
+            ->contains('mode 750');
+    }
+
+    public function othersExecuteBitAloneFailsTheConfidentialityCheck(): void
+    {
+        // 0o701: the LOWEST access bit others can hold — the check must
+        // cover the full group+others mask, not just the readable bits
+        mkdir($this->sessionDir, 0o701, true);
+        chmod($this->sessionDir, 0o701);
+
+        $report = $this->doctor()->diagnose();
+
+        $check = $this->check($report, 'session_directory');
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('mode 701');
+    }
+
+    public function credentialBearingSpecUrlIsRedactedInTheReport(): void
+    {
+        $report = $this->doctor(specPath: 'https://svc:hunter2@spec.example.test/openapi.json')
+            ->diagnose(probeUpstream: true);
+
+        $check = $this->check($report, 'openapi_spec');
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('https://***@spec.example.test/openapi.json');
+        Assert::false(str_contains($check->details, 'hunter2'));
+    }
+
+    public function exceptionDetailsAreRedactedAndTruncated(): void
+    {
+        $store = new ThrowingSessionStore('token leak https://svc:hunter2@internal.test/x ' . str_repeat('A', 600));
+
+        $report = $this->doctor(store: $store)->diagnose();
+
+        $details = $this->check($report, 'session_store')->details;
+        Assert::string($details)
+            ->contains('https://***@internal.test/x')
+            ->contains('…');
+        Assert::false(str_contains($details, 'hunter2'));
+    }
+
+    public function exceptionMessageAtTheTruncationBoundaryIsKeptWhole(): void
+    {
+        $report = $this->doctor(store: new ThrowingSessionStore(str_repeat('B', 500)))->diagnose();
+
+        $details = $this->check($report, 'session_store')->details;
+        Assert::string($details)->contains(str_repeat('B', 500));
+        Assert::false(str_contains($details, '…'));
+    }
+
+    public function nonUtf8ExceptionMessageBecomesAPlaceholder(): void
+    {
+        $report = $this->doctor(store: new ThrowingSessionStore("\xFF\xFE"))->diagnose();
+
+        Assert::string($this->check($report, 'session_store')->details)
+            ->contains('<non-UTF-8 exception message, 2 bytes>');
     }
 
     public function sessionProbeLeavesNoSessionBehind(): void
