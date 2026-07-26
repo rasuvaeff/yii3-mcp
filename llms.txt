@@ -454,4 +454,9 @@ secrets; mutually exclusive with endpoint_secret), `secret_header`,
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,
 applied after the core's prompts/openapi configurators — generic extension
-point (companion packages, app-specific server setup).
+point (companion packages, app-specific server setup). A configurator may
+also implement `ReservedToolNamesAwareInterface`: `McpServerFactory` then
+calls `withReservedToolNames()` with the names of the `#[McpTool]` methods
+before `configure()`, so it can reject a colliding name instead of losing
+its own tool (the SDK registry is last-write-wins and registers attribute
+tools last).

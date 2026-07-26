@@ -23,6 +23,7 @@ use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
+use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -245,6 +246,66 @@ final class OpenApiServerConfiguratorTest
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('getBlogTags');
         Assert::string($caught->getMessage())->contains('getBlogTagBySlug');
+    }
+
+    public function collisionWithAnAttributeToolFailsAtBuildTime(): void
+    {
+        // the SDK registry is last-write-wins and runs explicit
+        // registrations before reflected ones, so without this check the
+        // bridged tool would not override 'greet' — it would silently
+        // disappear from tools/list
+        $caught = null;
+
+        try {
+            $this->action(
+                new FakeHttpClient(),
+                ['getBlogTags'],
+                toolNames: ['getBlogTags' => 'greet'],
+                toolClasses: [GreetingTool::class],
+            );
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('getBlogTags');
+        Assert::string($caught->getMessage())->contains('already registered by an attribute tool');
+    }
+
+    public function attributeToolCollisionIsAlsoCaughtAfterTheModifierRenames(): void
+    {
+        $modifier = new CallbackOperationModifier(
+            static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                name: 'greet',
+                title: $tool->title,
+                inputSchema: $tool->inputSchema,
+                description: $tool->description,
+                annotations: $tool->annotations,
+                outputSchema: $tool->outputSchema,
+            ),
+        );
+
+        $caught = null;
+
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier, toolClasses: [GreetingTool::class]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('already registered by an attribute tool');
+    }
+
+    public function attributeToolsAndBridgedToolsCoexistWhenNamesDiffer(): void
+    {
+        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], toolClasses: [GreetingTool::class]);
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 30, 'method' => 'tools/list'], $sessionId);
+
+        $names = array_column($this->decode($response)['result']['tools'], 'name');
+
+        Assert::true(in_array('greet', $names, true));
+        Assert::true(in_array('getBlogTags', $names, true));
     }
 
     public function getOperationsAreMarkedReadOnly(): void
@@ -507,6 +568,9 @@ final class OpenApiServerConfiguratorTest
      * @param array<string, string> $toolNames
      * @param list<string> $dryRunOperations
      */
+    /**
+     * @param list<class-string> $toolClasses attribute tools registered alongside the bridge
+     */
     private function action(
         FakeHttpClient $client,
         array $operations,
@@ -514,6 +578,7 @@ final class OpenApiServerConfiguratorTest
         array $toolNames = [],
         ?OperationModifierInterface $modifier = null,
         array $dryRunOperations = [],
+        array $toolClasses = [],
     ): McpAction {
         $factory = new Psr17Factory();
 
@@ -533,11 +598,11 @@ final class OpenApiServerConfiguratorTest
         );
 
         $server = (new McpServerFactory(
-            container: new SimpleContainer([]),
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
             sessionStore: new InMemorySessionStore(),
             name: 'bridge-test',
             version: '1.0.0',
-        ))->create([], [$configurator]);
+        ))->create($toolClasses, [$configurator]);
 
         return new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory);
     }

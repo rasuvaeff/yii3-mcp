@@ -18,7 +18,8 @@ Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
 `Identity\{SecretResolverInterface, StaticSecretResolver;
 ClientIdentityContext is @internal}`,
 `ConditionalToolInterface`,
-`ServerConfiguratorInterface`, `Testing\McpTester`, `Testing\SchemaSnapshot`,
+`ServerConfiguratorInterface`, `ReservedToolNamesAwareInterface`,
+`Testing\McpTester`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 PromptGetInterceptorInterface, PromptGetContext,
 ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
@@ -118,6 +119,21 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   serve as the read-only context passed to `OperationModifierInterface::modify()`.**
   It stays a small readonly VO — do not grow it into a general-purpose object;
   add fields only when the modifier genuinely needs them.
+- **Tool names must be unique across the WHOLE server, and the SDK will not
+  tell you otherwise.** `Registry::registerTool()` is last-write-wins with no
+  duplicate check, and `Builder::build()` runs its explicit loader
+  (`Builder::add()`, used by configurators) BEFORE the reflected one
+  (`Builder::addTool()`, used for `#[McpTool]` methods) — so on a collision
+  the attribute tool wins and the **bridged tool silently disappears** from
+  `tools/list`, which was verified empirically, not inferred. `McpServerFactory`
+  therefore collects the attribute tools' names (mirroring the SDK's own rule:
+  the attribute's `name`, else the method name, else the class short name for
+  `__invoke`) and hands them to every configurator implementing
+  `ReservedToolNamesAwareInterface` before `configure()`;
+  `OpenApiServerConfigurator` seeds its `$usedNames` map with them so a
+  `tool_names`/modifier rename onto a taken name fails fast. If the SDK's
+  naming rule drifts on a pin bump, `reservedNamesFollowTheSdkDefaultNamingRule`
+  is the test that catches it.
 - **A tool-name change is validated identically wherever it happens.** Both a
   `tool_names` rename and an `OperationModifierInterface`-returned name reuse
   `OpenApi\ToolNameValidator` (`@internal`, shared with `SpecIndex`) and are

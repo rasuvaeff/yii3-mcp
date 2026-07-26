@@ -14,6 +14,8 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\AttributelessClass;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ConstructorAttributeTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\DefaultNamedTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DualTemplatePromptTool;
@@ -23,7 +25,9 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\InvalidNameTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyPromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ReservedNamesRecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\TrailingHelperTool;
@@ -306,6 +310,42 @@ final class McpServerFactoryTest
     private function names(array $result, string $key): array
     {
         return array_column(array_filter((array) ($result[$key] ?? []), is_array(...)), 'name');
+    }
+
+    public function reservesAttributeToolNamesForConfigurators(): void
+    {
+        $configurator = new ReservedNamesRecordingConfigurator();
+
+        // CountingTool's attribute name ("count.up") differs from its method
+        // name ("up"), which GreetingTool's does not — without it the
+        // explicit name and the derived one are indistinguishable
+        $this->factory()->create([GreetingTool::class, CountingTool::class], [$configurator]);
+
+        Assert::same($configurator->reserved, ['greet', 'explode', 'count.up']);
+        Assert::true($configurator->configured);
+    }
+
+    /**
+     * The reserved names must match what the SDK's reflected loader derives,
+     * or a configurator would be told the wrong names are taken: the method
+     * name by default, the class short name for __invoke.
+     */
+    public function reservedNamesFollowTheSdkDefaultNamingRule(): void
+    {
+        $configurator = new ReservedNamesRecordingConfigurator();
+
+        $this->factory()->create([DefaultNamedTool::class], [$configurator]);
+
+        Assert::same($configurator->reserved, ['lookup', 'DefaultNamedTool']);
+    }
+
+    public function configuratorsWithoutTheInterfaceStillRun(): void
+    {
+        $configurator = new RecordingConfigurator();
+
+        $this->factory()->create([GreetingTool::class], [$configurator]);
+
+        Assert::true($configurator->configured);
     }
 
     private function factory(): McpServerFactory

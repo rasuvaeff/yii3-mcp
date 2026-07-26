@@ -746,6 +746,11 @@ audit/RBAC bridge должны ссылаться на **переименова�
 в `tool_names`, отсутствующий в `operations`, бросает `InvalidArgumentException`
 при build time (вероятная опечатка); переименование, невалидное как имя MCP
 tool или коллидирующее с именем другого tool, бросает `InvalidSpecException`.
+Проверка коллизий охватывает и attribute tools: имена методов `#[McpTool]`,
+зарегистрированных на том же сервере, зарезервированы, поэтому переименование
+bridged operation в одно из них - ошибка при build time, а не bridged tool,
+который молча не доезжает до `tools/list` (registry SDK работает по принципу
+last-write-wins и регистрирует attribute tools последними).
 
 Каждая `GET` operation рекламируется с `readOnlyHint: true` - конфигурация не
 нужна. OpenAPI `tags` operation прокидываются в `_meta` served tool

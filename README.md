@@ -747,7 +747,12 @@ allow-list, handler execution and delegated-header calls all stay keyed by
 reference the **renamed** name. An `operationId` in `tool_names` that is not
 in `operations` throws `InvalidArgumentException` at build time (a likely
 typo); a rename that is invalid as an MCP tool name or collides with another
-tool's name throws `InvalidSpecException`.
+tool's name throws `InvalidSpecException`. The collision check covers
+attribute tools too: the names of `#[McpTool]` methods registered on the same
+server are reserved, so renaming a bridged operation onto one of them is a
+build-time error rather than a bridged tool that silently never reaches
+`tools/list` (the SDK's registry is last-write-wins and registers attribute
+tools last).
 
 Every `GET` operation is advertised with `readOnlyHint: true` — no
 configuration needed. OpenAPI `tags` on an operation are propagated into the

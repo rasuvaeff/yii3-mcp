@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- A bridged tool whose name collides with an attribute tool's now fails the
+  server build instead of vanishing. The SDK's registry is last-write-wins
+  and its loaders register explicit tools (the OpenAPI bridge) *before*
+  reflected ones (`#[McpTool]`), so the attribute tool won and the bridged
+  tool silently never appeared in `tools/list` — easy to hit now that
+  `tool_names` and `OperationModifierInterface` can rename anything.
+  `McpServerFactory` reserves the attribute tools' names and passes them to
+  any configurator implementing the new
+  `ReservedToolNamesAwareInterface` (implemented by
+  `OpenApiServerConfigurator`) before `configure()` runs.
 - Truncation no longer splits a multi-byte character. Both places that cut a
   string short — `ResponseSizeLimitInterceptor` (`limits.tool_result_bytes`)
   and the upstream error-body excerpt in the OpenAPI bridge — used a byte-wise

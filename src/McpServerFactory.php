@@ -84,11 +84,17 @@ final readonly class McpServerFactory
             $builder->setLogger($this->logger);
         }
 
+        $attributeToolNames = [];
+
         foreach ($toolClasses as $class) {
-            $this->register($builder, $class);
+            $this->register($builder, $class, $attributeToolNames);
         }
 
         foreach ($configurators as $configurator) {
+            if ($configurator instanceof ReservedToolNamesAwareInterface) {
+                $configurator = $configurator->withReservedToolNames($attributeToolNames);
+            }
+
             $configurator->configure($builder);
         }
 
@@ -178,8 +184,9 @@ final readonly class McpServerFactory
 
     /**
      * @param class-string $class
+     * @param list<string> $toolNames names of the registered #[McpTool] methods, appended in place
      */
-    private function register(Builder $builder, string $class): void
+    private function register(Builder $builder, string $class, array &$toolNames): void
     {
         if (!class_exists($class)) {
             throw new InvalidToolClassException(sprintf('Tool class "%s" does not exist', $class));
@@ -203,7 +210,7 @@ final readonly class McpServerFactory
                 continue;
             }
 
-            $registered += $this->registerMethod($builder, $class, $method);
+            $registered += $this->registerMethod($builder, $class, $method, $toolNames);
         }
 
         if ($registered === 0) {
@@ -213,13 +220,20 @@ final readonly class McpServerFactory
 
     /**
      * @param class-string $class
+     * @param list<string> $toolNames
      */
-    private function registerMethod(Builder $builder, string $class, ReflectionMethod $method): int
+    private function registerMethod(Builder $builder, string $class, ReflectionMethod $method, array &$toolNames): int
     {
         $registered = 0;
 
         foreach ($method->getAttributes(McpTool::class) as $attribute) {
             $tool = $attribute->newInstance();
+            // the SDK derives the served name inside its reflected loader;
+            // mirror the rule here so configurators can be told which names
+            // are taken before they register anything
+            $toolNames[] = $tool->name ?? ($method->getName() === '__invoke'
+                ? $method->getDeclaringClass()->getShortName()
+                : $method->getName());
             $builder->addTool(
                 handler: [$class, $method->getName()],
                 name: $tool->name,

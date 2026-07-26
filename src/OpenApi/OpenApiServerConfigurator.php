@@ -10,6 +10,7 @@ use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Builder;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
+use Rasuvaeff\Yii3Mcp\ReservedToolNamesAwareInterface;
 use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 
 /**
@@ -27,11 +28,13 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
  * UnsafeOperationException instead of being exposed; an unknown operationId
  * in $toolNames or $dryRunOperations throws InvalidArgumentException, and a
  * rename — from $toolNames or from $modifier — that is invalid or collides
- * with another tool's name throws InvalidSpecException.
+ * with another bridged tool's name (or with an attribute tool's, which
+ * McpServerFactory reserves through ReservedToolNamesAwareInterface) throws
+ * InvalidSpecException.
  *
  * @api
  */
-final readonly class OpenApiServerConfigurator implements ServerConfiguratorInterface
+final readonly class OpenApiServerConfigurator implements ServerConfiguratorInterface, ReservedToolNamesAwareInterface
 {
     /**
      * @param list<string> $operations allow-list of operationIds to expose
@@ -53,6 +56,8 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
      *                                       (method, url, body) instead of executing it. Orthogonal to
      *                                       $safeMethodsOnly — does not expose an operation the safety
      *                                       gate would otherwise reject.
+     * @param list<string> $reservedToolNames names already taken by attribute tools; filled in by
+     *                                        McpServerFactory, not by application configuration
      */
     public function __construct(
         private SpecIndex $spec,
@@ -62,7 +67,23 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
         private array $toolNames = [],
         private ?OperationModifierInterface $modifier = null,
         private array $dryRunOperations = [],
+        private array $reservedToolNames = [],
     ) {}
+
+    #[\Override]
+    public function withReservedToolNames(array $names): static
+    {
+        return new self(
+            spec: $this->spec,
+            executor: $this->executor,
+            operations: $this->operations,
+            safeMethodsOnly: $this->safeMethodsOnly,
+            toolNames: $this->toolNames,
+            modifier: $this->modifier,
+            dryRunOperations: $this->dryRunOperations,
+            reservedToolNames: $names,
+        );
+    }
 
     #[\Override]
     public function configure(Builder $builder): void
@@ -88,7 +109,11 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
         }
 
         $schemaBuilder = new InputSchemaBuilder();
-        $usedNames = [];
+        // seeded with the attribute tools' names: the SDK registry is
+        // last-write-wins and runs explicit registrations before reflected
+        // ones, so a bridged tool that picks a taken name would not override
+        // the attribute tool — it would silently lose itself
+        $usedNames = array_fill_keys($this->reservedToolNames, null);
 
         foreach ($this->operations as $operationId) {
             $operation = $this->spec->get($operationId);
@@ -135,13 +160,19 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 ));
             }
 
-            if (isset($usedNames[$tool->name])) {
-                throw new InvalidSpecException(sprintf(
-                    'Operations "%s" and "%s" both resolve to tool name "%s" — rename one of them via tool_names or the operation modifier',
-                    $usedNames[$tool->name],
-                    $operationId,
-                    $tool->name,
-                ));
+            if (array_key_exists($tool->name, $usedNames)) {
+                throw new InvalidSpecException($usedNames[$tool->name] === null
+                    ? sprintf(
+                        'Operation "%s" resolves to tool name "%s", which is already registered by an attribute tool — rename it via tool_names or the operation modifier',
+                        $operationId,
+                        $tool->name,
+                    )
+                    : sprintf(
+                        'Operations "%s" and "%s" both resolve to tool name "%s" — rename one of them via tool_names or the operation modifier',
+                        $usedNames[$tool->name],
+                        $operationId,
+                        $tool->name,
+                    ));
             }
 
             $usedNames[$tool->name] = $operationId;
