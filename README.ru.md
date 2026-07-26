@@ -366,10 +366,13 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 
 Всё, что interceptor отправляет за пределы процесса - log line, trace span,
 audit record - не должно содержать secrets. `Interceptor\ArgumentMasker`
-заменяет значения чувствительных ключей (`password`, `secret`, `token`,
-`api_key`, `apikey`, `api-key`, `x-api-key`, `credit_card` по умолчанию,
-без учёта регистра - `ApiKey`/`X-Api-Key` тоже матчатся - и на **каждом**
-уровне вложенности) на `***`.
+заменяет значения чувствительных ключей (`password`/`pass`/`pwd`, `secret`,
+`token`/`bearer`/`jwt`, `auth`/`authorization`, `cookie`, `api_key`/`apikey`/
+`api-key`/`x-api-key`, `access_token`/`refresh_token`/`id_token`/
+`session_token`/`auth_token` (и написание через дефис `access-token`),
+`client_secret`, `private_key`, `credit_card` по умолчанию, без учёта
+регистра - `ApiKey`/`X-Api-Key` тоже матчатся - и на **каждом** уровне
+вложенности) на `***`.
 
 ```php
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;

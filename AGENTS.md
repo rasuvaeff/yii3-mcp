@@ -75,6 +75,17 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   interceptors and the size limit, never around user interceptors — RBAC/
   audit must run on every call including a cache hit, or caching becomes an
   ACL bypass. Never reorder without preserving this.
+- **`SessionBudgetInterceptor`'s counter is deliberately NOT
+  concurrency-safe** — a plain `get()`/`set()` read-modify-write, no
+  compare-and-swap, because the SDK's `SessionInterface` is a generic
+  key-value abstraction over an arbitrary session-store backend with no lock
+  primitive to reach for portably. N concurrent requests on the same session
+  can overrun the budget by up to N-1. Accepted: it's an anti-loop guard
+  against a runaway agent, not a hard quota — do not "fix" this with a
+  backend-specific lock (e.g. flock on `FileSessionStore`'s file), which
+  would break for any other `SessionStoreInterface` a consumer binds. A real
+  per-client quota belongs in an application-level rate limiter with a
+  proper atomic store, not here.
 - **`CachingToolCallInterceptor`'s cache key MUST include everything the
   result's identity depends on: the resolved client id AND, when
   `openapi.identity_provider` is configured, the resolved
@@ -181,6 +192,16 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   argument; single dots still pass (`v1.2`). The check lives in
   `HttpOperationExecutor::buildPath()`; do not "simplify" it back to equality
   comparisons.
+- **An operation's static path (the OpenAPI Path Item Object key) must start
+  with `/`; `SpecIndex` silently drops any operation whose path doesn't.**
+  `HttpOperationExecutor` builds the request URL as `$baseUrl . $path` with no
+  separator — a path missing the leading slash (e.g. `evil.com/x`) splices
+  into the host string (`https://api.test` + `evil.com/x` =
+  `https://api.testevil.com/x`, a different host, sent with this bridge's
+  delegated credentials). The OpenAPI spec itself requires the leading slash,
+  so rejecting a path without one only enforces the spec, not an extra
+  restriction. Checked in `SpecIndex::buildOperation()`, same fail-closed
+  shape as the existing empty-`operationId`/empty-`path` guard.
 - **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect

@@ -289,6 +289,66 @@ final class ConfigWiringTest
         Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
     }
 
+    public function serverDefinitionPreservesObservableChainOrderOnCacheHit(): void
+    {
+        // Regression guard for the documented chain order (budget → user
+        // interceptors → caching → size limit): the three isolated wiring
+        // tests above would all stay green if caching were accidentally
+        // moved outside the budget/user interceptors in config/di.php, since
+        // each only exercises one interceptor at a time. This wires all
+        // three together and asserts the OBSERVABLE contract: a cache hit
+        // must still run user interceptors (RBAC/audit) and still consume
+        // session budget — only the tool call itself (and its size-limiting)
+        // may be skipped.
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 2;
+        $params['rasuvaeff/yii3-mcp']['interceptors'] = [RecordingInterceptor::class];
+        $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $tool = new CountingTool();
+        $recording = new RecordingInterceptor();
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            RecordingInterceptor::class => $recording,
+            CacheInterface::class => new FakeCache(),
+        ]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $first = $tester->callTool('count.up', []);
+        $second = $tester->callTool('count.up', []);
+        // the budget is 2: if it only charged real tool executions (budget
+        // wired INSIDE caching — the wrong order), this third call would
+        // still succeed, since only the first call was a real execution
+        $third = $tester->callTool('count.up', []);
+
+        // the tool itself ran exactly once — the second and third calls
+        // were served from cache
+        Assert::same($tool->calls, 1);
+        Assert::same($first['content'][0]['text'], $second['content'][0]['text']);
+
+        // the configured (RBAC/audit) interceptor ran on both the miss AND
+        // the hit — never on the third, budget-exhausted call, since budget
+        // is outermost and short-circuits before reaching it
+        Assert::same($recording->entries, [
+            'interceptor:before:count.up', 'interceptor:after:count.up',
+            'interceptor:before:count.up', 'interceptor:after:count.up',
+        ]);
+
+        // the session budget consumed on the cache hit too — a budget that
+        // only charged real executions would let a client bypass it
+        // entirely by hammering an already-cached tool
+        Assert::string($third['content'][0]['text'])->contains('budget of 2 is exhausted');
+    }
+
     public function serverDefinitionWiresConfiguredConfigurators(): void
     {
         $params = $this->params();

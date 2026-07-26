@@ -143,6 +143,17 @@ final readonly class SpecIndex
             return null;
         }
 
+        // The OpenAPI spec requires every Path Item Object key to start with
+        // "/"; enforcing that here is not an extra restriction, it rejects a
+        // non-conformant document. It also closes a host-splicing hazard:
+        // HttpOperationExecutor concatenates baseUrl . path with no
+        // separator, so a path lacking the leading slash (e.g. "evil.com/x")
+        // would turn "https://api.test" into "https://api.testevil.com/x" —
+        // a different host entirely.
+        if (!str_starts_with($path, '/')) {
+            return null;
+        }
+
         $requestBody = $this->arrayOrEmpty($raw['requestBody'] ?? null);
 
         if ($requestBody !== []) {
@@ -273,7 +284,14 @@ final readonly class SpecIndex
                 }
             }
 
-            $output['additionalProperties'] = $nested;
+            // same reasoning as `properties` above: an empty map would
+            // serialize as [] and be rejected as "not a record"/"not a
+            // boolean" by clients validating the schema; an empty schema
+            // object ({}) matches anything, which is exactly what omitting
+            // the (optional) key also means, so we simply omit it
+            if ($nested !== []) {
+                $output['additionalProperties'] = $nested;
+            }
         }
 
         /** @var mixed $description */

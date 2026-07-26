@@ -129,6 +129,26 @@ final class SpecLoaderTest
         }
     }
 
+    public function cacheKeyIsPsr16SafeAndFormatStable(): void
+    {
+        $cache = new FakeCache();
+
+        $this->loader(new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)), cache: $cache, cacheTtl: 60)
+            ->fromUrl('https://api.test/openapi.json');
+
+        $key = (string) array_key_first($cache->values);
+
+        // PSR-16 only guarantees keys up to 64 characters — a longer key
+        // makes a strict cache throw on every call, silently disabling
+        // caching; the format is pinned so an accidental change (which
+        // orphans every deployed cache entry) fails a test, not silently.
+        Assert::same(strlen($key), 64);
+        Assert::same(
+            $key,
+            'yii3-mcp.openapi.' . substr(hash('sha256', 'https://api.test/openapi.json' . "\0" . '[]'), 0, 47),
+        );
+    }
+
     public function cacheReadAndWriteFailuresFallBackToHttp(): void
     {
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);

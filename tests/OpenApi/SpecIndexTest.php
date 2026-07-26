@@ -192,6 +192,25 @@ final class SpecIndexTest
         $index->get('');
     }
 
+    public function pathWithoutLeadingSlashIsNotIndexed(): void
+    {
+        // HttpOperationExecutor concatenates baseUrl . path with no
+        // separator; a path lacking the leading slash would splice into the
+        // host ("https://api.test" + "evil.com/x" = "https://api.testevil.com/x").
+        // The OpenAPI spec itself requires every Path Item key to start with
+        // "/" — this is also just rejecting a non-conformant document.
+        $index = new SpecIndex([
+            'paths' => [
+                'evil.com/x' => ['get' => ['operationId' => 'op']],
+                '/ok' => ['get' => ['operationId' => 'okOp']],
+            ],
+        ]);
+
+        Expect::exception(UnknownOperationException::class);
+
+        $index->get('op');
+    }
+
     public function tagsAreExtractedFromTheOperation(): void
     {
         $index = new SpecIndex([
@@ -764,6 +783,22 @@ final class SpecIndexTest
             'type' => 'object',
             'additionalProperties' => ['type' => 'string'],
         ]);
+    }
+
+    public function emptyObjectTypedAdditionalPropertiesAreOmittedFromOutputSchema(): void
+    {
+        // kept as an empty array it would serialize to "additionalProperties":
+        // [] and be rejected by clients (JSON Schema requires a boolean or a
+        // schema object there); an empty schema object matches anything,
+        // which is exactly what omitting the (optional) key also means
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => 'object',
+                'additionalProperties' => [],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object']);
     }
 
     public function emptyPropertiesAreOmittedFromOutputSchema(): void

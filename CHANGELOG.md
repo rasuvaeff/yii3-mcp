@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is also shortened to PSR-16's guaranteed 64 characters (truncated sha256)
   so strict cache implementations no longer silently disable caching;
   previously written entries are orphaned until their TTL expires.
+- `OpenApi\SpecLoader`: its own cache key (for the fetched OpenAPI document,
+  distinct from `CachingToolCallInterceptor`'s tool-result cache above) is
+  now also shortened to PSR-16's guaranteed 64 characters — it was missed
+  when the tool-result cache key was fixed and would silently disable
+  document caching on a strict PSR-16 implementation.
 - OpenAPI bridge: a dry-run-enabled operation now rejects a
   present-but-non-boolean `dryRun` value with an error instead of executing
   the real call — a malformed preview intent must never become a real write.
@@ -51,6 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allow-listed item route into the collection route. Trade-off: an
   identifier containing `..` can no longer be used as a path argument;
   single dots (`v1.2`) still can.
+- OpenAPI bridge: an operation whose *static* path (the OpenAPI Path Item
+  Object key itself, not a `{param}` argument) does not start with `/` is now
+  skipped when the spec is indexed, instead of being bridged. Without the
+  leading slash, `HttpOperationExecutor` (which builds the request URL as
+  `baseUrl . path` with no separator) would splice the path into the host —
+  `https://api.test` + `evil.com/x` became `https://api.testevil.com/x`, a
+  different host, contacted with this bridge's delegated credentials. The
+  OpenAPI spec itself requires the leading slash, so this only rejects a
+  non-conformant document.
+- OpenAPI bridge: an `outputSchema`'s `additionalProperties` with an empty
+  object schema (`{}`) is now omitted instead of being emitted as `[]` on the
+  wire — the same "empty map serializes as an array" hazard already fixed for
+  `properties`. JSON Schema requires `additionalProperties` to be a boolean or
+  a schema object; a JSON array made schema-validating MCP clients reject the
+  whole `tools/list`.
 - OpenAPI bridge: the dry-run preview mirrors the real-send condition for
   `body` — a stray `body` argument on a bodyless operation is no longer
   shown as if it would be sent.
@@ -71,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Interceptor\ArgumentMasker`: the default sensitive-key list now also
   covers the common API-key spellings `apikey` (matches `ApiKey`
   case-insensitively), `api-key` and `x-api-key`.
+- `Interceptor\ArgumentMasker`: the default sensitive-key list now also
+  covers `pass`, `pwd`, `auth`, `bearer`, `jwt`, `cookie`, `id_token`,
+  `session_token`, `auth_token` and the kebab spelling `access-token` —
+  industry-standard credential/token names the previous list missed.
 - OpenAPI bridge: `HttpOperationExecutor` rejects a base URL with embedded
   credentials (userinfo) or a query string/fragment at construction —
   dry-run previews return the full URL to the caller, so the base URL must

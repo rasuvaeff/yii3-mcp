@@ -368,10 +368,12 @@ any other exception becomes an opaque internal error.
 
 Anything an interceptor sends out of the process — a log line, a trace span,
 an audit record — must not carry secrets. `Interceptor\ArgumentMasker`
-replaces the values of sensitive keys (`password`, `secret`, `token`,
-`api_key`, `apikey`, `api-key`, `x-api-key`, `credit_card` by default;
-case-insensitive, so `ApiKey`/`X-Api-Key` match too, at **every** nesting
-level) with `***`:
+replaces the values of sensitive keys (`password`/`pass`/`pwd`, `secret`,
+`token`/`bearer`/`jwt`, `auth`/`authorization`, `cookie`, `api_key`/`apikey`/
+`api-key`/`x-api-key`, `access_token`/`refresh_token`/`id_token`/
+`session_token`/`auth_token` (and the kebab spelling `access-token`),
+`client_secret`, `private_key`, `credit_card` by default; case-insensitive, so
+`ApiKey`/`X-Api-Key` match too, at **every** nesting level) with `***`:
 
 ```php
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;

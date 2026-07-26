@@ -19,6 +19,15 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
  */
 final readonly class SpecLoader
 {
+    private const string KEY_PREFIX = 'yii3-mcp.openapi.';
+
+    /**
+     * PSR-16 only guarantees support for keys up to 64 characters; the
+     * sha256 hex digest is truncated so prefix + digest fits exactly.
+     * 47 hex chars = 188 bits — far beyond accidental-collision range.
+     */
+    private const int KEY_HASH_LENGTH = 47;
+
     /**
      * @param array<string, string> $headers e.g. ['Authorization' => 'Bearer …']
      */
@@ -81,7 +90,11 @@ final readonly class SpecLoader
 
         ksort($headers);
 
-        return 'yii3-mcp.openapi.' . hash('sha256', $url . "\0" . json_encode($headers, JSON_THROW_ON_ERROR));
+        return self::KEY_PREFIX . substr(
+            hash('sha256', $url . "\0" . json_encode($headers, JSON_THROW_ON_ERROR)),
+            0,
+            self::KEY_HASH_LENGTH,
+        );
     }
 
     private function readCache(string $key): ?string

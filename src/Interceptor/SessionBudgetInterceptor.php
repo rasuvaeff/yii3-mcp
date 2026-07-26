@@ -17,6 +17,19 @@ use Mcp\Server\Session\SessionInterface;
  * An exhausted budget is reported as a regular MCP tool-error envelope, so
  * the agent sees the reason instead of a transport failure.
  *
+ * NOT safe against concurrent calls on the SAME session: the counter is a
+ * plain read-modify-write (`get()` then `set()`) with no compare-and-swap,
+ * because {@see SessionInterface} (from `mcp/sdk`) exposes none and is a
+ * generic key-value abstraction over an arbitrary {@see
+ * \Mcp\Server\Session\SessionStoreInterface} backend — there is no lock
+ * primitive to reach for that would work across every backend a consumer
+ * might bind (the shipped {@see \Mcp\Server\Session\FileSessionStore}
+ * locks only its own write, not the read-modify-write span). N concurrent
+ * requests racing on one session can overrun the budget by up to N-1 calls.
+ * This is accepted: the guard's purpose is stopping a runaway agent loop,
+ * not enforcing a hard cap under adversarial concurrency — a real quota
+ * belongs in an application-level rate limiter with a proper atomic store.
+ *
  * @api
  */
 final readonly class SessionBudgetInterceptor implements ToolCallInterceptorInterface
