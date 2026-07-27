@@ -29,12 +29,45 @@ return [
         // host-policy check (localhost and stdio remain valid deployments).
         'expected_http_host' => '',
         'session' => [
-            // empty => sys_get_temp_dir() . '/yii3-mcp-sessions'
+            // empty => application-specific default under sys_get_temp_dir()
+            // (derived from server_name); created 0700, session files clamped
+            // to 0600 — session JSON must not be readable by other OS users
             'dir' => '',
             'ttl' => 3600,
             // max tools/call per session (0 = unlimited); anti-loop guard,
             // NOT a client quota — a new session starts a fresh counter
             'budget' => 0,
+        ],
+        // guard against a tool result burning an agent's context window
+        // (0 = unlimited). A string result over the limit is truncated with
+        // a marker; any other result (array/object) is rejected outright —
+        // truncated JSON is invalid JSON, not a smaller valid one.
+        'limits' => [
+            'tool_result_bytes' => 0,
+            // cap on a substituted Markdown prompt's text: placeholder
+            // substitution multiplies a caller-supplied argument by its
+            // occurrence count, so the output is bounded BEFORE it is built
+            // (0 = unlimited)
+            'prompt_result_bytes' => 1_048_576,
+        ],
+        // PSR-16 cache for successful tool results: tool name => TTL in
+        // seconds. Empty (default) = no caching. The cache key always
+        // includes the resolved client id — never share cached results
+        // between clients — and, when openapi.identity_provider is set, the
+        // resolved ExecutionIdentity (delegated credentials can make results
+        // identity-specific below the client-id level). Opt in only tools
+        // that are safe to cache (idempotent reads); the interceptor has no
+        // notion of which are. "Idempotent" is not enough on its own: a tool
+        // whose result depends on the application user behind the MCP client
+        // is only safe to cache when openapi.identity_provider resolves that
+        // user, since the key otherwise identifies the client alone.
+        'cache' => [
+            'tools' => [],
+            // stable application/server identity isolating this server's
+            // entries on a cache backend shared between applications (two
+            // apps on one Redis with same-named tools must never read each
+            // other's results). Empty = server_name.
+            'namespace' => '',
         ],
         // tool-call interceptor FQCNs (resolved through the container,
         // applied in order, first = outermost); each implements
@@ -83,14 +116,40 @@ return [
         // OpenAPI bridge: expose allow-listed REST operations as MCP tools.
         // Disabled while spec_path is empty; an empty operations list exposes nothing.
         // spec_path accepts a file path OR an http(s) URL (e.g. the app's own
-        // spec endpoint — always current; fetched with the same `headers`).
+        // spec endpoint — always current; fetched with `spec_headers`, NOT
+        // with the operation `headers`).
         'openapi' => [
             'spec_path' => '',
             'base_url' => '',
             'operations' => [],
+            // rename operationId => tool name (e.g. ugly generated
+            // operationIds into LLM-friendly names). Allow-list, handler
+            // execution and delegated headers stay keyed by operationId;
+            // interceptors/visibility rules must reference the RENAMED name.
+            'tool_names' => [],
+            // FQCN of an OpenApi\OperationModifierInterface, resolved through
+            // the container; called once per bridged operation after the
+            // tool_names rename to customize description/annotations/name
+            // further. Empty = disabled.
+            'operation_modifier' => '',
+            // operation-call headers, sent to base_url only (e.g. the API's
+            // service token). Deliberately NOT sent with the spec fetch:
+            // when spec_path lives on a different origin, a shared header
+            // set would hand the API token to the spec host.
             'headers' => [],
+            // spec-fetch headers, sent to spec_path only. Empty by default —
+            // set explicitly when the spec endpoint itself needs auth.
+            'spec_headers' => [],
             // PSR-16 TTL for URL specs. 0 preserves fetch-on-every-build.
             'cache_ttl' => 0,
+            // upper bound on an upstream response body the executor will
+            // buffer; the read stops (and the call fails) before a byte over
+            // the cap is materialized
+            'max_response_bytes' => 4_194_304,
+            // suppress the upstream error-body excerpt in bridged failures —
+            // for service-token deployments where the upstream's error
+            // details are not the MCP caller's to see
+            'opaque_errors' => false,
             // Optional delegated mode. Configure both application services;
             // they are resolved on every operation call. Static headers stay
             // the backward-compatible service-token mode.
@@ -98,6 +157,12 @@ return [
             'delegated_header_provider' => '',
             // read-only bridge: reject non-GET operations at build time
             'safe_methods_only' => false,
+            // operationIds that get an extra `dryRun` boolean argument; a call
+            // with `dryRun: true` returns the planned request (method, url,
+            // body) instead of executing it. Orthogonal to safe_methods_only —
+            // does not expose an operation the safety gate would otherwise
+            // reject.
+            'dry_run' => [],
         ],
     ],
 ];

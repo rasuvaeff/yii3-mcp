@@ -8,35 +8,51 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
 
 /**
- * Indexes a decoded OpenAPI 3.x document by operationId. Local
- * `#/components/...` schema references are resolved inline (chains of up
- * to 32 `$ref` hops); external references (URL or file `$ref`s) are not
- * resolved and pass through verbatim into the generated input schema.
- * Operations without an operationId cannot be bridged and are skipped.
+ * Indexes a decoded OpenAPI 3.x document by operationId. Composed of
+ * focused collaborators so trust and resource decisions live in one place
+ * each: {@see JsonPointerResolver} inlines local `#/components/...`
+ * references under an explicit depth + node budget (external URL/file
+ * `$ref`s pass through verbatim), {@see OutputSchemaProjector} derives the
+ * MCP `outputSchema` from the success response, and
+ * {@see OperationContractValidator} asserts at build time that the
+ * parameters fit what the HTTP executor can serialize. The document itself
+ * is size-bounded before decoding. Operations without an operationId cannot
+ * be bridged and are skipped.
  *
  * @internal
  */
 final readonly class SpecIndex
 {
     private const array HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
-    private const int MAX_REF_DEPTH = 32;
+
+    /**
+     * Upper bound on the raw OpenAPI document accepted for decoding — a
+     * remote spec endpoint must not be able to make indexing buffer an
+     * arbitrarily large body.
+     */
+    public const int MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
     /**
      * @var array<string, Operation>
      */
     private array $operations;
 
+    private OperationContractValidator $contract;
+
     /**
      * @param array<string, mixed> $spec decoded OpenAPI document
      */
-    public function __construct(
-        private array $spec,
-    ) {
-        $paths = $this->spec['paths'] ?? null;
+    public function __construct(array $spec)
+    {
+        $paths = $spec['paths'] ?? null;
 
         if (!is_array($paths) || $paths === []) {
             throw new InvalidSpecException('OpenAPI document has no paths');
         }
+
+        $resolver = new JsonPointerResolver($spec);
+        $projector = new OutputSchemaProjector($resolver);
+        $this->contract = new OperationContractValidator();
 
         $operations = [];
         /** @var mixed $pathItem */
@@ -52,7 +68,7 @@ final readonly class SpecIndex
                     continue;
                 }
 
-                $operation = $this->buildOperation(path: $path, method: $method, raw: $raw, pathItem: $pathItem);
+                $operation = $this->buildOperation(path: $path, method: $method, raw: $raw, pathItem: $pathItem, resolver: $resolver, projector: $projector);
 
                 if ($operation instanceof Operation) {
                     if (isset($operations[$operation->operationId])) {
@@ -78,6 +94,14 @@ final readonly class SpecIndex
 
     public static function fromJson(string $json): self
     {
+        if (strlen($json) > self::MAX_DOCUMENT_BYTES) {
+            throw new InvalidSpecException(sprintf(
+                'OpenAPI document of %d bytes exceeds the %d-byte limit',
+                strlen($json),
+                self::MAX_DOCUMENT_BYTES,
+            ));
+        }
+
         try {
             $decoded = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
@@ -94,6 +118,19 @@ final readonly class SpecIndex
 
     public static function fromFile(string $path): self
     {
+        // bound before buffering: a runaway generated spec file must fail
+        // with a clear message, not exhaust the worker
+        $size = @filesize($path);
+
+        if (is_int($size) && $size > self::MAX_DOCUMENT_BYTES) {
+            throw new InvalidSpecException(sprintf(
+                'OpenAPI document "%s" of %d bytes exceeds the %d-byte limit',
+                $path,
+                $size,
+                self::MAX_DOCUMENT_BYTES,
+            ));
+        }
+
         $json = @file_get_contents($path);
 
         if ($json === false) {
@@ -112,9 +149,22 @@ final readonly class SpecIndex
                 implode(', ', array_keys($this->operations)),
             ));
 
-        $this->assertParametersSupported($operation);
+        $this->assertValidToolName($operation);
+        $this->contract->validate($operation);
 
         return $operation;
+    }
+
+    private function assertValidToolName(Operation $operation): void
+    {
+        if (!ToolNameValidator::isValid($operation->operationId)) {
+            throw new InvalidSpecException(sprintf(
+                'Operation "%s" (%s %s) has an operationId that cannot be used as an MCP tool name',
+                $operation->operationId,
+                $operation->method,
+                $operation->path,
+            ));
+        }
     }
 
     /**
@@ -122,7 +172,7 @@ final readonly class SpecIndex
      * @param array<array-key, mixed> $raw
      * @param array<array-key, mixed> $pathItem
      */
-    private function buildOperation(string $path, string $method, array $raw, array $pathItem): ?Operation
+    private function buildOperation(string $path, string $method, array $raw, array $pathItem, JsonPointerResolver $resolver, OutputSchemaProjector $projector): ?Operation
     {
         $operationId = $raw['operationId'] ?? null;
 
@@ -130,10 +180,21 @@ final readonly class SpecIndex
             return null;
         }
 
+        // The OpenAPI spec requires every Path Item Object key to start with
+        // "/"; enforcing that here is not an extra restriction, it rejects a
+        // non-conformant document. It also closes a host-splicing hazard:
+        // HttpOperationExecutor concatenates baseUrl . path with no
+        // separator, so a path lacking the leading slash (e.g. "evil.com/x")
+        // would turn "https://api.test" into "https://api.testevil.com/x" —
+        // a different host entirely.
+        if (!str_starts_with($path, '/')) {
+            return null;
+        }
+
         $requestBody = $this->arrayOrEmpty($raw['requestBody'] ?? null);
 
         if ($requestBody !== []) {
-            $requestBody = $this->resolveRef($requestBody);
+            $requestBody = $resolver->resolve($requestBody);
         }
 
         return new Operation(
@@ -141,114 +202,33 @@ final readonly class SpecIndex
             method: strtoupper($method),
             path: $path,
             description: $this->stringOrEmpty($raw['description'] ?? $raw['summary'] ?? null),
-            parameters: $this->normalizeParameters($this->arrayOrEmpty($pathItem['parameters'] ?? null), $this->arrayOrEmpty($raw['parameters'] ?? null)),
-            requestBodySchema: $this->extractRequestBodySchema($requestBody),
+            parameters: $this->normalizeParameters($this->arrayOrEmpty($pathItem['parameters'] ?? null), $this->arrayOrEmpty($raw['parameters'] ?? null), $resolver),
+            requestBodySchema: $this->extractRequestBodySchema($requestBody, $resolver),
             requestBodyRequired: (bool) ($requestBody['required'] ?? false),
-            outputSchema: $this->extractOutputSchema($this->arrayOrEmpty($raw['responses'] ?? null)),
+            outputSchema: $projector->project($this->arrayOrEmpty($raw['responses'] ?? null)),
+            tags: $this->extractTags($raw['tags'] ?? null),
         );
     }
 
     /**
-     * Schema advertised as the MCP tool `outputSchema`: the lowest concrete
-     * 2xx response with an `application/json` object schema. MCP requires
-     * `outputSchema` to be of type "object", so array/scalar responses (and
-     * `2XX` wildcards) are not advertised — `structuredContent` still flows
-     * for their JSON object payloads, just without an upfront contract.
-     *
-     * The result is canonicalized to the MCP tool output-schema shape
-     * (`type`, `properties`, `required`, `additionalProperties`,
-     * `description`); other top-level keywords are dropped.
-     *
-     * @param array<array-key, mixed> $responses
-     *
-     * @return array{type: 'object', properties?: array<string, mixed>, required?: list<string>, additionalProperties?: array<string, mixed>|bool, description?: string}|null
+     * @return list<string>
      */
-    private function extractOutputSchema(array $responses): ?array
+    private function extractTags(mixed $tags): array
     {
-        $codes = [];
+        if (!is_array($tags)) {
+            return [];
+        }
 
-        foreach (array_keys($responses) as $code) {
-            if (is_int($code) && $code >= 200 && $code <= 299) {
-                $codes[] = $code;
+        $named = [];
+
+        /** @var mixed $tag */
+        foreach ($tags as $tag) {
+            if (is_string($tag) && $tag !== '') {
+                $named[] = $tag;
             }
         }
 
-        if ($codes === []) {
-            return null;
-        }
-
-        $response = $this->resolveRef($this->arrayOrEmpty($responses[min($codes)] ?? null));
-        $content = $this->arrayOrEmpty($response['content'] ?? null);
-        $json = $this->arrayOrEmpty($content['application/json'] ?? null);
-        $schema = $this->arrayOrEmpty($json['schema'] ?? null);
-
-        if ($schema === [] || ($schema['type'] ?? null) !== 'object') {
-            return null;
-        }
-
-        $output = ['type' => 'object'];
-        /** @var mixed $properties */
-        $properties = $schema['properties'] ?? null;
-
-        if (is_array($properties)) {
-            $named = [];
-            /** @var mixed $property */
-            foreach ($properties as $name => $property) {
-                if (is_string($name)) {
-                    /** @var mixed */
-                    $named[$name] = $property;
-                }
-            }
-
-            // an empty map would serialize as [] and be rejected as "not a
-            // record" by clients validating the schema; the key is optional,
-            // so an object without declared properties simply omits it
-            if ($named !== []) {
-                $output['properties'] = $named;
-            }
-        }
-
-        /** @var mixed $required */
-        $required = $schema['required'] ?? null;
-
-        if (is_array($required)) {
-            $names = [];
-            /** @var mixed $name */
-            foreach ($required as $name) {
-                if (is_string($name)) {
-                    $names[] = $name;
-                }
-            }
-
-            $output['required'] = $names;
-        }
-
-        /** @var mixed $additionalProperties */
-        $additionalProperties = $schema['additionalProperties'] ?? null;
-
-        if (is_bool($additionalProperties)) {
-            $output['additionalProperties'] = $additionalProperties;
-        } elseif (is_array($additionalProperties)) {
-            $nested = [];
-            /** @var mixed $value */
-            foreach ($additionalProperties as $key => $value) {
-                if (is_string($key)) {
-                    /** @var mixed */
-                    $nested[$key] = $value;
-                }
-            }
-
-            $output['additionalProperties'] = $nested;
-        }
-
-        /** @var mixed $description */
-        $description = $schema['description'] ?? null;
-
-        if (is_string($description) && $description !== '') {
-            $output['description'] = $description;
-        }
-
-        return $output;
+        return $named;
     }
 
     private function stringOrEmpty(mixed $value): string
@@ -270,7 +250,7 @@ final readonly class SpecIndex
      *
      * @return list<array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool}>
      */
-    private function normalizeParameters(array $pathLevel, array $operationLevel): array
+    private function normalizeParameters(array $pathLevel, array $operationLevel, JsonPointerResolver $resolver): array
     {
         $normalized = [];
         /** @var mixed $raw */
@@ -279,7 +259,7 @@ final readonly class SpecIndex
                 continue;
             }
 
-            $raw = $this->resolveRef($raw);
+            $raw = $resolver->resolve($raw);
             $name = $raw['name'] ?? null;
             $in = $raw['in'] ?? null;
             /** @var mixed $rawStyle */
@@ -296,7 +276,7 @@ final readonly class SpecIndex
                 'name' => $name,
                 'in' => $in,
                 'required' => $in === 'path' || (bool) ($raw['required'] ?? false),
-                'schema' => $this->resolveRef($this->arrayOrEmpty($raw['schema'] ?? null)),
+                'schema' => $resolver->resolve($this->arrayOrEmpty($raw['schema'] ?? null)),
                 'description' => $this->stringOrEmpty($raw['description'] ?? null),
                 'style' => is_string($rawStyle) ? $rawStyle : null,
                 'explode' => is_bool($rawExplode) ? $rawExplode : null,
@@ -312,7 +292,7 @@ final readonly class SpecIndex
      *
      * @return array<array-key, mixed>|null
      */
-    private function extractRequestBodySchema(array $body): ?array
+    private function extractRequestBodySchema(array $body, JsonPointerResolver $resolver): ?array
     {
         if ($body === []) {
             return null;
@@ -322,121 +302,6 @@ final readonly class SpecIndex
         $json = $this->arrayOrEmpty($content['application/json'] ?? null);
         $schema = $this->arrayOrEmpty($json['schema'] ?? null);
 
-        return $schema === [] ? null : $this->resolveRef($schema);
-    }
-
-    private function assertParametersSupported(Operation $operation): void
-    {
-        foreach ($operation->parameters as $parameter) {
-            if ($parameter['in'] === 'header' || $parameter['in'] === 'cookie') {
-                throw new InvalidSpecException(sprintf(
-                    'Operation "%s" uses unsupported %s parameter "%s"; configure fixed headers on HttpOperationExecutor or expose a custom tool',
-                    $operation->operationId,
-                    $parameter['in'],
-                    $parameter['name'],
-                ));
-            }
-
-            $schema = $parameter['schema'];
-            $type = $schema === [] ? 'string' : ($schema['type'] ?? null);
-
-            if (!is_string($type) || !in_array($type, ['string', 'integer', 'number', 'boolean'], strict: true)) {
-                throw new InvalidSpecException(sprintf(
-                    'Operation "%s" parameter "%s" must use a scalar schema; type %s is not supported by the HTTP executor',
-                    $operation->operationId,
-                    $parameter['name'],
-                    json_encode($type, JSON_THROW_ON_ERROR),
-                ));
-            }
-
-            $expectedStyle = $parameter['in'] === 'path' ? 'simple' : 'form';
-
-            if ($parameter['style'] !== null && $parameter['style'] !== $expectedStyle) {
-                throw new InvalidSpecException(sprintf(
-                    'Operation "%s" parameter "%s" uses unsupported serialization style "%s"; only "%s" is supported for %s parameters',
-                    $operation->operationId,
-                    $parameter['name'],
-                    $parameter['style'],
-                    $expectedStyle,
-                    $parameter['in'],
-                ));
-            }
-
-            $expectedExplode = $parameter['in'] === 'query';
-
-            if ($parameter['explode'] !== null && $parameter['explode'] !== $expectedExplode) {
-                throw new InvalidSpecException(sprintf(
-                    'Operation "%s" parameter "%s" uses unsupported explode=%s',
-                    $operation->operationId,
-                    $parameter['name'],
-                    $parameter['explode'] ? 'true' : 'false',
-                ));
-            }
-
-            if ($parameter['allowReserved']) {
-                throw new InvalidSpecException(sprintf(
-                    'Operation "%s" parameter "%s" uses unsupported allowReserved=true',
-                    $operation->operationId,
-                    $parameter['name'],
-                ));
-            }
-        }
-    }
-
-    /**
-     * Inlines local `#/components/...` references, recursively. The depth
-     * limit counts `$ref` hops along a branch — plain array nesting without
-     * references is unlimited.
-     *
-     * @param array<array-key, mixed> $node
-     *
-     * @return array<array-key, mixed>
-     */
-    private function resolveRef(array $node, int $refDepth = 0): array
-    {
-        while (str_starts_with($this->stringOrEmpty($node['$ref'] ?? null), '#/')) {
-            if (++$refDepth > self::MAX_REF_DEPTH) {
-                throw new InvalidSpecException('OpenAPI $ref chain is too deep (possible circular reference)');
-            }
-
-            $ref = $this->stringOrEmpty($node['$ref'] ?? null);
-            $resolved = $this->lookupPointer($ref);
-            unset($node['$ref']);
-            $node = [...$resolved, ...$node];
-        }
-
-        /** @var mixed $value */
-        foreach ($node as $key => $value) {
-            if (is_array($value)) {
-                $node[$key] = $this->resolveRef($value, $refDepth);
-            }
-        }
-
-        return $node;
-    }
-
-    /**
-     * @return array<array-key, mixed>
-     */
-    private function lookupPointer(string $ref): array
-    {
-        $segments = explode('/', substr($ref, 2));
-        $node = $this->spec;
-
-        foreach ($segments as $segment) {
-            $segment = str_replace(['~1', '~0'], ['/', '~'], $segment);
-
-            if (!array_key_exists($segment, $node)) {
-                throw new InvalidSpecException(sprintf('Unresolvable $ref "%s" in OpenAPI document', $ref));
-            }
-
-            if (!is_array($node[$segment])) {
-                throw new InvalidSpecException(sprintf('$ref "%s" must point to an object', $ref));
-            }
-
-            $node = $node[$segment];
-        }
-
-        return $node;
+        return $schema === [] ? null : $resolver->resolve($schema);
     }
 }

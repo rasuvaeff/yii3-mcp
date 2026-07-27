@@ -192,6 +192,50 @@ final class SpecIndexTest
         $index->get('');
     }
 
+    public function pathWithoutLeadingSlashIsNotIndexed(): void
+    {
+        // HttpOperationExecutor concatenates baseUrl . path with no
+        // separator; a path lacking the leading slash would splice into the
+        // host ("https://api.test" + "evil.com/x" = "https://api.testevil.com/x").
+        // The OpenAPI spec itself requires every Path Item key to start with
+        // "/" — this is also just rejecting a non-conformant document.
+        $index = new SpecIndex([
+            'paths' => [
+                'evil.com/x' => ['get' => ['operationId' => 'op']],
+                '/ok' => ['get' => ['operationId' => 'okOp']],
+            ],
+        ]);
+
+        Expect::exception(UnknownOperationException::class);
+
+        $index->get('op');
+    }
+
+    public function tagsAreExtractedFromTheOperation(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['admin', 'reporting']]]],
+        ]);
+
+        Assert::same($index->get('op')->tags, ['admin', 'reporting']);
+    }
+
+    public function operationWithoutTagsHasAnEmptyTagsList(): void
+    {
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => 'op']]]]);
+
+        Assert::same($index->get('op')->tags, []);
+    }
+
+    public function nonStringTagEntriesAreDropped(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['admin', 42, '', null]]]],
+        ]);
+
+        Assert::same($index->get('op')->tags, ['admin']);
+    }
+
     public function descriptionWinsOverSummary(): void
     {
         $index = new SpecIndex([
@@ -291,6 +335,112 @@ final class SpecIndexTest
                 'allowReserved' => false,
             ],
         ]);
+    }
+
+    public function throwsOnToolNameWithASpace(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'get user']]],
+        ]);
+
+        $caught = null;
+
+        try {
+            $index->get('get user');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('get user');
+    }
+
+    public function toolNameWithTrailingNewlineIsRejected(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => "validName\n"]]],
+        ]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get("validName\n");
+    }
+
+    public function toolNameAtMaxLengthIsAccepted(): void
+    {
+        $name = str_repeat('a', 64);
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Assert::same($index->get($name)->operationId, $name);
+    }
+
+    public function toolNameBeyondMaxLengthIsRejected(): void
+    {
+        $name = str_repeat('a', 65);
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get($name);
+    }
+
+    public function toolNameWithAllowedCharsIsAccepted(): void
+    {
+        $name = 'get.user_by-id/v2';
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Assert::same($index->get($name)->operationId, $name);
+    }
+
+    public function toolNameWithUnicodeIsRejected(): void
+    {
+        $name = 'gëtUser';
+        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get($name);
+    }
+
+    public function nullableUnionScalarTypeIsAccepted(): void
+    {
+        $operation = $this->operationWithParameter([
+            'name' => 'q',
+            'in' => 'query',
+            'schema' => ['type' => ['string', 'null']],
+        ]);
+
+        Assert::same($operation->parameters[0]['schema'], ['type' => ['string', 'null']]);
+    }
+
+    public function nullFirstUnionScalarTypeIsAccepted(): void
+    {
+        $operation = $this->operationWithParameter([
+            'name' => 'q',
+            'in' => 'query',
+            'schema' => ['type' => ['null', 'integer']],
+        ]);
+
+        Assert::same($operation->parameters[0]['schema']['type'], ['null', 'integer']);
+    }
+
+    public function unionTypeWithTwoScalarMembersThrows(): void
+    {
+        Expect::exception(InvalidSpecException::class);
+
+        $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['type' => ['string', 'integer']]]);
+    }
+
+    public function unionTypeWithUnsupportedScalarThrows(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['type' => ['array', 'null']]]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('["array","null"]');
     }
 
     public function unsupportedHeaderParameterFailsWhenOperationIsSelected(): void
@@ -424,6 +574,137 @@ final class SpecIndexTest
         Assert::same($this->indexWithSchemaOfDepth(40)->get('op')->operationId, 'op');
     }
 
+    public function refFanOutBeyondTheNodeBudgetIsRejected(): void
+    {
+        // a compact document whose shared schemas EXPAND combinatorially:
+        // four levels of 20-way fan-out inline to ~20^4 nodes — a hostile or
+        // degenerate remote spec must hit the resolution budget, not OOM
+        $components = ['leaf' => ['type' => 'object', 'properties' => ['x' => ['type' => 'string']]]];
+        $previous = 'leaf';
+
+        foreach (['l1', 'l2', 'l3', 'l4'] as $level) {
+            $properties = [];
+
+            for ($i = 0; $i < 20; ++$i) {
+                $properties['p' . $i] = ['$ref' => '#/components/schemas/' . $previous];
+            }
+
+            $components[$level] = ['type' => 'object', 'properties' => $properties];
+            $previous = $level;
+        }
+
+        $caught = null;
+
+        try {
+            new SpecIndex([
+                'paths' => [
+                    '/fan' => ['post' => [
+                        'operationId' => 'fanOut',
+                        'requestBody' => ['content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/l4']]]],
+                    ]],
+                ],
+                'components' => ['schemas' => $components],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('reference-resolution budget');
+    }
+
+    public function oversizedDocumentIsRejectedBeforeDecoding(): void
+    {
+        $caught = null;
+
+        try {
+            SpecIndex::fromJson('{"pad":"' . str_repeat('a', SpecIndex::MAX_DOCUMENT_BYTES) . '"}');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('byte limit');
+    }
+
+    public function documentExactlyAtTheLimitParses(): void
+    {
+        $spec = OpenApiFixture::spec();
+        $spec['x-pad'] = '';
+        $missing = SpecIndex::MAX_DOCUMENT_BYTES - strlen(json_encode($spec, JSON_THROW_ON_ERROR));
+        $spec['x-pad'] = str_repeat('a', $missing);
+        $json = json_encode($spec, JSON_THROW_ON_ERROR);
+        Assert::same(strlen($json), SpecIndex::MAX_DOCUMENT_BYTES);
+
+        Assert::same(SpecIndex::fromJson($json)->get('getBlogTags')->operationId, 'getBlogTags');
+    }
+
+    public function fromFileLoadsAValidDocument(): void
+    {
+        $path = sys_get_temp_dir() . '/yii3-mcp-spec-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+
+        try {
+            Assert::same(SpecIndex::fromFile($path)->get('getBlogTags')->operationId, 'getBlogTags');
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function fromFileReportsAMissingFileAsUnreadable(): void
+    {
+        $caught = null;
+
+        try {
+            SpecIndex::fromFile(sys_get_temp_dir() . '/yii3-mcp-spec-void-' . bin2hex(random_bytes(8)) . '.json');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('is not readable');
+    }
+
+    public function fromFileRejectsAnOversizedDocumentByItsPath(): void
+    {
+        $path = sys_get_temp_dir() . '/yii3-mcp-spec-big-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, str_repeat('a', SpecIndex::MAX_DOCUMENT_BYTES + 1));
+
+        $caught = null;
+
+        try {
+            SpecIndex::fromFile($path);
+        } catch (InvalidSpecException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+        // rejected on filesize, BEFORE buffering: the message names the path
+        // and the size — the generic fromJson message has neither
+        Assert::string($caught->getMessage())
+            ->contains($path)
+            ->contains(sprintf('of %d bytes', SpecIndex::MAX_DOCUMENT_BYTES + 1));
+    }
+
+    public function operationWithoutTagsHasNoTags(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => ['operationId' => 'op']]],
+        ]);
+
+        Assert::same($index->get('op')->tags, []);
+    }
+
+    public function parameterWithAnEmptyNameIsSkipped(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => [
+                'operationId' => 'op',
+                'parameters' => [['name' => '', 'in' => 'query', 'schema' => ['type' => 'string']]],
+            ]]],
+        ]);
+
+        Assert::same($index->get('op')->parameters, []);
+    }
+
     public function circularRefIsReportedAsTooDeepChain(): void
     {
         $caught = null;
@@ -537,6 +818,27 @@ final class SpecIndexTest
         ]);
     }
 
+    public function nullableUnionObjectResponseIsAdvertisedAsOutputSchema(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => ['object', 'null'],
+                'properties' => ['slug' => ['type' => 'string']],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object', 'properties' => ['slug' => ['type' => 'string']]]);
+    }
+
+    public function nullFirstUnionObjectResponseIsAdvertisedAsOutputSchema(): void
+    {
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => ['type' => ['null', 'object']]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object']);
+    }
+
     public function operationWithoutResponsesHasNoOutputSchema(): void
     {
         Assert::null($this->operationWithResponses(null)->outputSchema);
@@ -612,6 +914,22 @@ final class SpecIndexTest
             'type' => 'object',
             'additionalProperties' => ['type' => 'string'],
         ]);
+    }
+
+    public function emptyObjectTypedAdditionalPropertiesAreOmittedFromOutputSchema(): void
+    {
+        // kept as an empty array it would serialize to "additionalProperties":
+        // [] and be rejected by clients (JSON Schema requires a boolean or a
+        // schema object there); an empty schema object matches anything,
+        // which is exactly what omitting the (optional) key also means
+        $schema = $this->operationWithResponses([
+            '200' => ['content' => ['application/json' => ['schema' => [
+                'type' => 'object',
+                'additionalProperties' => [],
+            ]]]],
+        ])->outputSchema;
+
+        Assert::same($schema, ['type' => 'object']);
     }
 
     public function emptyPropertiesAreOmittedFromOutputSchema(): void

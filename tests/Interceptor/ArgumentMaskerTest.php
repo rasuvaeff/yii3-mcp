@@ -23,9 +23,39 @@ final class ArgumentMaskerTest
     public static function defaultKeysProvider(): iterable
     {
         yield 'password' => ['password'];
+        yield 'pass' => ['pass'];
+        yield 'pwd' => ['pwd'];
         yield 'secret' => ['secret'];
         yield 'token' => ['token'];
+        yield 'auth' => ['auth'];
+        yield 'bearer' => ['bearer'];
+        yield 'Bearer' => ['Bearer'];
+        yield 'jwt' => ['jwt'];
+        yield 'JWT' => ['JWT'];
+        yield 'cookie' => ['cookie'];
+        yield 'Cookie' => ['Cookie'];
         yield 'api_key' => ['api_key'];
+        yield 'apikey' => ['apikey'];
+        yield 'ApiKey' => ['ApiKey'];
+        yield 'api-key' => ['api-key'];
+        yield 'x-api-key' => ['x-api-key'];
+        yield 'X-Api-Key' => ['X-Api-Key'];
+        yield 'access_token' => ['access_token'];
+        yield 'accessToken' => ['accessToken'];
+        yield 'access-token' => ['access-token'];
+        yield 'id_token' => ['id_token'];
+        yield 'idToken' => ['idToken'];
+        yield 'session_token' => ['session_token'];
+        yield 'sessionToken' => ['sessionToken'];
+        yield 'auth_token' => ['auth_token'];
+        yield 'authToken' => ['authToken'];
+        yield 'refresh_token' => ['refresh_token'];
+        yield 'refreshToken' => ['refreshToken'];
+        yield 'client_secret' => ['client_secret'];
+        yield 'clientSecret' => ['clientSecret'];
+        yield 'private_key' => ['private_key'];
+        yield 'privateKey' => ['privateKey'];
+        yield 'Authorization' => ['Authorization'];
         yield 'credit_card' => ['credit_card'];
     }
 

@@ -122,6 +122,41 @@ final class InputSchemaBuilderTest
         Assert::string($caught->getMessage())->contains('named "id"');
     }
 
+    public function dryRunnableOperationGetsAnExtraBooleanArgument(): void
+    {
+        $schema = (new InputSchemaBuilder())->build($this->spec->get('getBlogTags'), dryRunnable: true);
+
+        Assert::same($schema['properties']['dryRun']['type'], 'boolean');
+        Assert::same($schema['required'], []);
+    }
+
+    public function nonDryRunnableOperationHasNoDryRunArgument(): void
+    {
+        $schema = (new InputSchemaBuilder())->build($this->spec->get('getBlogTags'));
+
+        Assert::false(isset($schema['properties']['dryRun']));
+    }
+
+    public function parameterNamedDryRunCollidesWithTheDryRunArgument(): void
+    {
+        $operation = (new SpecIndex([
+            'paths' => ['/x' => ['get' => [
+                'operationId' => 'op',
+                'parameters' => [['name' => 'dryRun', 'in' => 'query']],
+            ]]],
+        ]))->get('op');
+
+        $caught = null;
+
+        try {
+            (new InputSchemaBuilder())->build($operation, dryRunnable: true);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('dry-run argument');
+    }
+
     public function parameterNamedBodyCollidesWithRequestBodyArgument(): void
     {
         $operation = (new SpecIndex([

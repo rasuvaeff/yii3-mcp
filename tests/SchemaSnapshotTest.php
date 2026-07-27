@@ -183,9 +183,10 @@ final class SchemaSnapshotTest
         Assert::string($caught->getMessage())->contains('Cannot write MCP schema snapshot');
     }
 
-    public function throwsWhenSnapshotFileCannotBeWritten(): void
+    public function throwsWhenSnapshotCannotBeMovedIntoPlace(): void
     {
-        // the path is an existing directory: dirname() exists, the write fails
+        // the path is an existing directory: the sibling tmp file writes
+        // fine, the atomic rename onto a directory fails
         $dir = sys_get_temp_dir() . '/yii3-mcp-snapshot-dir-' . bin2hex(random_bytes(8));
         mkdir($dir);
 
@@ -196,6 +197,24 @@ final class SchemaSnapshotTest
         } catch (RuntimeException $caught) {
         } finally {
             rmdir($dir);
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('Cannot move MCP schema snapshot');
+        // the failed write must not leak its temp file next to the target
+        Assert::false(file_exists($dir . '.tmp'));
+    }
+
+    public function throwsWhenSnapshotFileCannotBeWritten(): void
+    {
+        // nonexistent parent directory: even the tmp file cannot be created
+        $path = sys_get_temp_dir() . '/yii3-mcp-snapshot-void-' . bin2hex(random_bytes(8)) . '/schema.json';
+
+        $caught = null;
+
+        try {
+            SchemaSnapshot::assert($this->tester(), $path);
+        } catch (RuntimeException $caught) {
         }
 
         Assert::notNull($caught);

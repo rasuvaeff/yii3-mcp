@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
 /**
- * One OpenAPI operation, reduced to what the MCP bridge needs.
+ * One OpenAPI operation, reduced to what the MCP bridge needs. Read-only
+ * context passed to OperationModifierInterface::modify() — construct it
+ * yourself only in tests.
  *
- * @internal
+ * @api
  */
 final readonly class Operation
 {
@@ -18,6 +20,7 @@ final readonly class Operation
      * @param list<array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool}> $parameters
      * @param array<array-key, mixed>|null $requestBodySchema JSON schema of the application/json request body
      * @param array{type: 'object', properties?: array<string, mixed>, required?: list<string>, additionalProperties?: array<string, mixed>|bool, description?: string}|null $outputSchema canonicalized object schema of the success response, advertised as the MCP tool outputSchema
+     * @param list<string> $tags OpenAPI `tags`, propagated into the served tool's `_meta`
      */
     public function __construct(
         public string $operationId,
@@ -28,5 +31,6 @@ final readonly class Operation
         public ?array $requestBodySchema,
         public bool $requestBodyRequired,
         public ?array $outputSchema = null,
+        public array $tags = [],
     ) {}
 }

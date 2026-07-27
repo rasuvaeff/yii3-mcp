@@ -4,9 +4,11 @@ description: >-
   Expose Yii3 application services as MCP tools/resources over the official
   mcp/sdk — McpServerFactory, McpAction (PSR-15 Streamable HTTP),
   SharedSecretMiddleware, tool-call interceptors (SessionBudgetInterceptor,
-  RateLimitInterceptor, ArgumentMasker), tool visibility, OpenAPI bridge,
-  Testing\McpTester + SchemaSnapshot. Use when writing, reviewing or debugging
-  MCP server code in a project that has this package installed.
+  RateLimitInterceptor, ResponseSizeLimitInterceptor,
+  CachingToolCallInterceptor, ArgumentMasker), tool visibility (name and
+  tag: patterns), OpenAPI bridge (tool_names, OperationModifierInterface,
+  dry_run), Testing\McpTester + SchemaSnapshot. Use when writing, reviewing
+  or debugging MCP server code in a project that has this package installed.
 ---
 
 # rasuvaeff/yii3-mcp
@@ -14,7 +16,7 @@ description: >-
 MCP server integration for Yii3: tool classes are listed in params, resolved
 through the DI container, served over PSR-15 Streamable HTTP or stdio.
 Namespace `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
-sessions) come from `mcp/sdk` (`~0.6.0`, minor = breaking) — never invent them.
+sessions) come from `mcp/sdk` (`~0.7.0`, minor = breaking) — never invent them.
 
 ## Safety rules — verify these on every change
 
@@ -47,6 +49,25 @@ sessions) come from `mcp/sdk` (`~0.6.0`, minor = breaking) — never invent them
 
 6. **Sessions must stay FPM-safe.** The shipped default is `FileSessionStore`;
    the SDK's in-memory store silently loses sessions between FPM workers.
+
+7. **Caching must never bypass RBAC/audit.** The interceptor chain order is
+   fixed: session budget → configured `interceptors` (RBAC, audit, …) →
+   `CachingToolCallInterceptor` → `ResponseSizeLimitInterceptor`. A cache hit
+   still runs every configured interceptor — never reorder caching to wrap
+   around them. The cache key always includes the resolved client id;
+   sharing one key across clients would leak one client's result to another.
+   With `openapi.identity_provider` configured, the resolved
+   `ExecutionIdentity` is part of the key too — delegated upstream
+   credentials mean results can be identity-specific, finer-grained than
+   the client id. An identity provider failure fails closed for cached
+   tools.
+
+8. **Never truncate with `substr()` on a path that reaches the client.**
+   Every truncated string ends up in a JSON-RPC response the SDK encodes
+   with `JSON_THROW_ON_ERROR`; a split multi-byte character makes the encode
+   fail and the Streamable HTTP transport then drops the response silently.
+   Use `Utf8::cut()`; validate foreign bytes (an upstream error body)
+   separately with `preg_match('//u', …)`.
 
 ## Canonical usage
 

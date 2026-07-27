@@ -1,0 +1,36 @@
+<?php
+
+namespace Mcp\Schema;
+
+/**
+ * Corrects the SDK's own docblock: `ToolInputSchema` declares `properties`
+ * as `array<string, mixed>`, yet the SDK itself stores a \stdClass there
+ * (Tool::normalizeSchemaProperties, SchemaGenerator) so an argument-less
+ * tool serializes as {} and not []. The OpenAPI bridge builds Tool directly
+ * and must pass exactly that correct value — this stub makes the accepted
+ * type honest instead of suppressing the mismatch. Verified against the
+ * ~0.7.0 pin; revisit whenever the pin moves.
+ */
+class Tool implements \JsonSerializable
+{
+    /**
+     * @param string $name
+     * @param ?string $title
+     * @param array{type: 'object', properties: array<string, mixed>|\stdClass, required?: list<string>|null} $inputSchema
+     * @param ?string $description
+     * @param ?ToolAnnotations $annotations
+     * @param list<Icon>|null $icons
+     * @param array<string, mixed>|null $meta
+     * @param array{type: 'object', properties?: array<string, mixed>, required?: list<string>|null, additionalProperties?: bool|array<string, mixed>, description?: string}|null $outputSchema
+     */
+    public function __construct(
+        public readonly string $name,
+        public readonly ?string $title,
+        public readonly array $inputSchema,
+        public readonly ?string $description,
+        public readonly ?ToolAnnotations $annotations,
+        public readonly ?array $icons = null,
+        public readonly ?array $meta = null,
+        public readonly ?array $outputSchema = null,
+    ) {}
+}

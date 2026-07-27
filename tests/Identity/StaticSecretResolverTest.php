@@ -67,4 +67,29 @@ final class StaticSecretResolverTest
     {
         new StaticSecretResolver(['claude' => ['ok-secret', '']]);
     }
+
+    public function rejectsASecretSharedByTwoClients(): void
+    {
+        // resolution returns the first match, so a shared secret would
+        // silently attribute one client's calls to the other
+        $caught = null;
+
+        try {
+            new StaticSecretResolver(['claude' => 'topsecret123', 'cursor' => 'topsecret123']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())
+            ->contains('claude')
+            ->contains('cursor');
+        // the secret itself is never reported
+        Assert::false(str_contains($caught->getMessage(), 'topsecret123'));
+    }
+
+    #[ExpectException(InvalidArgumentException::class)]
+    public function rejectsTheSameSecretListedTwiceForOneClient(): void
+    {
+        new StaticSecretResolver(['claude' => ['dup-secret', 'dup-secret']]);
+    }
 }

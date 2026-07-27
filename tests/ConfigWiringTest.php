@@ -7,18 +7,24 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 use Closure;
 use LogicException;
 use Mcp\Server;
-use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
+use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
+use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
@@ -31,12 +37,12 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 #[CoversNothing]
 final class ConfigWiringTest
 {
-    public function sessionStoreDefaultsToFpmSafeFileStore(): void
+    public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void
     {
         /** @var array{definition: Closure} $definition */
         $definition = $this->di()[SessionStoreInterface::class];
 
-        Assert::instanceOf($definition['definition'](), FileSessionStore::class);
+        Assert::instanceOf($definition['definition'](), PrivateFileSessionStore::class);
     }
 
     public function serverDefinitionBuildsFromFactoryAndParamsTools(): void
@@ -80,6 +86,109 @@ final class ConfigWiringTest
         Assert::same($mcp['configurators'], []);
         Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
         Assert::same($params['rasuvaeff/yii3-mcp']['visibility'], ['deny' => [], 'allow' => []]);
+        Assert::same($params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'], 0);
+        Assert::same($params['rasuvaeff/yii3-mcp']['cache']['tools'], []);
+    }
+
+    public function serverDefinitionWiresTheSizeLimitInterceptor(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+        $params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'] = 5;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        // "Hi, Yii!" is well over 5 bytes — the limit interceptor is
+        // actually wired into the chain, not just accepted as config
+        Assert::string($tester->callTool('greet', ['name' => 'Yii'])['content'][0]['text'])->contains('truncated');
+    }
+
+    public function serverDefinitionWiresTheCachingInterceptor(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+        $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $tool = new CountingTool();
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            CacheInterface::class => new FakeCache(),
+        ]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $tester->callTool('count.up', []);
+        $tester->callTool('count.up', []);
+
+        // the second call is served from cache — the tool ran exactly once
+        Assert::same($tool->calls, 1);
+    }
+
+    public function serverDefinitionPartitionsTheToolCacheByExecutionIdentity(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+        $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+        $params['rasuvaeff/yii3-mcp']['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $tool = new CountingTool();
+        $identityProvider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1'));
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            CacheInterface::class => new FakeCache(),
+            MutableExecutionIdentityProvider::class => $identityProvider,
+        ]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $tester->callTool('count.up', []);
+        $identityProvider->identity = new ExecutionIdentity(subjectId: 'user-2');
+        $tester->callTool('count.up', []);
+
+        // the configured identity provider reached the caching interceptor:
+        // a different delegated identity is a different cache entry
+        Assert::same($tool->calls, 2);
+    }
+
+    public function identityProviderIsNotResolvedWithoutTheBridgeOrTheToolCache(): void
+    {
+        // an identity provider is application code (it may read the request
+        // or session), so a server that configures neither the OpenAPI
+        // bridge nor the tool cache must not instantiate it
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        // the container has no entry for the provider: resolving it would throw
+        $container = new SimpleContainer([]);
+        $server = $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+
+        Assert::instanceOf($server, Server::class);
     }
 
     public function serverDefinitionWiresToolVisibility(): void
@@ -181,6 +290,66 @@ final class ConfigWiringTest
         Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
     }
 
+    public function serverDefinitionPreservesObservableChainOrderOnCacheHit(): void
+    {
+        // Regression guard for the documented chain order (budget → user
+        // interceptors → caching → size limit): the three isolated wiring
+        // tests above would all stay green if caching were accidentally
+        // moved outside the budget/user interceptors in config/di.php, since
+        // each only exercises one interceptor at a time. This wires all
+        // three together and asserts the OBSERVABLE contract: a cache hit
+        // must still run user interceptors (RBAC/audit) and still consume
+        // session budget — only the tool call itself (and its size-limiting)
+        // may be skipped.
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 2;
+        $params['rasuvaeff/yii3-mcp']['interceptors'] = [RecordingInterceptor::class];
+        $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $tool = new CountingTool();
+        $recording = new RecordingInterceptor();
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            RecordingInterceptor::class => $recording,
+            CacheInterface::class => new FakeCache(),
+        ]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $first = $tester->callTool('count.up', []);
+        $second = $tester->callTool('count.up', []);
+        // the budget is 2: if it only charged real tool executions (budget
+        // wired INSIDE caching — the wrong order), this third call would
+        // still succeed, since only the first call was a real execution
+        $third = $tester->callTool('count.up', []);
+
+        // the tool itself ran exactly once — the second and third calls
+        // were served from cache
+        Assert::same($tool->calls, 1);
+        Assert::same($first['content'][0]['text'], $second['content'][0]['text']);
+
+        // the configured (RBAC/audit) interceptor ran on both the miss AND
+        // the hit — never on the third, budget-exhausted call, since budget
+        // is outermost and short-circuits before reaching it
+        Assert::same($recording->entries, [
+            'interceptor:before:count.up', 'interceptor:after:count.up',
+            'interceptor:before:count.up', 'interceptor:after:count.up',
+        ]);
+
+        // the session budget consumed on the cache hit too — a budget that
+        // only charged real executions would let a client bypass it
+        // entirely by hammering an already-cached tool
+        Assert::string($third['content'][0]['text'])->contains('budget of 2 is exhausted');
+    }
+
     public function serverDefinitionWiresConfiguredConfigurators(): void
     {
         $params = $this->params();
@@ -208,12 +377,20 @@ final class ConfigWiringTest
         Assert::instanceOf($server, Server::class);
     }
 
-    public function actionDefinitionUsesFqcnKeyAndEmptyAllowedHosts(): void
+    public function actionDefinitionWiresTheSessionStoreForOwnershipEnforcement(): void
     {
-        /** @var array{'__construct()': array{allowedHosts: list<string>}} $definition */
-        $definition = $this->di()[\Rasuvaeff\Yii3Mcp\McpAction::class];
+        /** @var array{definition: Closure} $definition */
+        $definition = $this->di()[McpAction::class];
 
-        Assert::same($definition['__construct()']['allowedHosts'], []);
+        $psr17 = new Psr17Factory();
+        $action = $definition['definition'](
+            (new McpServerFactory(container: new SimpleContainer([]), sessionStore: new InMemorySessionStore()))->create([]),
+            $psr17,
+            $psr17,
+            new InMemorySessionStore(),
+        );
+
+        Assert::instanceOf($action, McpAction::class);
     }
 
     public function middlewareDefinitionCarriesFailClosedDefaults(): void

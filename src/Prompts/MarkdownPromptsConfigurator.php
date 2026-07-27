@@ -29,9 +29,24 @@ use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
  */
 final readonly class MarkdownPromptsConfigurator implements ServerConfiguratorInterface
 {
+    /**
+     * Default cap on a substituted prompt's size — placeholder substitution
+     * multiplies a caller-supplied argument by its occurrence count, so the
+     * output must be bounded before it is built.
+     */
+    public const int DEFAULT_MAX_RESULT_BYTES = 1024 * 1024;
+
+    /**
+     * @param int $maxResultBytes upper bound on a substituted prompt's text (0 = unlimited)
+     */
     public function __construct(
         private string $path,
-    ) {}
+        private int $maxResultBytes = self::DEFAULT_MAX_RESULT_BYTES,
+    ) {
+        if ($maxResultBytes < 0) {
+            throw new \InvalidArgumentException(sprintf('Max result bytes must not be negative, %d given', $maxResultBytes));
+        }
+    }
 
     #[\Override]
     public function configure(Builder $builder): void
@@ -71,6 +86,8 @@ final readonly class MarkdownPromptsConfigurator implements ServerConfiguratorIn
                         static fn($argument): string => $argument->name,
                         $prompt->arguments,
                     ),
+                    promptName: $prompt->name,
+                    maxResultBytes: $this->maxResultBytes,
                 ),
             );
         }

@@ -15,10 +15,22 @@ composer require rasuvaeff/yii3-mcp
   (empty or wrong secret => explanatory JSON 401/503 — fail-closed) or an explicit network ACL.
 - No protocol structures are invented here: capability attributes
   (`#[McpTool]`, `#[McpResource]`) and all JSON-RPC handling come from
-  `mcp/sdk` (`~0.6.0`, experimental — tilde pin, minor = breaking).
+  `mcp/sdk` (`~0.7.0`, experimental — tilde pin, minor = breaking).
 - The core registers no tools; the application lists tool FQCNs in params.
 - Default session store is file-based (FPM-safe): MCP sessions span requests,
-  the SDK in-memory default loses them between FPM workers.
+  the SDK in-memory default loses them between FPM workers. It is owner-only
+  (`Session\PrivateFileSessionStore`: 0700 dir, 0600 files, app-specific
+  default dir derived from server_name).
+- Sessions are BOUND to the client that created them: McpAction stamps the
+  resolved client id as an immutable owner at initialize and answers 404 to
+  a POST/DELETE presenting another client's (or an ownerless) Mcp-Session-Id.
+- Capability names are unique across the whole server, enforced: any
+  collision (attribute tools, configurators, OpenAPI bridge, prompts) fails
+  the build with Exception\DuplicateCapabilityException.
+- Caller-influenced output is bounded BEFORE allocation: upstream bodies
+  (`openapi.max_response_bytes`, incremental read), substituted prompts
+  (`limits.prompt_result_bytes`, arithmetic pre-check), spec documents
+  (10 MiB + $ref depth/node budget), tool results (`limits.tool_result_bytes`).
 
 ## API reference
 
@@ -192,23 +204,33 @@ $configurator = new OpenApiServerConfigurator(
     ),
     operations: ['getBlogTags'],   // allow-list of operationIds; empty = nothing
     safeMethodsOnly: true,         // reject non-GET at build time (read-only bridge)
+    toolNames: ['getBlogTags' => 'blog_tags_list'],   // optional operationId => tool name
+    modifier: $myOperationModifier,   // optional OperationModifierInterface
+    dryRunOperations: ['createSubscriber'],   // optional: adds a `dryRun` boolean argument
 );
 $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 ```
 
-- Tool name = operationId, description = summary/description, inputSchema
+- Tool name = operationId, or its `toolNames`/`tool_names` override — allow-list,
+  handler execution and delegated headers stay keyed by operationId, only the
+  served name changes; interceptors/visibility must reference the RENAMED
+  name. description = summary/description, inputSchema
   from path/query parameters (+ `body` argument for application/json
   requestBody). Local `#/components/...` $refs are resolved inline (chains
   of up to 32 hops); external (URL/file) $refs pass through unresolved.
 - outputSchema is advertised in tools/list when the operation's lowest
   concrete 2xx response has an application/json schema of type "object"
-  ($refs resolved; canonicalized to type/properties/required/
-  additionalProperties/description). Array/scalar responses and `2XX`
-  wildcards are not advertised; JSON object payloads still arrive as
-  structuredContent either way.
+  (OpenAPI 3.1's `type: ["object", "null"]` accepted the same way; $refs
+  resolved; canonicalized to type/properties/required/
+  additionalProperties/description, always to plain "object"). Array/scalar
+  responses and `2XX` wildcards are not advertised; JSON object payloads
+  still arrive as structuredContent either way.
 - Calls are real HTTP requests against the API — its middleware stack
   (validation, rate limiting, auth) applies. Non-2xx =>
-  `OperationFailedException` => MCP tool error envelope.
+  `OperationFailedException` => MCP tool error envelope. The message carries
+  at most 2000 bytes of the upstream body, cut on a character boundary; a body
+  that is not valid UTF-8 is replaced by `<non-UTF-8 response body, N bytes>`
+  (the envelope must stay JSON-encodable).
 - Static `defaultHeaders` are service-token mode: upstream does NOT inherit the
   MCP caller/RBAC identity. Do not expose tenant/user data with a broader token.
   Delegated mode configures both ExecutionIdentityProviderInterface and
@@ -227,9 +249,58 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `InvalidSpecException` when selected. Put fixed upstream headers in
   `HttpOperationExecutor::defaultHeaders`; use a custom tool for richer input.
 - Duplicate operationId values => `InvalidSpecException` while indexing.
+- operationId (or its `toolNames` rename) must match `^[A-Za-z0-9._/-]{1,64}$`
+  to become a tool name => `InvalidSpecException` when selected (mcp/sdk
+  itself only logs a warning and registers the tool anyway on a mismatch).
+- `toolNames` maps operationId => tool name; an operationId in `toolNames`
+  absent from `operations` => `InvalidArgumentException` at build time; two
+  operations resolving to the same final name => `InvalidSpecException`.
+- `OperationModifierInterface::modify(Operation $operation, Tool $tool): Tool`
+  runs once per bridged operation, after the `toolNames` rename — returns a
+  changed Tool (description, annotations, a further name change). A name
+  change is validated and checked for collisions exactly like a `toolNames`
+  rename (same exceptions). `Operation` is a read-only `@api` VO (operationId,
+  method, path, description, parameters, requestBodySchema,
+  requestBodyRequired, outputSchema) — construct it yourself only in tests.
+  Config: `openapi.operation_modifier` (FQCN, DI-resolved).
+- Every GET operation is served with `annotations: {readOnlyHint: true}` —
+  no configuration. OpenAPI `tags` are propagated into the tool's `_meta`
+  (`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`); read by declarative `tag:`
+  visibility patterns (see below).
+- A `null` argument for a path/query parameter is skipped like an omitted
+  one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
+  notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
+  string.
+- A path argument is rejected at call time when it is empty or `.`, or when
+  it CONTAINS `..`, `/` or `\` (route escape out of the allow-list: `%2F` is
+  decoded back into a separator by some upstreams, so `../..` climbs up too;
+  `""` turns an item route into the collection route). Single dots are fine
+  (`v1.2`). The base URL must not
+  embed credentials (userinfo) or carry a query string/fragment — dry-run
+  previews return the full URL to the caller.
 - Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
-  `base_url` / `operations` / `headers` / `cache_ttl` (PSR-16, raw document,
-  0 disables) / `identity_provider` / `delegated_header_provider`.
+  `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers`
+  (operation calls only) / `spec_headers` (spec fetch only, empty default —
+  separate credential scopes so an API token never reaches a foreign spec
+  host; a spec URL with userinfo is rejected) /
+  `cache_ttl` (PSR-16, raw document, 0 disables) / `max_response_bytes`
+  (upstream body cap, incremental read, default 4 MiB) / `opaque_errors`
+  (suppress upstream error bodies) / `identity_provider` /
+  `delegated_header_provider` / `dry_run` (list of operationIds).
+- Dry-run: an operationId in `dry_run` (or `dryRunOperations`) gets an extra
+  `dryRun: boolean` inputSchema argument. Calling with `dryRun: true` returns
+  the planned request (`operationId`, `method`, `url`, `body`) as plain text —
+  never as `structuredContent`, so it never conflicts with the operation's
+  declared `outputSchema` — without sending it and without upstream headers
+  leaving the process. Checked twice, fail-closed: an operationId absent from
+  `dry_run` ignores a `dryRun` argument entirely and always executes for real.
+  On a dry-run-enabled operation a non-boolean `dryRun` value is rejected
+  with an error, never executed for real.
+  Orthogonal to `safeMethodsOnly` — does not expose an operation the safety
+  gate would otherwise reject. An unknown operationId in `dry_run` =>
+  `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
+  call still passes through the full interceptor chain (session budget,
+  RBAC/audit, caching, size limit).
 
 ### Tool-call interceptors
 
@@ -259,21 +330,58 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
 // exhausted => tool error "Session tool-call budget of N is exhausted..."
 
+// Result size limit (context-overflow guard) — a string over the limit is
+// truncated with a marker (byte budget, but never mid-character; the marker
+// is added on top of the budget and reports the bytes actually kept); any
+// other result (array/object) throws instead (truncated JSON is invalid JSON):
+// params: 'limits' => ['tool_result_bytes' => 0]  // 0 = unlimited (default)
+
+// Result caching (PSR-16, opt-in by tool name — for the OpenAPI bridge, the
+// SERVED name after any tool_names rename):
+// params: 'cache' => ['tools' => ['blog_tags_list' => 60]]  // toolName => TTL seconds
+//         'cache' => ['namespace' => '']  // '' => server_name; isolates apps sharing one backend
+// Typed key: mandatory namespace + resolved client id (null = typed absence,
+// never the string 'anonymous'; never shared across clients);
+// with openapi.identity_provider configured, the resolved ExecutionIdentity
+// is part of the key too (delegated credentials => identity-specific
+// results, possibly finer-grained than the client id).
+// Only successful results are cached; a thrown exception never is. A cache
+// read/write failure fails OPEN (the tool runs) — availability, not a
+// security gate. An identity provider failure fails CLOSED for cached
+// tools (serving a result without knowing whose it is = the leak the key
+// prevents).
+// Chain order: session budget → configured interceptors → caching → size
+// limit (innermost). Configured interceptors (RBAC, audit) run on EVERY
+// call, including a cache hit — no ACL bypass through the cache. The size
+// limit only runs on a cache miss; the already-limited value is what gets
+// cached.
+
 // Per-client/per-tool limits — delegate to YOUR rate limiter (package ships
 // no limiter storage):
 use Rasuvaeff\Yii3Mcp\Interceptor\RateLimitInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
-// implement ToolCallLimiterInterface::allow(string $clientId, string $toolName): bool
+// implement ToolCallLimiterInterface::allow(?string $clientId, string $toolName): bool
 // over yiisoft/rate-limiter / Redis; bind it in DI; add RateLimitInterceptor
-// to 'interceptors'. Keys: resolved client id (fallback 'anonymous') + tool.
+// to 'interceptors'. Keys: resolved client id + tool; a transport without
+// identity (stdio) passes null — typed absence, never a reserved string.
 // false => ToolCallException "Rate limit exceeded"; limiter throws =>
 // fail-closed ToolCallException (enforced quota never silently unlimited).
+
+// Retrying transient failures — package ships no retry logic (a blanket
+// retry duplicates side effects on a non-idempotent tool). Recipe: wrap
+// rasuvaeff/retry's Retry::new()->run($next) in your own
+// ToolCallInterceptorInterface, scoped to an explicit allow-list of
+// verified-idempotent tool names and to transient exception types only
+// (retryOn()). Place it near the end of 'interceptors' (closer to the
+// tool) so earlier interceptors (e.g. RateLimitInterceptor) wrap the whole
+// retry loop instead of re-triggering per attempt.
 
 // Masking sensitive arguments before logging/tracing/auditing:
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
 $masker = new ArgumentMasker();               // or new ArgumentMasker(['ssn', ...])
 $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
-// defaults: password, secret, token, api_key, credit_card;
+// defaults: password, secret, token, api_key, apikey, api-key, x-api-key,
+// credit_card;
 // case-insensitive exact key match, applied at EVERY nesting level;
 // a sensitive key's whole value (array included) becomes '***'.
 ```
@@ -285,6 +393,11 @@ $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
 // params: 'visibility' => ['deny' => ['admin.*'], 'allow' => []]
 // deny hides matches; non-empty allow hides everything it does not match;
 // deny wins over allow; both empty (default) = all visible.
+// A 'tag:' prefix matches tags from the tool's _meta instead of its name
+// (e.g. 'tag:admin' — set by the OpenAPI bridge from OpenAPI `tags`); a tool
+// with no tags never matches a 'tag:' pattern. Tags come from the OpenAPI
+// document, so over a URL spec a 'tag:' DENY rule can be disarmed upstream by
+// dropping the tag — deny by name there, keep 'tag:' for allow-lists.
 // Manual: new Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility(deny: [...], allow: [...])
 
 // Per-session (admin vs public client, tenant plans) — implement the interface:
@@ -344,20 +457,33 @@ CallOutcome::fromThrowable($e);   // ToolCallException/PromptGetException/Resour
 ### DI (config-plugin)
 
 Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
-(FileSessionStore, dir from `session.dir` param or sys temp), `Server` (via
-factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`.
+(`Session\PrivateFileSessionStore` — 0700 dir/0600 files, dir from
+`session.dir` param or an app-specific sys-temp default), `Server` (via
+factory + `tools` param), `McpServerFactory`, `SharedSecretMiddleware`,
+`McpAction` (with the session store, for session-ownership enforcement).
 Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 `endpoint_secret`, `client_secrets` (client id => secret|list of active
-secrets; mutually exclusive with endpoint_secret), `secret_header`,
-`session.dir`, `session.ttl`,
-`session.budget`, `interceptors`, `prompt_interceptors`,
+secrets; mutually exclusive with endpoint_secret; a secret shared by two
+client ids is rejected), `secret_header`,
+`allowed_hosts`, `session.dir`, `session.ttl`,
+`session.budget`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
+`cache.tools`, `cache.namespace`, `interceptors`,
+`prompt_interceptors`,
 `resource_interceptors`, `configurators`, `tool_visibility`,
 `prompt_visibility`, `resource_visibility`,
 `visibility.deny`, `visibility.allow`, `prompts_path`,
-`openapi.spec_path`, `openapi.base_url`, `openapi.operations`, `openapi.headers`,
+`openapi.spec_path`, `openapi.base_url`, `openapi.operations`,
+`openapi.tool_names`, `openapi.operation_modifier`, `openapi.headers`,
+`openapi.spec_headers`, `openapi.max_response_bytes`, `openapi.opaque_errors`,
 `openapi.cache_ttl`, `openapi.identity_provider`,
-`openapi.delegated_header_provider`, `expected_http_host`.
+`openapi.delegated_header_provider`, `openapi.safe_methods_only`,
+`expected_http_host`.
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,
 applied after the core's prompts/openapi configurators — generic extension
-point (companion packages, app-specific server setup).
+point (companion packages, app-specific server setup). A configurator may
+also implement `ReservedToolNamesAwareInterface`: `McpServerFactory` then
+calls `withReservedToolNames()` with the names of the `#[McpTool]` methods
+before `configure()`, so it can reject a colliding name instead of losing
+its own tool (the SDK registry is last-write-wins and registers attribute
+tools last).

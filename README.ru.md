@@ -28,7 +28,7 @@ Yii3 DI-контейнер.
 | Требование | Версия |
 |------------|--------|
 | PHP | 8.3 - 8.5 |
-| `mcp/sdk` | `~0.6.0` (экспериментален до 1.0, поэтому используется tilde pin) |
+| `mcp/sdk` | `~0.7.0` (экспериментален до 1.0, поэтому используется tilde pin) |
 | MCP protocol | 2025-06-18 (через SDK) |
 | `ext-fileinfo` | требуется SDK |
 
@@ -188,6 +188,11 @@ Markdown prompts.
 `--json` печатает полные definitions capabilities, включая input/output
 schemas, в нормализованном формате `SchemaSnapshot`. Порядок элементов и
 ключей стабилен, поэтому вывод хорошо подходит для CI diff и automation.
+
+Листинг — это **default (unauthenticated) view**: команда работает через
+синтетическую session без client identity и сообщает об этом в выводе. С
+per-session visibility или RBAC реальный клиент может видеть другой набор
+capabilities.
 Как и `McpTester`, команде требуются PSR-17 factories. Эти services должны быть
 во всех config groups, где строится `Mcp\Server`, включая console:
 
@@ -204,8 +209,10 @@ schemas, в нормализованном формате `SchemaSnapshot`. По
 ### Диагностика: mcp:doctor
 
 `mcp:doctor` проверяет конфигурацию MCP-сервера end-to-end и выводит каждую
-проверку как pass/skip/fail — секрет и значения настроенных headers никогда
-не попадают в вывод:
+проверку как pass/skip/fail — настроенный секрет и значения headers никогда
+не попадают в вывод, а из печатаемых URL вырезаются userinfo credentials
+(сообщения исключений application services проходят с усечением — считайте
+отчёт диагностикой для оператора):
 
 ```bash
 ./yii mcp:doctor           # человекочитаемая таблица
@@ -214,8 +221,10 @@ schemas, в нормализованном формате `SchemaSnapshot`. По
 ```
 
 Проверки охватывают endpoint secret, optional `expected_http_host` allow-list,
-точные PSR services для включённых entry points/features, session storage,
-OpenAPI spec и реальный server build. Отсутствующий service выводится с точным
+точные PSR services для включённых entry points/features, session storage
+(включая **конфиденциальность**: session directory, читаемая group/others,
+проваливает проверку — не только незаписываемая), OpenAPI spec и реальный
+server build. Отсутствующий service выводится с точным
 именем interface. Exit codes стабильны для скриптов: `0` — здоров,
 `2` — config error, `3` — storage error, `4` — upstream error; берётся
 категория **первой** упавшей проверки (проверки идут от корневых причин, так
@@ -229,8 +238,12 @@ OpenAPI spec и реальный server build. Отсутствующий servic
 MCP Streamable HTTP session охватывает несколько HTTP-запросов: сначала
 `initialize`, затем `tools/call` с полученным `Mcp-Session-Id`. Стандартный
 in-memory store SDK теряет session между FPM workers, поэтому пакет по
-умолчанию использует **file-based store** (`sys_get_temp_dir()`, путь можно
-переопределить параметром `session.dir`). В multi-host setup перебиндите
+умолчанию использует **file-based store** — поставляемый
+`Session\PrivateFileSessionStore` делает его owner-only: directory создаётся
+с mode `0700` (application-specific default под `sys_get_temp_dir()`,
+выводится из `server_name`; переопределяется `session.dir`), а каждый
+session file зажимается до `0600` — session JSON содержит client metadata и
+всё нужное для replay session id. В multi-host setup перебиндите
 interface:
 
 ```php
@@ -243,6 +256,18 @@ return [
         new Psr16SessionStore($cache),
 ];
 ```
+
+#### Session привязана к создавшему её клиенту
+
+SDK сам проверяет лишь существование предъявленного `Mcp-Session-Id` — иначе
+любой аутентифицированный клиент мог бы действовать внутри чужой session
+(или удалить её `DELETE`-ом), просто повторив её id, который утекает в
+логи proxy/клиентов через HTTP header. Когда настроены `client_secrets`
+(или `endpoint_secret`), `McpAction` записывает resolved client id в session
+как **неизменяемого владельца при `initialize`** и проверяет его на каждом
+`POST`/`DELETE` до запуска transport. Чужая — или бесхозная — session
+получает тот же 404, что и отсутствующая: неотличимо от истёкшей.
+Развёртывания без client identity (только network ACL) не затронуты.
 
 ### Prompts из Markdown-файлов
 
@@ -278,10 +303,58 @@ frontmatter, недоступный файл или duplicate prompt name зав
 сервера `Prompts\Exception\InvalidPromptFileException`, а не тихо скрывают
 prompt.
 
+Подстановка усиливает входные данные caller-а — значение аргумента
+вставляется в КАЖДОЕ вхождение placeholder — поэтому развёрнутый prompt
+ограничен параметром `limits.prompt_result_bytes` (по умолчанию 1 MiB,
+`0` = без лимита). Размер считается арифметически и проверяется **до**
+построения подставленной строки: превысивший бюджет `prompts/get` падает,
+не выполняя аллокацию, которую отклоняет.
+
 > Формат намеренно совместим с
 > [vjik/my-prompts-mcp](https://github.com/vjik/my-prompts-mcp) Сергея
 > Предводителева и вдохновлён им: один prompt file работает и в личном stdio
 > prompt manager, и на application server.
+
+## Framework-agnostic usage
+
+Несмотря на название пакета, код не имеет ни одной `yiisoft/*` runtime
+dependency - `require` в `composer.json` это PSR-интерфейсы
+(`psr/container`, `psr/http-message`, `psr/http-server-middleware`,
+`psr/http-factory`, `psr/simple-cache`, `psr/log`) плюс `mcp/sdk` и
+`symfony/console`/`yaml`. `McpServerFactory` принимает обычный
+`Psr\Container\ContainerInterface`; `McpAction` и `SharedSecretMiddleware` -
+plain PSR-15. `config/di.php` + `config/params.php` - это только
+convenience-слой `yiisoft/config-plugin`; вне Yii3 те же классы собираются
+руками с любым PSR-11 container и router, которые уже использует приложение
+(Laravel, Symfony, Mezzio, Slim, …):
+
+```php
+use Mcp\Server\Session\FileSessionStore;
+use Rasuvaeff\Yii3Mcp\{McpAction, McpServerFactory, SharedSecretMiddleware};
+
+// любой PSR-11 container - Yii3, PHP-DI, Laravel, рукописный
+$container = /* ... */;
+
+$sessionStore = new FileSessionStore(directory: sys_get_temp_dir() . '/mcp-sessions', ttl: 3600);
+$factory = new McpServerFactory(container: $container, sessionStore: $sessionStore, name: 'my-app', version: '1.0.0');
+$server = $factory->create([OrderTools::class]);
+
+$psr17 = /* любая PSR-17 factory, например nyholm/psr7 или guzzlehttp/psr7 */;
+$action = new McpAction(server: $server, responseFactory: $psr17, streamFactory: $psr17);
+$middleware = new SharedSecretMiddleware(secret: getenv('MCP_SECRET'), responseFactory: $psr17);
+
+// маршрутизировать POST/GET/DELETE/OPTIONS /mcp через $middleware -> $action
+// в том виде middleware-диспетчеризации, который ожидает router фреймворка
+```
+
+`McpServeCommand` (stdio) наследует
+`Symfony\Component\Console\Command\Command` напрямую и не требует Yii3
+console app - добавьте его в любой `Symfony\Component\Console\Application`.
+Что теряется без `yiisoft/config`: автоматический array-merge между
+пакетами (interceptors, visibility, OpenAPI bridge) - конструируйте
+`Interceptor\*`/`Visibility\*`/`OpenApi\OpenApiServerConfigurator` напрямую и
+передавайте их в `McpServerFactory::create()` - те же объекты, которые
+`config/di.php` строит из params, просто без сборки через config-plugin.
 
 ## Interceptors: обёртка каждого tools/call
 
@@ -325,8 +398,12 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 
 Всё, что interceptor отправляет за пределы процесса - log line, trace span,
 audit record - не должно содержать secrets. `Interceptor\ArgumentMasker`
-заменяет значения чувствительных ключей (`password`, `secret`, `token`,
-`api_key`, `credit_card` по умолчанию, без учёта регистра и на **каждом** уровне
+заменяет значения чувствительных ключей (`password`/`pass`/`pwd`, `secret`,
+`token`/`bearer`/`jwt`, `auth`/`authorization`, `cookie`, `api_key`/`apikey`/
+`api-key`/`x-api-key`, `access_token`/`refresh_token`/`id_token`/
+`session_token`/`auth_token` (и написание через дефис `access-token`),
+`client_secret`, `private_key`, `credit_card` по умолчанию, без учёта
+регистра - `ApiKey`/`X-Api-Key` тоже матчатся - и на **каждом** уровне
 вложенности) на `***`.
 
 ```php
@@ -359,6 +436,79 @@ TTL. Зациклившийся агент исчерпает budget и полу
 уровня приложения. Budget guard всегда внешний interceptor и отклоняет вызов
 до работы остальных interceptors.
 
+### Лимит размера результата и кеш
+
+У tool result нет естественного верхнего предела - bridged GET к реальному
+API или hand-written tool над большой таблицей может вернуть мегабайты JSON
+и выжечь context window агента. `limits.tool_result_bytes` обрезает
+превышающий лимит string result явным маркером; любой другой result
+(array, object) вместо этого отклоняется - обрезанный JSON payload это
+невалидный JSON, а не меньший валидный:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'limits' => ['tool_result_bytes' => 0],   // 0 = unlimited (default)
+],
+```
+
+Лимит - байтовый бюджет содержимого: многобайтовый символ, не влезающий
+целиком, отбрасывается, а не разрезается (разорванная UTF-8 последовательность
+делает JSON-RPC ответ незакодируемым, а Streamable HTTP transport такой ответ
+молча выбрасывает), сам маркер добавляется сверх бюджета. Маркер сообщает
+реально сохранённое число байт.
+Для string result бюджет считает байты **сырой** строки, до JSON encoding
+(control characters расширяются на wire, до ~6x); для arrays/objects —
+JSON-encoded байты. Он ограничивает то, что попадает в context window
+агента; память worker-а при ПРОИЗВОДСТВЕ результата ограничивается отдельно
+через `openapi.max_response_bytes`.
+
+Для read-heavy tools, вызываемых повторно с теми же аргументами внутри
+session (справочник, OpenAPI GET), `cache.tools` полностью пропускает
+handler на hit - opt-in по имени tool (для OpenAPI bridge - **served**
+имя, после возможного `tool_names` rename) с TTL в секундах:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache' => [
+        'tools' => ['blog_tags_list' => 60],
+    ],
+],
+```
+
+Требует PSR-16 `CacheInterface` в контейнере. Cache key всегда включает
+resolved client id - общий cache между разными клиентами утёк бы результат
+одного клиента другому. Key material типизирован: отсутствующий client id
+(stdio) кодируется как `null` и никогда не коллизирует с реальным клиентом,
+названным `anonymous`. Key также несёт обязательный **namespace** (параметр
+`cache.namespace`, по умолчанию `server_name`): два приложения на общем
+cache backend — типичный общий Redis — с одинаково названными tools не
+должны читать результаты друг друга, а внешний PSR-16 prefix — это defence
+in depth, но не основная изоляция. Если настроен `openapi.identity_provider`, resolved
+`ExecutionIdentity` тоже входит в key: delegated upstream credentials
+означают, что тот же tool с теми же аргументами может давать
+identity-specific результаты, а identity может быть мельче, чем client id
+(много конечных пользователей за одним MCP client). Кешируются только
+успешные results; брошенное exception никогда не кешируется. Ошибка
+чтения/записи cache fails **open** (tool исполняется) - это оптимизация
+availability, а не security gate. Ошибка identity **provider**, напротив,
+fails **closed** для кешируемых tools: отдать результат, не зная чей он, -
+ровно та утечка, ради предотвращения которой key и существует.
+
+Ключ идентифицирует **MCP-клиента**, а не прикладного пользователя за ним.
+Tool, результат которого зависит от того, кто залогинен (текущий пользователь
+берётся из приложения, а не из MCP-identity), кешировать нельзя, пока
+`openapi.identity_provider` не резолвит этого пользователя - «идемпотентное
+чтение» не то же самое, что «одинаковый ответ для всех». Bridged operations
+закрыты identity provider'ом; hand-written tools - на вашей ответственности.
+
+Порядок interceptors фиксирован: session budget (самый внешний) →
+настроенные `interceptors` → caching → result size limit (самый внутренний,
+ближе всего к реальному вызову tool). Настроенные interceptors (RBAC,
+audit) выполняются всегда, даже на cache hit - через cache нельзя обойти
+их проверку. Size limit выполняется только на cache miss; в cache попадает
+уже ограниченное значение, так что hit никогда не требует повторного
+ограничения.
+
 ### Client identity и ротация секретов
 
 Один endpoint может обслуживать несколько MCP-клиентов, каждый со своим
@@ -379,10 +529,13 @@ TTL. Зациклившийся агент исчерпает budget и полу
 `Identity\SecretResolverInterface` (каждое сравнение — `hash_equals()`,
 constant-time) и передаёт дальше по pipeline **client id** — никогда не сам
 секрет: interceptors видят его как `ToolCallContext::$clientId`, и он
-зеркалируется в session для audit/telemetry-бриджей. Одиночный
+записывается в session как её неизменяемый владелец — для audit/telemetry
+бриджей и проверки владения session. Одиночный
 `endpoint_secret` продолжает работать без изменений как клиент `default`;
-обе формы сразу — fail-fast ошибка. На stdio (`mcp:serve`) HTTP-запроса нет,
-поэтому `$clientId` равен `null`.
+обе формы сразу — fail-fast ошибка, как и секрет, общий для двух разных
+client id: резолюция возвращает первое совпадение, и дубликат молча
+приписал бы вызовы одного клиента другому. На stdio (`mcp:serve`)
+HTTP-запроса нет, поэтому `$clientId` равен `null`.
 
 ### Per-client rate limits (свой limiter)
 
@@ -396,9 +549,9 @@ final readonly class AppToolCallLimiter implements ToolCallLimiterInterface
 {
     public function __construct(private CounterInterface $counter) {}
 
-    public function allow(string $clientId, string $toolName): bool
+    public function allow(?string $clientId, string $toolName): bool
     {
-        return $this->counter->hit($clientId . ':' . $toolName)->isAllowed();
+        return $this->counter->hit(($clientId ?? 'no-client') . ':' . $toolName)->isAllowed();
     }
 }
 
@@ -409,11 +562,54 @@ final readonly class AppToolCallLimiter implements ToolCallLimiterInterface
 // di: bind ToolCallLimiterInterface => AppToolCallLimiter
 ```
 
-Interceptor ключует вызовы по client id (fallback `anonymous` для
-транспортов без identity) плюс имя tool'а — per-client и per-tool лимиты
-задаются конфигурацией вашего limiter'а. **Fail-closed**: если limiter-бэкенд
+Interceptor ключует вызовы по client id плюс имя tool'а — per-client и
+per-tool лимиты задаются конфигурацией вашего limiter'а. Транспорт без
+identity (stdio) передаёт `null` — типизированное отсутствие, а не
+зарезервированная строка, с которой мог бы коллизировать реальный client
+id; как бакетировать анонимные вызовы, решает limiter. **Fail-closed**:
+если limiter-бэкенд
 бросает исключение, вызов отклоняется — enforced quota не должна молча
 превращаться в «безлимит» при аварии.
+
+### Retry транзиентных ошибок (свой retry)
+
+Пакет не несёт retry-логики - наивный blanket retry дублирует side effects
+у не-idempotent tool (двойное списание платежа, повторная отправка формы).
+Ограничьте retry явным allow-list проверенно-idempotent tools и только
+transient failure типами, используя
+[`rasuvaeff/retry`](https://github.com/rasuvaeff/retry):
+
+```php
+use Rasuvaeff\Retry\Retry;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+
+final readonly class RetryInterceptor implements ToolCallInterceptorInterface
+{
+    /** @param list<string> $idempotentTools проверенно idempotent - никогда не blanket-retry */
+    public function __construct(private array $idempotentTools) {}
+
+    public function intercept(ToolCallContext $context, callable $next): mixed
+    {
+        if (!in_array($context->toolName, $this->idempotentTools, true)) {
+            return $next();
+        }
+
+        return Retry::new()
+            ->maxAttempts(3)
+            ->withExponential(baseMs: 100, multiplier: 2.0, capMs: 2_000)
+            ->retryOn(OperationFailedException::class)   // только transient failures
+            ->run($next);
+    }
+}
+```
+
+Разместите его ближе к концу вашего списка `interceptors` (ближе к вызову
+tool) - любой interceptor, стоящий перед ним (например `RateLimitInterceptor`),
+оборачивает весь retry-loop целиком и проверяется один раз на внешний вызов,
+а не на каждую попытку; если поставить его после - он будет срабатывать на
+каждый retry.
 
 ### Видимость tools
 
@@ -430,6 +626,20 @@ declarative tool-name patterns в params; `*` соответствует люб�
     ],
 ],
 ```
+
+Префикс `tag:` matches по тегам tool вместо имени - OpenAPI bridge
+прокидывает OpenAPI `tags` в `_meta` tool, так что `'deny' => ['tag:admin']`
+скрывает каждую bridged operation с тегом `admin` независимо от её
+`operationId`/`tool_names` имени. Tool без тегов никогда не матчится
+`tag:`-паттерном.
+
+Важно, откуда берётся тег: из OpenAPI-документа. При URL-спеке
+(`openapi.spec_path` на http(s)) документ, из которого пропал тег `admin`,
+обезоруживает правило `deny: ['tag:admin']` - экспозиция по-прежнему
+ограничена вашим allow-list'ом `operations`, но само правило deny надёжно
+ровно настолько, насколько надёжен источник спеки. Для deny-правил поверх
+удалённой спеки предпочитайте паттерны по имени, а `tag:` оставляйте для
+allow-list'а и локальных файлов спеки.
 
 `deny` имеет приоритет над `allow`; пустые списки, значение по умолчанию,
 делают видимым каждый tool. Когда решение зависит от **session** (admin/public
@@ -568,10 +778,11 @@ Per-tenant tool sets уже поддерживаются `tool_visibility`: пр
 
 ## OpenAPI bridge: публикация существующего REST API
 
-Если приложение уже поддерживает OpenAPI document, allow-listed operations
-можно без дублирования опубликовать как MCP tools. Имя берётся из
-`operationId`, description - из `summary`/`description`, input schemas - из
-parameters/request body, output schemas - из success response (см. ниже).
+Если приложение уже поддерживает OpenAPI document версии 3.0.x или 3.1.x,
+allow-listed operations можно без дублирования опубликовать как MCP tools.
+Имя берётся из `operationId` (или из `tool_names`, см. ниже), description -
+из `summary`/`description`, input schemas - из parameters/request body,
+output schemas - из success response (см. ниже).
 Вызовы исполняются как настоящие HTTP requests к API
 и проходят весь middleware stack (validation, rate limiting, auth), в отличие
 от hand-written tools, вызывающих handlers напрямую.
@@ -581,16 +792,48 @@ parameters/request body, output schemas - из success response (см. ниже)
 'rasuvaeff/yii3-mcp' => [
     'openapi' => [
         // file path OR http(s) URL - e.g. the app's own spec endpoint,
-        // always current; fetched with the same `headers` (auth included)
+        // always current; загружается со `spec_headers`, НЕ с `headers`
         'spec_path' => 'https://api.example.com/rest/json-url',
         'base_url' => 'https://api.example.com',
         'operations' => ['getBlogTags', 'getPage'],   // allow-list, empty = nothing
+        // переименовать некрасивый сгенерированный operationId в
+        // LLM-дружелюбное имя tool; немаппленные operations сохраняют operationId
+        'tool_names' => ['getBlogTags' => 'blog_tags_list'],
+        // credentials для operation calls, уходят только на base_url
         'headers' => ['Authorization' => 'Bearer ' . getenv('MCP_API_TOKEN')],
+        // credentials для загрузки спеки, уходят только на spec_path (по умолчанию пусто)
+        'spec_headers' => [],
         'cache_ttl' => 60,             // PSR-16 cache URL-спеки; 0 = загружать при каждом build
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
+        'max_response_bytes' => 4_194_304, // потолок upstream body, читается инкрементально
+        'opaque_errors' => false,      // true = скрывать upstream error bodies
     ],
 ],
 ```
+
+Скоупы credentials разделены намеренно: `headers` аутентифицирует operation
+calls к `base_url`, `spec_headers` — загрузку спеки с `spec_path`. Когда они
+указывают на разные origins, общий набор headers отдал бы API token хосту
+спеки. Spec URL со встроенными credentials (userinfo) отклоняется сразу:
+такой URL попадает в диагностику и сообщения исключений.
+
+`tool_names` переименовывает только то, что MCP-клиенты видят как имя tool -
+allow-list, исполнение handler'а и delegated-header вызовы остаются
+индексированы по `operationId`. Interceptors, visibility rules и любой
+audit/RBAC bridge должны ссылаться на **переименованное** имя. `operationId`
+в `tool_names`, отсутствующий в `operations`, бросает `InvalidArgumentException`
+при build time (вероятная опечатка); переименование, невалидное как имя MCP
+tool или коллидирующее с именем другого tool, бросает `InvalidSpecException`.
+Проверка коллизий охватывает и attribute tools: имена методов `#[McpTool]`,
+зарегистрированных на том же сервере, зарезервированы, поэтому переименование
+bridged operation в одно из них - ошибка при build time, а не bridged tool,
+который молча не доезжает до `tools/list` (registry SDK работает по принципу
+last-write-wins и регистрирует attribute tools последними).
+
+Каждая `GET` operation рекламируется с `readOnlyHint: true` - конфигурация не
+нужна. OpenAPI `tags` operation прокидываются в `_meta` served tool
+(`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`), которую declarative `tag:`
+visibility pattern (см. [Видимость tools](#видимость-tools)) читает напрямую.
 
 DI wiring требует PSR-18/PSR-17 services (`ClientInterface`,
 `RequestFactoryInterface`, `StreamFactoryInterface`) и PSR-16 `CacheInterface`
@@ -608,7 +851,19 @@ parameters намеренно ограничены scalar schemas `string`, `int
 и `boolean` со стандартной OpenAPI serialization (`simple` для path, `form`
 для query). Header/cookie parameters, external или non-scalar parameter
 schemas, custom serialization, non-default `explode` и `allowReserved=true`
-приводят к `InvalidSpecException` при выборе operation. Фиксированные upstream
+приводят к `InvalidSpecException` при выборе operation. Path argument
+отклоняется при вызове, если он пустой или `.`, либо содержит `..`, `/` или
+`\` - `rawurlencode` оставляет точки как есть, а `/` кодирует в `%2F`,
+который upstream, декодирующий до нормализации пути (Apache с
+`AllowEncodedSlashes`, часть прокси и servlet-контейнеров), возвращает
+настоящим разделителем; значение вида `../..` позволило бы выйти за пределы
+allow-listed route - с credentials бриджа; пустое значение - тот же escape на
+уровень выше (`/users/` - обычно collection route, а не allow-listed item
+route). Одиночные точки допустимы (`v1.2` - валидный slug); значение, которому
+нужен слеш или `..` внутри, через path argument не пробросить. Base URL не должен содержать credentials (userinfo),
+query string или fragment - dry-run preview возвращает полный URL
+вызывающему, поэтому base URL никогда не может быть носителем credentials.
+Фиксированные upstream
 headers задаются через `headers`/`HttpOperationExecutor::defaultHeaders`.
 **Bridged operations исполняются с настроенными upstream credentials. Upstream
 API автоматически не наследует identity MCP caller или RBAC decision. Не
@@ -626,13 +881,36 @@ id/method/path и identity, но никогда raw MCP shared secret. Не пр
 одновременно с request body, не может быть bridged и бросает
 `InvalidSpecException` при build time.
 
+Лимиты ресурсов применяются **до** аллокации, а не после: upstream response
+body читается инкрементально, и вызов падает в момент пересечения
+`max_response_bytes` (заявленный `Content-Length` сверх лимита отклоняется
+вообще без чтения); JSON decoding ограничен по глубине; сам OpenAPI document
+ограничен по размеру (10 MiB) для URL и file источников, а inlining `$ref`
+работает под явным бюджетом глубины + числа узлов — враждебная или
+дегенеративная удалённая спека не заставит индексирование рекурсировать или
+аллоцировать без предела. Upstream error bodies попадают в tool error
+ограниченным UTF-8-безопасным фрагментом — либо полностью скрываются через
+`opaque_errors`, когда детали ошибок upstream не предназначены MCP caller-у.
+
+`operationId`, не пригодный как имя MCP tool (пробел, unicode, длиннее
+64 символов — `^[A-Za-z0-9._/-]{1,64}$`), бросает `InvalidSpecException` при
+выборе operation; сам `mcp/sdk` в этом случае только пишет warning в лог и
+всё равно регистрирует tool — проблема проявится только как непрозрачный
+отказ всего `tools/list` на стороне клиента. `null`-аргумент path/query
+parameter трактуется как отсутствующий (пропускается, а не отправляется
+пустым значением) — это соответствует nullable union нотации OpenAPI 3.1
+(`{"type": ["string", "null"]}`) для scalar parameter schemas, которую bridge
+принимает наравне с обычной 3.0 type-строкой.
+
 ### Output schema из responses
 
 Bridged tool также рекламирует `outputSchema` в `tools/list`, если operation
 объявляет подходящий success response: **наименьший конкретный 2xx** с
-`application/json` schema типа `object` (локальные `$ref` разрешаются,
-top-level keywords канонизируются до `type`/`properties`/`required`/
-`additionalProperties`/`description`). Агент видит форму ответа до вызова,
+`application/json` schema типа `object` - nullable union нотация OpenAPI 3.1
+(`type: ["object", "null"]`) принимается так же (локальные `$ref`
+разрешаются, top-level keywords канонизируются до `type`/`properties`/
+`required`/`additionalProperties`/`description`, всегда до простого типа
+`"object"`). Агент видит форму ответа до вызова,
 а MCP-клиенты валидируют возвращённый `structuredContent` по этой схеме.
 Array/scalar responses и wildcard `2XX` не рекламируются - JSON object
 payload всё равно приходит как `structuredContent`, просто без контракта.
@@ -643,12 +921,85 @@ payload всё равно приходит как `structuredContent`, прос�
 `HttpOperationExecutor` + `OpenApiServerConfigurator` (`ServerConfiguratorInterface`,
 generic extension point для `McpServerFactory::create(tools, configurators)`).
 
+### Кастомизация на уровне operation
+
+`OperationModifierInterface` - hook на уровне отдельной operation,
+применяется после `tool_names` rename - для изменения description,
+добавления annotations или дальнейшего переименования без написания
+целого `ServerConfiguratorInterface`:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'openapi' => [
+        'operation_modifier' => MyOperationModifier::class,   // DI-resolved
+    ],
+],
+```
+
+```php
+use Mcp\Schema\Tool;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
+
+final readonly class MyOperationModifier implements OperationModifierInterface
+{
+    public function modify(Operation $operation, Tool $tool): Tool
+    {
+        return new Tool(
+            name: $tool->name,
+            title: $tool->title,
+            inputSchema: $tool->inputSchema,
+            description: $tool->description . ' (read-only bridge)',
+            annotations: $tool->annotations,
+            outputSchema: $tool->outputSchema,
+        );
+    }
+}
+```
+
+Смена имени из modifier валидируется и проверяется на коллизии так же, как
+`tool_names` rename - fail-closed, как и везде в bridge.
+
+### Dry-run: preview call без выполнения
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'openapi' => [
+        // operationId, для которых добавляется extra `dryRun` boolean argument
+        'dry_run' => ['createSubscriber'],
+    ],
+],
+```
+
+У dry-run-enabled operation `inputSchema` получает extra argument
+`dryRun: boolean`. Call tool с `dryRun: true` возвращает request, который
+*был бы* отправлен (`operationId`, `method`, `url`, `body`) как text - никогда
+как `structuredContent`, поэтому никогда не конфликтует с объявленным
+`outputSchema` operation - без реальной отправки и без утечки upstream
+credentials из процесса (headers никогда не попадают в preview). Флаг
+проверяется дважды, fail-closed: operationId, отсутствующий в `dry_run`,
+полностью игнорирует argument `dryRun` и всегда выполняется по-настоящему,
+даже если client всё равно его прислал. На dry-run-enabled operation
+non-boolean значение `dryRun` (`1`, `"true"`) отклоняется с ошибкой, а не
+выполняется - malformed флаг никогда не должен превратить задуманный
+preview в реальный call.
+
+Dry-run ортогонален `safe_methods_only`: он не экспонирует operation, которую
+safety gate иначе бы отверг - write operation всё так же требует
+`safe_methods_only: false` (или отсутствия параметра), чтобы вообще быть
+exposed. Dry-run call всё так же проходит через весь interceptor chain
+(session budget, RBAC/audit, caching, size limit), как и любой другой call -
+preview write action требует того же permission, что и реальный call.
+
 ## Компоненты
 
 | Class | Роль |
 |---|---|
 | `McpServerFactory` | список tool FQCN -> настроенный SDK `Server`; читает attributes, подключает DI container и session store |
-| `McpAction` | PSR-15 handler, запускающий SDK `StreamableHttpTransport` для текущего request |
+| `McpAction` | PSR-15 handler, запускающий SDK `StreamableHttpTransport` для текущего request; ставит неизменяемого владельца session при `initialize` и отвечает 404 на чужой session POST/DELETE |
+| `Session\PrivateFileSessionStore` | owner-only file session store: directory создаётся `0700`, session files зажимаются до `0600` (поставляемый default) |
+| `Exception\SessionOwnershipException` | capability call пришёл с client identity, отличной от неизменяемого владельца session (fail-closed) |
+| `Exception\DuplicateCapabilityException` | две регистрации capability разрешились в одну identity — build падает вместо тихого last-write-wins SDK |
 | `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; пустой secret отклоняет все requests с поясняющим 503; client id резолвится через `Identity\SecretResolverInterface` |
 | `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver` | несколько клиентов на endpoint + ротация секретов (несколько активных секретов на client id); constant-time сравнение, сырой секрет не уходит дальше middleware |
 | `Interceptor\ToolCallLimiterInterface` / `Interceptor\RateLimitInterceptor` | порт + адаптер, делегирующие per-client/per-tool лимиты rate limiter'у приложения; fail-closed при аварии limiter'а |
@@ -665,6 +1016,8 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 | `Interceptor\ToolCallInterceptorInterface` | оборачивает каждый tools/call: tracing, ACL, rate limits; params `interceptors` |
 | `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `getClientInfo()` |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap: параметр `session.budget`, anti-loop guard |
+| `Interceptor\ResponseSizeLimitInterceptor` | ограничивает размер tool result (параметр `limits.tool_result_bytes`) - обрезает strings, отклоняет oversized arrays/objects |
+| `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); типизированный ключ включает обязательный application namespace, client id и, при delegated auth, `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | decorator, подключающий chain к SDK; используется `McpServerFactory` |
 | `Interceptor\ArgumentMasker` | единое sensitive-argument masking на каждом nesting level |
 | `Visibility\ToolVisibilityInterface` | per-session tool filter: `tools/list` скрывает, `tools/call` fail-closed отклоняет |
@@ -673,6 +1026,8 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 | `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session фильтры prompts/resources (params `prompt_visibility` / `resource_visibility`): списки скрывают, прямой get/read отвечает not-found |
 | `Interceptor\CallOutcome` | единый словарь `success`/`rejected`/`error` для audit/telemetry бриджей (`fromThrowable()`) |
 | `OpenApi\OpenApiServerConfigurator` | публикует allow-listed OpenAPI operations как tools через HTTP |
+| `OpenApi\OperationModifierInterface` | hook кастомизации на уровне operation, применяется после `tool_names` rename |
+| `OpenApi\Operation` | read-only контекст operation, передаваемый в `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
 
 ## Безопасность
@@ -685,6 +1040,22 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
   раскрываются в 500 traces.
 - Core по умолчанию **не регистрирует tools**: каждая опубликованная operation
   является явной записью `params['rasuvaeff/yii3-mcp']['tools']`.
+- **Sessions привязаны к создавшему их клиенту** (неизменяемый владелец
+  ставится при `initialize` и проверяется перед каждым POST/DELETE):
+  утёкший `Mcp-Session-Id` сам по себе не даёт другому аутентифицированному
+  клиенту действовать в чужой session или уничтожить её. Session files —
+  owner-only (`0700` dir, `0600` files) в application-specific directory.
+- **Уникальность имён capabilities по всему серверу enforced.** Коллизия
+  между любыми путями регистрации (attribute tools, configurators, OpenAPI
+  bridge, Markdown prompts) проваливает build с
+  `DuplicateCapabilityException` — никогда не тихий last-write-wins SDK,
+  после которого правила visibility/cache/RBAC/audit описывают исчезнувший
+  handler.
+- Весь вывод, зависящий от caller-а, ограничен по размеру **до** аллокации:
+  upstream response bodies (`openapi.max_response_bytes`, инкрементальное
+  чтение), подставленные prompts (`limits.prompt_result_bytes`,
+  арифметическая пре-проверка), spec documents (10 MiB + бюджет
+  глубины/узлов `$ref`) и tool results (`limits.tool_result_bytes`).
 - OAuth из MCP authorization spec намеренно вне scope до стабилизации
   спецификации; используйте только shared-secret/ACL.
 
@@ -698,8 +1069,8 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 | [`stdio-serve.php`](examples/stdio-serve.php) | stdio transport `mcp:serve` на in-memory streams | нет |
 | [`conditional.php`](examples/conditional.php) | registration gating через `ConditionalToolInterface` | нет |
 | [`prompts.php`](examples/prompts.php) | Markdown files как MCP prompts | нет |
-| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools | нет |
-| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker` и session budget guard | нет |
+| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools, с `tool_names` и `OperationModifierInterface` | нет |
+| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, session budget guard и result size limit | нет |
 | [`visibility.php`](examples/visibility.php) | per-session interface, declarative deny patterns и fail-closed call | нет |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` и `structuredContent` tool | нет |
 

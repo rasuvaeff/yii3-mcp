@@ -17,11 +17,12 @@ final readonly class BridgedToolHandler implements ToolHandlerInterface
     public function __construct(
         private Operation $operation,
         private HttpOperationExecutor $executor,
+        private bool $dryRunnable = false,
     ) {}
 
     #[\Override]
     public function execute(array $arguments, ClientGateway $gateway): mixed
     {
-        return $this->executor->execute($this->operation, $arguments);
+        return $this->executor->execute($this->operation, $arguments, $this->dryRunnable);
     }
 }

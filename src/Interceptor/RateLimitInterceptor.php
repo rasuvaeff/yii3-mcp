@@ -16,22 +16,22 @@ use Mcp\Exception\ToolCallException;
  * Fail-closed: when the limiter backend throws, the call is rejected — an
  * enforced quota must not silently turn into "unlimited" on an outage.
  *
+ * An absent client id (stdio, no middleware) is passed to the limiter as
+ * `null` — typed absence, never a reserved string like "anonymous" that a
+ * real client id could collide with.
+ *
  * @api
  */
 final readonly class RateLimitInterceptor implements ToolCallInterceptorInterface
 {
-    /**
-     * @param string $fallbackClientId identity used when the transport carries none (e.g. stdio)
-     */
     public function __construct(
         private ToolCallLimiterInterface $limiter,
-        private string $fallbackClientId = 'anonymous',
     ) {}
 
     #[\Override]
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
-        $clientId = $context->clientId ?? $this->fallbackClientId;
+        $clientId = $context->clientId;
 
         try {
             $allowed = $this->limiter->allow($clientId, $context->toolName);
@@ -44,8 +44,8 @@ final readonly class RateLimitInterceptor implements ToolCallInterceptorInterfac
 
         if (!$allowed) {
             throw new ToolCallException(sprintf(
-                'Rate limit exceeded for client "%s" on tool "%s"',
-                $clientId,
+                'Rate limit exceeded for client %s on tool "%s"',
+                $clientId === null ? '(anonymous)' : '"' . $clientId . '"',
                 $context->toolName,
             ));
         }
