@@ -102,6 +102,105 @@ even without an `outputSchema` — declaring the schema is what lets the agent
 know the shape up front. `Testing\SchemaSnapshot` covers output schemas the
 same way it covers input schemas, so accidental drift fails the build.
 
+#### Tool behavior hints
+
+Use the SDK's `ToolAnnotations` directly when a client should know whether a
+tool reads, mutates or reaches outside its closed domain. No yii3-mcp-specific
+attributes are needed:
+
+```php
+use Mcp\Schema\ToolAnnotations;
+
+#[McpTool(
+    name: 'order.cancel',
+    annotations: new ToolAnnotations(
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+    ),
+)]
+public function cancel(string $orderId): string
+{
+    $this->orders->cancel($orderId);
+
+    return 'cancelled';
+}
+```
+
+| Hint | Meaning |
+|---|---|
+| `readOnlyHint` | `true` when the tool does not modify its environment |
+| `destructiveHint` | for a mutating tool, distinguishes destructive changes from additive-only changes |
+| `idempotentHint` | for a mutating tool, says repeated calls with the same arguments add no further effect |
+| `openWorldHint` | `true` when the tool may interact with external entities outside a closed domain |
+
+Annotations are advisory MCP metadata. A client may ignore them, so never use
+them in place of authorization, validation, `safe_methods_only`, visibility or
+server-side confirmation. In particular, `idempotentHint` alone is not enough
+to enable automatic retries: keep the server's retry allow-list explicit.
+
+#### Server-initiated communication
+
+An attribute tool may accept the SDK's request-scoped `RequestContext` as a
+parameter. The SDK creates it for the current MCP request and omits it from the
+generated input schema, so the client supplies only real domain arguments.
+Obtain its `ClientGateway` to send progress/log notifications or to initiate
+sampling and elicitation:
+
+```php
+use Mcp\Schema\Elicitation\BooleanSchemaDefinition;
+use Mcp\Schema\Elicitation\ElicitationSchema;
+use Mcp\Server\RequestContext;
+
+#[McpTool(
+    name: 'release.deploy',
+    annotations: new ToolAnnotations(
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+    ),
+)]
+public function deploy(string $version, RequestContext $context): string
+{
+    $client = $context->getClientGateway();
+    $client->progress(progress: 1, total: 2, message: 'Validation complete');
+
+    if (!$client->supportsElicitation()) {
+        throw new RuntimeException('Client does not support required deployment confirmation');
+    }
+
+    $confirmation = $client->elicit(
+        message: sprintf('Deploy version %s?', $version),
+        requestedSchema: new ElicitationSchema(
+            properties: [
+                'confirmed' => new BooleanSchemaDefinition(
+                    title: 'Confirm deployment',
+                    description: 'Allow this deployment to proceed',
+                ),
+            ],
+            required: ['confirmed'],
+        ),
+    );
+
+    if (!$confirmation->isAccepted() || ($confirmation->content['confirmed'] ?? false) !== true) {
+        throw new RuntimeException('Deployment was not confirmed');
+    }
+
+    return sprintf('Deployment %s queued', $version);
+}
+```
+
+`progress()` is a no-op when the caller did not provide a progress token.
+`log()` emits client-visible log notifications; `sample()` and `elicit()` are
+round trips that suspend the tool Fiber until the client responds or the SDK
+timeout expires. Check `supportsElicitation()` before requiring elicitation,
+choose a fail-closed fallback for destructive operations, and assume that not
+every MCP client supports every server-initiated capability. Keep
+`RequestContext` as a method parameter rather than a constructor dependency:
+it belongs to one request/session.
+
 To gate a capability class (feature flag, environment check), implement
 `ConditionalToolInterface` — the instance is resolved through the container
 at build time and skipped when `shouldRegister()` returns `false`:
@@ -1081,6 +1180,7 @@ See [examples/](examples/) — every script runs offline.
 | [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + session budget guard + result size limit | no |
 | [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
+| [`server-initiated.php`](examples/server-initiated.php) | Official `ToolAnnotations` and a schema-safe `RequestContext` parameter for progress/elicitation | no |
 
 ## Testing your tools
 

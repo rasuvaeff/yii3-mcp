@@ -11,6 +11,7 @@
 | `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed rejected on call | no |
 | `capability-hooks.php` | prompts/get + resources/read interceptor chains (`CallOutcome`, template variables, client-visible rejection) and prompt visibility hiding a prompt as not-found | no |
 | `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |
+| `server-initiated.php` | Official `ToolAnnotations`; `RequestContext` stays out of input schema while giving the tool progress/elicitation through `ClientGateway` | no |
 
 Run from the package root (after `composer install`):
 
@@ -23,4 +24,5 @@ docker run --rm -v "$PWD":/app -w /app composer:2 php examples/openapi-bridge.ph
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/interceptors.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/visibility.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/structured-output.php
+docker run --rm -v "$PWD":/app -w /app composer:2 php examples/server-initiated.php
 ```

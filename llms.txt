@@ -102,6 +102,66 @@ SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
 // {tools, resources, resourceTemplates, prompts}.
 ```
 
+### Tool annotations and server-initiated communication
+
+Use the official SDK metadata directly; yii3-mcp does not define parallel
+hint attributes. Hints are advisory client metadata, never authorization or a
+server-side safety policy:
+
+```php
+use Mcp\Schema\ToolAnnotations;
+
+#[McpTool(
+    name: 'order.cancel',
+    annotations: new ToolAnnotations(
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+    ),
+)]
+public function cancel(string $orderId): string { ... }
+```
+
+For progress, client logging, sampling or elicitation, accept the SDK's
+request-scoped `Mcp\Server\RequestContext` as a method parameter. The SDK
+injects it and omits it from the generated input schema. Do not constructor-
+inject or persist it across requests.
+
+```php
+use Mcp\Schema\Elicitation\BooleanSchemaDefinition;
+use Mcp\Schema\Elicitation\ElicitationSchema;
+use Mcp\Server\RequestContext;
+
+public function deploy(string $version, RequestContext $context): string
+{
+    $client = $context->getClientGateway();
+    $client->progress(progress: 1, total: 2, message: 'Validated'); // no-op without progress token
+
+    if (!$client->supportsElicitation()) {
+        throw new RuntimeException('Client does not support required confirmation');
+    }
+
+    $result = $client->elicit(
+        message: "Deploy {$version}?",
+        requestedSchema: new ElicitationSchema(
+            properties: ['confirmed' => new BooleanSchemaDefinition(title: 'Confirm deployment')],
+            required: ['confirmed'],
+        ),
+    );
+
+    if (!$result->isAccepted() || ($result->content['confirmed'] ?? false) !== true) {
+        throw new RuntimeException('Deployment was not confirmed');
+    }
+
+    return 'queued';
+}
+```
+
+`ClientGateway::log()` emits a notification. `sample()` and `elicit()` suspend
+the tool Fiber until a supporting client responds or the SDK timeout expires.
+For destructive operations, check capability support and fail closed.
+
 ### McpServerFactory
 
 ```php

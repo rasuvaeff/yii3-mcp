@@ -154,18 +154,21 @@ deliberately left out; the items below are what did fit.
 
 Deliberately deferred: route maps / array query parameters (OpenAPI bridge,
 on demand), `PromptsAsTools`/`ResourcesAsTools` compatibility, a JWT-based
-`SecretResolverInterface`, namespaced server configurators, and — the
-biggest open question — exposing `mcp/sdk`'s server-initiated features
-(progress reporting, logging to the client) to attribute tools. That last
-one needs its own research spike into what the SDK actually hands the
-handler before any commitment.
+`SecretResolverInterface` and namespaced server configurators.
+
+Resolved during the `mcp/sdk` 0.7 review: attribute tools already receive the
+SDK's request-scoped `RequestContext`, whose `ClientGateway` provides progress,
+client logging, sampling and elicitation. The SDK excludes `RequestContext`
+from the generated input schema, and yii3-mcp's reference-handler decorator
+preserves that injection. This is documented directly; no yii3-mcp wrapper API
+or parallel protocol abstraction is needed.
 
 ## On demand — waiting for a real use case
 
 | Feature | Notes |
 |---|---|
 | Per-tenant endpoint secrets | the v1.1 tenant recipe keeps one global secret |
-| Human-in-the-loop approval for write-tools | prefer MCP task-augmented tools over homegrown pending/poll semantics |
+| Human-in-the-loop approval for write-tools | use `RequestContext::getClientGateway()->elicit()` for in-session confirmation; durable asynchronous approval still waits for official MCP Tasks support |
 | Outbox mode for write-tools | record the call into [rasuvaeff/yii3-outbox](https://github.com/rasuvaeff/yii3-outbox) instead of executing — durable, retryable, human-reviewable |
 | Dry-run for attribute tools | shipped for the OpenAPI bridge in v1.9.0; a hand-written tool's side effects are application-specific, so this cannot be automatic — needs the tool author to write their own dry-run branch and a way to declare it (candidate: `ToolAnnotations`'s `destructiveHint`/`idempotentHint` rather than a new marker interface) |
 | Multiple named servers (admin vs public) | separate secrets/endpoints; waiting for a real case |
