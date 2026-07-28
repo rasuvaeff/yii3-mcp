@@ -102,6 +102,106 @@ public function status(string $orderId): array
 `Testing\SchemaSnapshot` покрывает output schemas так же, как input schemas,
 поэтому случайное изменение контракта остановит build.
 
+#### Подсказки о поведении tool
+
+Используйте `ToolAnnotations` из SDK напрямую, когда клиенту нужно знать,
+читает ли tool данные, меняет ли состояние или обращается за пределы своего
+закрытого домена. Специальные attributes yii3-mcp не нужны:
+
+```php
+use Mcp\Schema\ToolAnnotations;
+
+#[McpTool(
+    name: 'order.cancel',
+    annotations: new ToolAnnotations(
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+    ),
+)]
+public function cancel(string $orderId): string
+{
+    $this->orders->cancel($orderId);
+
+    return 'cancelled';
+}
+```
+
+| Hint | Значение |
+|---|---|
+| `readOnlyHint` | `true`, если tool не меняет своё окружение |
+| `destructiveHint` | для изменяющего состояния tool отличает разрушительные изменения от только добавляющих |
+| `idempotentHint` | для изменяющего состояния tool сообщает, что повторный вызов с теми же аргументами не добавляет эффекта |
+| `openWorldHint` | `true`, если tool может взаимодействовать с внешними сущностями за пределами закрытого домена |
+
+Annotations — рекомендательные MCP metadata. Клиент может их проигнорировать,
+поэтому они не заменяют authorization, validation, `safe_methods_only`,
+visibility или server-side confirmation. В частности, одного
+`idempotentHint` недостаточно для автоматических retries: серверный allow-list
+повторяемых tools должен оставаться явным.
+
+#### Server-initiated communication
+
+Attribute tool может принять request-scoped `RequestContext` из SDK как
+параметр. SDK создаёт его для текущего MCP request и исключает из генерируемой
+input schema, поэтому клиент передаёт только настоящие domain arguments. Через
+его `ClientGateway` tool отправляет progress/log notifications или инициирует
+sampling и elicitation:
+
+```php
+use Mcp\Schema\Elicitation\BooleanSchemaDefinition;
+use Mcp\Schema\Elicitation\ElicitationSchema;
+use Mcp\Server\RequestContext;
+
+#[McpTool(
+    name: 'release.deploy',
+    annotations: new ToolAnnotations(
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+    ),
+)]
+public function deploy(string $version, RequestContext $context): string
+{
+    $client = $context->getClientGateway();
+    $client->progress(progress: 1, total: 2, message: 'Validation complete');
+
+    if (!$client->supportsElicitation()) {
+        throw new RuntimeException('Client does not support required deployment confirmation');
+    }
+
+    $confirmation = $client->elicit(
+        message: sprintf('Deploy version %s?', $version),
+        requestedSchema: new ElicitationSchema(
+            properties: [
+                'confirmed' => new BooleanSchemaDefinition(
+                    title: 'Confirm deployment',
+                    description: 'Allow this deployment to proceed',
+                ),
+            ],
+            required: ['confirmed'],
+        ),
+    );
+
+    if (!$confirmation->isAccepted() || ($confirmation->content['confirmed'] ?? false) !== true) {
+        throw new RuntimeException('Deployment was not confirmed');
+    }
+
+    return sprintf('Deployment %s queued', $version);
+}
+```
+
+`progress()` ничего не делает, если caller не передал progress token. `log()`
+отправляет видимые клиенту log notifications; `sample()` и `elicit()` — это
+round trips, которые приостанавливают Fiber tool до ответа клиента или
+истечения timeout SDK. Проверяйте `supportsElicitation()` перед обязательным
+elicitation, выбирайте fail-closed fallback для разрушительных операций и не
+предполагайте, что каждый MCP client поддерживает все server-initiated
+capabilities. Передавайте `RequestContext` в метод, а не в constructor: он
+принадлежит одному request/session.
+
 Чтобы включать capability class по условию (feature flag, проверка окружения),
 реализуйте `ConditionalToolInterface`. Экземпляр будет разрешён контейнером
 при построении сервера и пропущен, когда `shouldRegister()` возвращает `false`.
@@ -1073,6 +1173,7 @@ preview write action требует того же permission, что и реал
 | [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, session budget guard и result size limit | нет |
 | [`visibility.php`](examples/visibility.php) | per-session interface, declarative deny patterns и fail-closed call | нет |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` и `structuredContent` tool | нет |
+| [`server-initiated.php`](examples/server-initiated.php) | официальный `ToolAnnotations` и schema-safe параметр `RequestContext` для progress/elicitation | нет |
 
 ## Тестирование своих tools
 
