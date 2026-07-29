@@ -31,8 +31,8 @@ ToolCallLimiterInterface, RateLimitInterceptor}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
 PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
-FilteredListResourcesHandler, FilteredListResourceTemplatesHandler are
-@internal}`,
+FilteredListResourcesHandler, FilteredListResourceTemplatesHandler,
+FilteredCompletionCompleteHandler are @internal}`,
 `OpenApi\{SpecIndex, ToolNameValidator, JsonPointerResolver,
 OutputSchemaProjector, OperationContractValidator are @internal;
 OpenApiServerConfigurator,
@@ -126,6 +126,20 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   (a legacy-encoded upstream error page) is validated separately with
   `preg_match('//u', …)` and replaced by a byte-count placeholder. Tests must
   assert with PCRE, not `mb_check_encoding` — mbstring is absent from CI.
+- **`completion/complete` does not go through the reference handler, so
+  visibility has to be applied to it separately.** The SDK's
+  `CompletionCompleteHandler` reads the registry directly; before
+  `Visibility\FilteredCompletionCompleteHandler` existed, a prompt hidden by
+  `PromptVisibilityInterface` still returned completions for its arguments —
+  verified end-to-end, not inferred — leaking the values AND the capability's
+  existence (hidden answered, missing errored). The decorator wraps the SDK
+  handler rather than reimplementing provider resolution, and phrases its
+  refusal with the SDK's own `PromptNotFoundException` /
+  `ResourceNotFoundException` message so a hidden ref stays byte-identical to
+  a missing one. A ref that does not resolve at all is passed through to the
+  inner handler — never phrase "unknown capability" in two places. If the SDK
+  ever routes completion through the reference handler, drop the decorator
+  instead of stacking two checks.
 - **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
   A pattern starting with `tag:` matches the tool's tags (`_meta['rasuvaeff/yii3-mcp']['tags']`,
   populated by the OpenAPI bridge from OpenAPI `tags`) instead of its name;

@@ -804,6 +804,13 @@ policy never accidentally applies to a prompt:
 - Visibility filters `prompts/list`, `resources/list` and
   `resources/templates/list` with the same implementation that guards the
   direct calls, so listing and fetching can never disagree.
+- **`completion/complete` obeys the same filters.** Argument autocompletion
+  (`#[CompletionProvider]` on a prompt argument or a resource-template
+  variable) is served by the SDK straight off the registry, so it used to
+  answer for prompts and templates a session could not see — leaking both the
+  suggested values and the capability's existence. It is now decorated with
+  the configured prompt/resource visibility and reports a hidden ref as not
+  found, exactly like a missing one.
 
 For bridges (audit, telemetry) the core ships one shared outcome
 vocabulary — `Interceptor\CallOutcome` (`success` / `rejected` / `error`,
