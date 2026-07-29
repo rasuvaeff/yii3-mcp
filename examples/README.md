@@ -12,6 +12,7 @@
 | `capability-hooks.php` | prompts/get + resources/read interceptor chains (`CallOutcome`, template variables, client-visible rejection) and prompt visibility hiding a prompt as not-found | no |
 | `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |
 | `server-initiated.php` | Official `ToolAnnotations`; `RequestContext` stays out of input schema while giving the tool progress/elicitation through `ClientGateway` | no |
+| `completions.php` | Argument autocompletion (`completion/complete`): `values` / `enum` / container-resolved provider class on a prompt argument and a template variable; a hidden prompt completes nothing and is reported like a missing one | no |
 | `mcp-apps.php` | MCP Apps (`io.modelcontextprotocol/ui`): declarative `AppDefinition` and attribute-based `ui://` resources, the `_meta.ui` marker vs `UiResourceContentMeta`, CSP/permissions, a tool linked to an app | no |
 
 Run from the package root (after `composer install`):
@@ -26,5 +27,6 @@ docker run --rm -v "$PWD":/app -w /app composer:2 php examples/interceptors.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/visibility.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/structured-output.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/server-initiated.php
+docker run --rm -v "$PWD":/app -w /app composer:2 php examples/completions.php
 docker run --rm -v "$PWD":/app -w /app composer:2 php examples/mcp-apps.php
 ```

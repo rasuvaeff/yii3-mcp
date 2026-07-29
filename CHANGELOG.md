@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Documented argument autocompletion (`completion/complete`): the
+  `#[CompletionProvider]` forms (`values` / `enum` / a container-resolved
+  provider class), the fact that the capability is advertised automatically,
+  that visibility applies to it and that interceptors do not — plus a runnable
+  `examples/completions.php`. No code change — the SDK has served this all
+  along; it was simply never written down.
+- Corrected the advertised MCP protocol revision in both READMEs: the SDK
+  answers `initialize` with **2025-11-25** (its own default) regardless of what
+  the client requests, not the documented 2025-06-18.
+- `Testing\McpTester` now claims the protocol revision the SDK actually
+  advertises (read from `MessageInterface::PROTOCOL_VERSION` instead of a
+  hardcoded string), so the test client and the server under test can no longer
+  silently disagree.
+- Documented that `resources/subscribe` is advertised by the SDK and recorded
+  per session, but `notifications/resources/updated` is never emitted — under
+  PHP-FPM nothing outlives the request to push from. Known gap, now stated
+  instead of implied.
+
 ## 2.1.0 — 2026-07-29
 
 - **MCP Apps (`io.modelcontextprotocol/ui`).** Interactive HTML applications

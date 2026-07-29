@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
+use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -27,6 +28,19 @@ final class McpTesterTest
         $result = $this->tester()->initialize();
 
         Assert::same($result['serverInfo']['name'], 'tester-suite');
+    }
+
+    /**
+     * The tester's claimed protocol version and the one the server answers with
+     * must be the same revision — they silently disagreed until the constant
+     * started reading from the SDK, and a test client pinned to an older
+     * revision than the server under test proves nothing about either.
+     */
+    public function testerAndServerAgreeOnTheProtocolVersion(): void
+    {
+        $result = $this->tester()->initialize();
+
+        Assert::same($result['protocolVersion'], MessageInterface::PROTOCOL_VERSION->value);
     }
 
     public function listsToolsWithImplicitInitialize(): void

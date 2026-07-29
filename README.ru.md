@@ -29,7 +29,7 @@ Yii3 DI-контейнер.
 |------------|--------|
 | PHP | 8.3 - 8.5 |
 | `mcp/sdk` | `~0.7.0` (экспериментален до 1.0, поэтому используется tilde pin) |
-| MCP protocol | 2025-06-18 (через SDK) |
+| MCP protocol | 2025-11-25 (дефолт SDK; он анонсирует эту ревизию в `initialize` независимо от того, что запросил клиент) |
 | `ext-fileinfo` | требуется SDK |
 
 ## Установка
@@ -415,6 +415,50 @@ prompt.
 > [vjik/my-prompts-mcp](https://github.com/vjik/my-prompts-mcp) Сергея
 > Предводителева и вдохновлён им: один prompt file работает и в личном stdio
 > prompt manager, и на application server.
+
+### Автодополнение аргументов (`completion/complete`)
+
+Клиент подсказывает значения, пока пользователь набирает аргумент промпта или
+переменную resource-template. Источник объявляется SDK-атрибутом
+`#[CompletionProvider]` — никакого API yii3-mcp здесь не участвует:
+
+```php
+use Mcp\Capability\Attribute\CompletionProvider;
+
+#[McpPrompt(name: 'review')]
+public function review(
+    #[CompletionProvider(values: ['security', 'performance'])] string $focus,
+    #[CompletionProvider(enum: Environment::class)] string $environment,
+): string { /* … */ }
+
+#[McpResourceTemplate(uriTemplate: 'app://reports/{region}', name: 'report')]
+public function report(
+    #[CompletionProvider(provider: RegionCompletionProvider::class)] string $region,
+): string { /* … */ }
+```
+
+| Форма | Источник |
+|---|---|
+| `values: [...]` | фиксированный список, матчится по префиксу |
+| `enum: BackedEnum::class` | кейсы enum |
+| `provider: Foo::class` | `Mcp\Capability\Completion\ProviderInterface`, **резолвится через DI-контейнер** — можно ходить в репозиторий или сервис фича-флагов |
+
+На аргумент — ровно одна из трёх форм; capability анонсируется автоматически.
+Completions подчиняются `prompt_visibility` / `resource_visibility`: промпт или
+шаблон, которого сессия не видит, не дополняет ничего и отвечает «не найдено»,
+неотличимо от отсутствующего (см. [Видимость tools](#видимость-tools)).
+Interceptors `completion/complete` **не** оборачивают — это lookup метаданных, а
+не вызов capability, поэтому авторизацию класть в visibility-фильтр, а не в
+interceptor.
+
+### Подписки на ресурсы: анонсируются, но не доставляются
+
+SDK безусловно анонсирует `resources.subscribe`, как только у сервера есть хоть
+один ресурс, и действительно записывает `resources/subscribe` в сессию — но
+`notifications/resources/updated` в этом пакете не отправляет никто и никогда.
+Под PHP-FPM нет процесса, переживающего запрос, чтобы что-то пушить, поэтому
+подписка принимается и молча не срабатывает. Это известный пробел, а не фича:
+клиентам следует опрашивать `resources/read`.
 
 ## Framework-agnostic usage
 
@@ -1296,6 +1340,7 @@ public function refresh(): string { /* … */ }
 | [`visibility.php`](examples/visibility.php) | per-session interface, declarative deny patterns и fail-closed call | нет |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` и `structuredContent` tool | нет |
 | [`server-initiated.php`](examples/server-initiated.php) | официальный `ToolAnnotations` и schema-safe параметр `RequestContext` для progress/elicitation | нет |
+| [`completions.php`](examples/completions.php) | `completion/complete`: список значений / enum / провайдер из контейнера, и visibility поверх автодополнения | нет |
 | [`mcp-apps.php`](examples/mcp-apps.php) | MCP Apps: декларативные и attribute-based `ui://` приложения, размещение `_meta.ui`, CSP/permissions, тулза, связанная с приложением | нет |
 
 ## Тестирование своих tools
