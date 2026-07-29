@@ -625,8 +625,8 @@ final class HttpOperationExecutorTest
         // a size-less (chunked) endless body: the executor must abandon the
         // read at the cap, not buffer until the worker dies
         $stream = new EndlessStream();
-        $client = new class ($stream) implements \Psr\Http\Client\ClientInterface {
-            public function __construct(private readonly EndlessStream $stream) {}
+        $client = new readonly class ($stream) implements \Psr\Http\Client\ClientInterface {
+            public function __construct(private EndlessStream $stream) {}
 
             #[\Override]
             public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
@@ -727,7 +727,7 @@ final class HttpOperationExecutorTest
 
         $factory = new Psr17Factory();
         $executor = new HttpOperationExecutor(
-            httpClient: new StreamBodyHttpClient(new StubStream(content: $body, advertisedSize: null)),
+            httpClient: new StreamBodyHttpClient(new StubStream(content: $body)),
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',

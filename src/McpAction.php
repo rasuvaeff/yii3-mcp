@@ -110,7 +110,7 @@ final readonly class McpAction implements RequestHandlerInterface
         // fresh session id first claim the session
         if ($clientId !== null
             && $this->sessionStore instanceof SessionStoreInterface
-            && $presentedSessionId === null
+            && !$presentedSessionId instanceof Uuid
             && ($created = $this->sessionIdFromHeader($response->getHeaderLine(StreamableHttpTransport::SESSION_HEADER))) instanceof Uuid
         ) {
             $this->stampOwner($this->sessionStore, $created, $clientId);

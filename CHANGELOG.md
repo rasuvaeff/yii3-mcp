@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Development only: the codebase is `rector` clean again (7 files had drifted —
+  a redundant null check, two test doubles that can be `readonly`, two
+  locally-called static test helpers, and named arguments repeating a default),
+  and `make release-check` no longer dies at `bc-check` with exit 128. The
+  composer chain shells out to `git`, which refused the bind-mounted repository
+  as "dubious ownership"; the target now configures `safe.directory` the way the
+  standalone `make bc-check` already did. No runtime behaviour changed.
+
 ## 2.2.0 — 2026-07-29
 
 - Documented argument autocompletion (`completion/complete`): the

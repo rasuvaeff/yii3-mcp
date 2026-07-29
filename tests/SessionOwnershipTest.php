@@ -64,7 +64,7 @@ final class SessionOwnershipTest
         $raw = $this->store->read(Uuid::fromString($sessionId));
         Assert::true(is_string($raw));
         /** @var array<string, mixed> $data */
-        $data = json_decode((string) $raw, associative: true, flags: JSON_THROW_ON_ERROR);
+        $data = json_decode($raw, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Assert::same($data['rasuvaeff']['yii3-mcp']['client-id'] ?? null, 'client-a');
         // stamping ADDS the owner — it must never truncate the session data
@@ -117,7 +117,7 @@ final class SessionOwnershipTest
             method: 'POST',
             uri: '/mcp',
             headers: ['Content-Type' => 'application/json', 'Accept' => 'application/json, text/event-stream'],
-            body: new StubStream(content: 'x', advertisedSize: null, throwOnRead: true),
+            body: new StubStream(content: 'x', throwOnRead: true),
         ))->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-a');
 
         $caught = null;
