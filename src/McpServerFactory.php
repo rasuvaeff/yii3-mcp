@@ -12,6 +12,7 @@ use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Handler\Request\CompletionCompleteHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
@@ -22,6 +23,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Visibility\FilteredCompletionCompleteHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListPromptsHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListResourcesHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListResourceTemplatesHandler;
@@ -183,6 +185,21 @@ final readonly class McpServerFactory
                     pageSize: self::PAGE_SIZE,
                 );
                 $builder->addRequestHandler($templatesHandler);
+            }
+
+            // completion/complete is the one capability call the SDK serves
+            // straight off the registry, bypassing the reference handler — so
+            // neither visibility nor the interceptor chains reach it. Without
+            // this decorator a hidden prompt still completes its arguments.
+            if ($promptVisibility instanceof PromptVisibilityInterface || $resourceVisibility instanceof ResourceVisibilityInterface) {
+                /** @var RequestHandlerInterface<mixed> $completionHandler */
+                $completionHandler = new FilteredCompletionCompleteHandler(
+                    registry: $registry,
+                    inner: new CompletionCompleteHandler($registry, $this->container),
+                    promptVisibility: $promptVisibility,
+                    resourceVisibility: $resourceVisibility,
+                );
+                $builder->addRequestHandler($completionHandler);
             }
         }
 

@@ -804,6 +804,13 @@ interceptor chain и visibility filter — отдельные интерфейс
 - Visibility фильтрует `prompts/list`, `resources/list` и
   `resources/templates/list` той же реализацией, что охраняет прямые
   вызовы, — листинг и чтение не могут разойтись.
+- **`completion/complete` подчиняется тем же фильтрам.** Автодополнение
+  аргументов (`#[CompletionProvider]` на аргументе промпта или переменной
+  resource-template) SDK отдаёт напрямую из реестра, поэтому раньше оно
+  отвечало и по промптам/шаблонам, которых сессия не видит, — утекали и
+  подсказываемые значения, и сам факт существования capability. Теперь оно
+  обёрнуто настроенной prompt/resource visibility и отвечает на скрытый ref
+  «не найдено», ровно как на отсутствующий.
 
 Для бриджей (audit, telemetry) ядро несёт единый словарь исходов —
 `Interceptor\CallOutcome` (`success` / `rejected` / `error`,

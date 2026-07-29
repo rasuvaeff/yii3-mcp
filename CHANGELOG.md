@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in a tool's `_meta` works out of the box. `mcp:doctor` gains an `mcp_apps`
   check that parses every declarative definition, so a malformed one is
   reported even when the server-build check is skipped.
+- **[security] `completion/complete` now obeys prompt and resource
+  visibility.** The SDK serves argument autocompletion straight off the
+  registry, bypassing the reference handler where visibility lives, so a
+  prompt hidden from a session still returned completions for its arguments —
+  leaking both the suggested values and the capability's existence (a hidden
+  prompt answered, a missing one errored). `Visibility\FilteredCompletionCompleteHandler`
+  decorates the SDK handler and reports a hidden prompt or resource template
+  as not found, byte-identical to a missing one. Only servers that configure
+  `prompt_visibility` / `resource_visibility` were affected; no configuration
+  change is needed.
 
 ## 2.0.0 — 2026-07-27
 

@@ -588,6 +588,14 @@ CallOutcome::fromThrowable($e);   // ToolCallException/PromptGetException/Resour
                                   // => Rejected; anything else => Error
 ```
 
+- `completion/complete` (argument autocompletion via `#[CompletionProvider]`
+  on a prompt argument or resource-template variable) is served by the SDK
+  DIRECTLY off the registry, bypassing the reference handler. yii3-mcp
+  decorates it so the configured `prompt_visibility` / `resource_visibility`
+  applies: a hidden prompt/template answers "not found", byte-identical to a
+  missing one. Interceptors still do NOT wrap completion — it is a metadata
+  lookup, not a capability call.
+
 ### DI (config-plugin)
 
 Ships config/di.php + config/params.php. Binds `SessionStoreInterface`
