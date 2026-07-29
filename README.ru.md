@@ -451,14 +451,54 @@ Interceptors `completion/complete` **не** оборачивают — это lo
 не вызов capability, поэтому авторизацию класть в visibility-фильтр, а не в
 interceptor.
 
-### Подписки на ресурсы: анонсируются, но не доставляются
+### Общие настройки сервера
 
-SDK безусловно анонсирует `resources.subscribe`, как только у сервера есть хоть
-один ресурс, и действительно записывает `resources/subscribe` в сессию — но
-`notifications/resources/updated` в этом пакете не отправляет никто и никогда.
-Под PHP-FPM нет процесса, переживающего запрос, чтобы что-то пушить, поэтому
-подписка принимается и молча не срабатывает. Это известный пробел, а не фича:
-клиентам следует опрашивать `resources/read`.
+```php
+'rasuvaeff/yii3-mcp' => [
+    // свободный текст «как пользоваться этим сервером» в результате initialize —
+    // агент читает его до первого вызова. Пусто = не отдаётся.
+    'instructions' => 'Prefer order.status over reading app://orders/{id}.',
+    // размер страницы для списков tools/resources/templates/prompts.
+    // Применяется и к обработчикам SDK, и к фильтрующим обработчикам пакета —
+    // они не могут разойтись в пагинации из-за наличия visibility.
+    'pagination_limit' => 50,
+    // фиксирует ревизию, анонсируемую в initialize; пусто — дефолт SDK
+    // (2025-11-25). Неподдерживаемое значение падает на загрузке конфига.
+    'protocol_version' => '',
+],
+```
+
+### Подписки на ресурсы
+
+SDK анонсирует `resources.subscribe`, как только у сервера есть хоть один
+ресурс, и записывает `resources/subscribe` в сессию. Сам по себе
+`notifications/resources/updated` никто не шлёт — но тулза, которая *вызвала*
+изменение, может сделать это в рамках того же запроса через
+`Resource\ResourceUpdateNotifier`:
+
+```php
+public function __construct(private ResourceUpdateNotifier $notifier) {}
+
+#[McpTool(name: 'order.cancel')]
+public function cancel(string $orderId, RequestContext $context): string
+{
+    $this->orders->cancel($orderId);
+    $this->notifier->notify($context, 'app://orders/' . $orderId);
+
+    return 'cancelled';
+}
+```
+
+`notify()` возвращает, был ли вызывающий подписан; сессии, которая не
+подписывалась, не отправляется ничего — незапрошенное уведомление на провод не
+попадёт. Свой `Mcp\Server\Resource\SubscriptionManagerInterface` подхватят
+обе стороны — и обработчик subscribe, и нотификатор; по умолчанию биндится
+session-backed менеджер SDK.
+
+**Достижима только вызывающая сессия.** Другие сессии, подписанные на тот же
+URI, — нет: для этого нужно соединение, которого у процесса нет. Под PHP-FPM
+ничего не переживает запрос, поэтому внеполосный push по-прежнему невозможен —
+клиентам, которым нужно видеть чужие изменения, остаётся опрос.
 
 ## Framework-agnostic usage
 
@@ -1293,6 +1333,7 @@ public function refresh(): string { /* … */ }
 | `OpenApi\OperationModifierInterface` | hook кастомизации на уровне operation, применяется после `tool_names` rename |
 | `OpenApi\Operation` | read-only контекст operation, передаваемый в `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
+| `Resource\ResourceUpdateNotifier` | шлёт `notifications/resources/updated` вызывающей сессии изнутри запроса, изменившего ресурс; неподписанной сессии не отправляется ничего |
 | `Apps\McpAppsConfigurator` | анонсирует extension MCP Apps и регистрирует декларативные `ui://` app-ресурсы (params `apps`) |
 | `Apps\AppDefinition` | одно декларативное приложение: `ui://` URI, имя, HTML (строка или `Closure(): string`) и его `UiResourceContentMeta` |
 

@@ -177,6 +177,13 @@ need only the extension announced. Everything protocol-level comes from the
 SDK's own `Schema\Extension\Apps` value objects, including the tool↔app link
 (`UiToolMeta`), which needs no code here.
 
+## v2.2.0 — protocol knobs and resource-update notifications
+
+The remaining SDK surface worth exposing, after auditing what `mcp/sdk ~0.7.0`
+actually serves: `instructions`, `pagination_limit` and `protocol_version`
+params, and `Resource\ResourceUpdateNotifier` for telling the calling session
+that a resource it subscribed to changed.
+
 ## On demand — waiting for a real use case
 
 | Feature | Notes |
@@ -188,6 +195,14 @@ SDK's own `Schema\Extension\Apps` value objects, including the tool↔app link
 | Multiple named servers (admin vs public) | separate secrets/endpoints; waiting for a real case |
 
 ## Deliberately out of scope
+
+- **`*ListChanged` notifications** — passing an event dispatcher to the SDK
+  flips the `toolsListChanged`/`promptsListChanged`/`resourcesListChanged`
+  capabilities to `true`, but the SDK ships no listener converting the
+  dispatched events into `notifications/*/list_changed`, and registry mutation
+  happens at build time, before a client is connected. Advertising it would
+  promise something the server never delivers. Revisit if the SDK grows the
+  listener.
 
 - **OAuth 2.1** — until the MCP authorization spec stabilizes
   (shared-secret / network ACL until then).

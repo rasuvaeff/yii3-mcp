@@ -40,6 +40,7 @@ SpecLoader, Operation, OperationModifierInterface, ExecutionIdentity,
 ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface}`,
 `Apps\{McpAppsConfigurator, AppDefinition; AppParamParser and
 AppResourceHandler are @internal}`,
+`Resource\ResourceUpdateNotifier`,
 `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in
 `Exception\`, `OpenApi\Exception\` and `Prompts\Exception\`
@@ -128,6 +129,32 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   (a legacy-encoded upstream error page) is validated separately with
   `preg_match('//u', …)` and replaced by a byte-count placeholder. Tests must
   assert with PCRE, not `mb_check_encoding` — mbstring is absent from CI.
+- **A handler that emits a notification cannot be asserted through
+  `Testing\McpTester`.** The moment anything suspends the Fiber to send
+  (progress, client logging, `notifications/resources/updated`), the SDK's
+  `StreamableHttpTransport` switches to streaming and `echo`es the SSE frames
+  straight to output with `ob_flush()`; the PSR-7 response body stays empty and
+  even an `ob_start()` around the call captures nothing. Test such handlers by
+  running them inside `new Fiber(...)` and asserting the suspend value — that is
+  exactly what the transport would flush. Do not "fix" the tester by parsing
+  output buffers.
+- **`Resource\ResourceUpdateNotifier` reaches only the CALLING session, by
+  construction.** It checks `SubscriptionManagerInterface::isSubscribed()` first,
+  so an unsolicited `notifications/resources/updated` can never appear on the
+  wire, and it sends through the request's own `ClientGateway`. Notifying other
+  subscribers would need a connection this process does not hold — under FPM
+  nothing outlives the request. `config/di.php` binds the manager so the SDK's
+  subscribe handler and the notifier read the same state; a consumer swapping the
+  binding must get both sides, which is why `McpServerFactory` forwards it to
+  `Builder::setResourceSubscriptionManager()` instead of letting them diverge.
+- **`*ListChanged` capabilities are deliberately NOT enabled.** Passing an
+  event dispatcher to the SDK flips `toolsListChanged`/`promptsListChanged`/
+  `resourcesListChanged` to `true`, but the SDK ships no listener that turns the
+  dispatched `*ListChangedEvent`s into `notifications/*/list_changed` messages,
+  and registry mutations happen at BUILD time, before any client is connected.
+  Enabling it would advertise a capability the server never honours — the exact
+  mistake `resources/subscribe` used to make here. Revisit only if the SDK grows
+  the listener.
 - **The served protocol revision comes from the SDK and is NOT negotiated.**
   `MessageInterface::PROTOCOL_VERSION` (2025-11-25 under the `~0.7.0` pin) is
   what `initialize` answers with, whatever the client requested. Do not

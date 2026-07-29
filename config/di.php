@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server;
+use Mcp\Server\Resource\SessionSubscriptionManager;
+use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
@@ -41,6 +44,17 @@ use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 
 /** @var array $params */
 
+// Fail at config load, not at the first request: an unsupported revision here
+// would otherwise surface as an opaque SDK error deep in the server build.
+$protocolVersionParam = (string) ($params['rasuvaeff/yii3-mcp']['protocol_version'] ?? '');
+$protocolVersion = $protocolVersionParam === ''
+    ? null
+    : (ProtocolVersion::tryFrom($protocolVersionParam) ?? throw new InvalidArgumentException(sprintf(
+        'Unsupported MCP protocol version "%s"; supported: %s',
+        $protocolVersionParam,
+        implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::cases())),
+    )));
+
 // Session store default is FPM-safe (file-based): the MCP Streamable HTTP
 // session spans several requests, so the SDK's in-memory default would lose
 // it between FPM workers. Rebind to Psr16SessionStore for multi-host setups.
@@ -63,10 +77,16 @@ return [
             );
         },
     ],
+    // backs resources/subscribe AND is what Resource\ResourceUpdateNotifier
+    // reads, so both sides of a subscription agree by construction
+    SubscriptionManagerInterface::class => SessionSubscriptionManager::class,
     McpServerFactory::class => [
         '__construct()' => [
             'name' => $params['rasuvaeff/yii3-mcp']['server_name'],
             'version' => $params['rasuvaeff/yii3-mcp']['server_version'],
+            'instructions' => $params['rasuvaeff/yii3-mcp']['instructions'] ?? '',
+            'paginationLimit' => $params['rasuvaeff/yii3-mcp']['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
+            'protocolVersion' => $protocolVersion,
         ],
     ],
     Server::class => [

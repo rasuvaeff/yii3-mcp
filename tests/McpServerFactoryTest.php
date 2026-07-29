@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException;
@@ -13,10 +16,13 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\AttributelessClass;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CompletionTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ConstructorAttributeTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DefaultNamedTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\DenyPromptVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\DenyResourceVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DualTemplatePromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DualToolResourceTool;
@@ -27,6 +33,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingSubscriptionManager;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ReservedNamesRecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
@@ -295,6 +302,69 @@ final class McpServerFactoryTest
         Assert::same($result['structuredContent'] ?? null, ['city' => 'Kazan', 'temperature' => 21, 'conditions' => 'sunny']);
     }
 
+    /**
+     * The decorator is wired for EITHER filter, so resource visibility alone
+     * must gate template completions too.
+     */
+    public function completionIsFilteredWhenResourceVisibilityIsConfigured(): void
+    {
+        $factory = new McpServerFactory(
+            container: new SimpleContainer([CompletionTool::class => new CompletionTool()]),
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        $server = $factory->create(
+            [CompletionTool::class],
+            resourceVisibility: new DenyResourceVisibility(hiddenTemplates: ['app://reports/{region}']),
+        );
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $caught = null;
+
+        try {
+            $tester->request('completion/complete', [
+                'ref' => ['type' => 'ref/resource', 'uri' => 'app://reports/emea'],
+                'argument' => ['name' => 'region', 'value' => 'em'],
+            ]);
+        } catch (\RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+    }
+
+    /**
+     * Both filters configured is the common production shape — the decorator
+     * must still be wired (the condition is an OR, not an XOR).
+     */
+    public function completionIsFilteredWhenBothVisibilityFiltersAreConfigured(): void
+    {
+        $factory = new McpServerFactory(
+            container: new SimpleContainer([CompletionTool::class => new CompletionTool()]),
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        $server = $factory->create(
+            [CompletionTool::class],
+            promptVisibility: new DenyPromptVisibility(['secret-review']),
+            resourceVisibility: new DenyResourceVisibility(hiddenTemplates: ['app://reports/{region}']),
+        );
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $caught = null;
+
+        try {
+            $tester->request('completion/complete', [
+                'ref' => ['type' => 'ref/prompt', 'name' => 'secret-review'],
+                'argument' => ['name' => 'target', 'value' => 'in'],
+            ]);
+        } catch (\RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+    }
+
     private function tester(Server $server): McpTester
     {
         $psr17 = new Psr17Factory();
@@ -348,8 +418,107 @@ final class McpServerFactoryTest
         Assert::true($configurator->configured);
     }
 
-    private function factory(): McpServerFactory
+    public function instructionsAreServedOnlyWhenConfigured(): void
     {
+        Assert::false(isset($this->tester($this->factory()->create([GreetingTool::class]))->initialize()['instructions']));
+
+        Assert::same(
+            $this->tester($this->factory(instructions: 'Read app://status first.')->create([GreetingTool::class]))->initialize()['instructions'] ?? null,
+            'Read app://status first.',
+        );
+    }
+
+    public function theProtocolVersionCanBePinnedAndDefaultsToTheSdkOne(): void
+    {
+        Assert::same(
+            $this->tester($this->factory()->create([GreetingTool::class]))->initialize()['protocolVersion'] ?? null,
+            MessageInterface::PROTOCOL_VERSION->value,
+        );
+
+        Assert::same(
+            $this->tester($this->factory(protocolVersion: ProtocolVersion::V2025_06_18)->create([GreetingTool::class]))->initialize()['protocolVersion'] ?? null,
+            '2025-06-18',
+        );
+    }
+
+    public function thePaginationLimitSplitsListsIntoPages(): void
+    {
+        $tester = $this->tester($this->factory(paginationLimit: 1)->create([GreetingTool::class]));
+        $page = $tester->request('tools/list');
+
+        Assert::same(count((array) ($page['tools'] ?? [])), 1);
+        Assert::true(isset($page['nextCursor']));
+        Assert::same(count($tester->listTools()), 2);
+    }
+
+    #[DataProvider('invalidPaginationLimitProvider')]
+    public function rejectsAPaginationLimitBelowOne(int $limit): void
+    {
+        $caught = null;
+
+        try {
+            $this->factory(paginationLimit: $limit);
+        } catch (\InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('at least 1');
+    }
+
+    public static function invalidPaginationLimitProvider(): iterable
+    {
+        yield 'zero' => [0];
+        yield 'negative' => [-1];
+    }
+
+    /**
+     * The notifier and the SDK's subscribe handler must read the same
+     * subscription state, so a swapped-in manager has to reach the builder.
+     */
+    public function aCustomSubscriptionManagerBacksTheSubscribeHandler(): void
+    {
+        $subscriptions = new RecordingSubscriptionManager();
+
+        $tester = $this->tester($this->factory(subscriptionManager: $subscriptions)->create([GreetingTool::class]));
+        $tester->request('resources/subscribe', ['uri' => 'app://status']);
+
+        Assert::same($subscriptions->subscribed, ['app://status']);
+    }
+
+    /**
+     * completion/complete is only decorated when a visibility filter exists;
+     * with one, a hidden prompt must not complete its arguments.
+     */
+    public function completionIsFilteredWhenPromptVisibilityIsConfigured(): void
+    {
+        $factory = new McpServerFactory(
+            container: new SimpleContainer([CompletionTool::class => new CompletionTool()]),
+            sessionStore: new InMemorySessionStore(),
+        );
+
+        $server = $factory->create([CompletionTool::class], promptVisibility: new DenyPromptVisibility(['secret-review']));
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        $caught = null;
+
+        try {
+            $tester->request('completion/complete', [
+                'ref' => ['type' => 'ref/prompt', 'name' => 'secret-review'],
+                'argument' => ['name' => 'target', 'value' => 'in'],
+            ]);
+        } catch (\RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+    }
+
+    private function factory(
+        string $instructions = '',
+        int $paginationLimit = McpServerFactory::DEFAULT_PAGINATION_LIMIT,
+        ?ProtocolVersion $protocolVersion = null,
+        ?SubscriptionManagerInterface $subscriptionManager = null,
+    ): McpServerFactory {
         return new McpServerFactory(
             container: new SimpleContainer([
                 GreetingTool::class => new GreetingTool(prefix: 'Hello'),
@@ -358,6 +527,10 @@ final class McpServerFactoryTest
             sessionStore: new InMemorySessionStore(),
             name: 'test-server',
             version: '1.0.0',
+            instructions: $instructions,
+            paginationLimit: $paginationLimit,
+            protocolVersion: $protocolVersion,
+            subscriptionManager: $subscriptionManager,
         );
     }
 }
