@@ -163,7 +163,7 @@ from the generated input schema, and yii3-mcp's reference-handler decorator
 preserves that injection. This is documented directly; no yii3-mcp wrapper API
 or parallel protocol abstraction is needed.
 
-## v2.1.0 — MCP Apps
+## v2.1.0 — MCP Apps (shipped 2026-07-29)
 
 Support for the [MCP Apps](https://github.com/modelcontextprotocol/ext-apps)
 extension (`io.modelcontextprotocol/ui`): interactive HTML applications served
