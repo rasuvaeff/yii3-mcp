@@ -177,7 +177,7 @@ need only the extension announced. Everything protocol-level comes from the
 SDK's own `Schema\Extension\Apps` value objects, including the tool↔app link
 (`UiToolMeta`), which needs no code here.
 
-## v2.2.0 — protocol knobs and resource-update notifications
+## v2.2.0 — protocol knobs and resource-update notifications (shipped 2026-07-29)
 
 The remaining SDK surface worth exposing, after auditing what `mcp/sdk ~0.7.0`
 actually serves: `instructions`, `pagination_limit` and `protocol_version`
