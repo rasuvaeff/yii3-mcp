@@ -10,6 +10,8 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Yii3Mcp\Apps\AppParamParser;
+use Rasuvaeff\Yii3Mcp\Apps\McpAppsConfigurator;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
 use Rasuvaeff\Yii3Mcp\Interceptor\CachingToolCallInterceptor;
@@ -144,6 +146,18 @@ return [
                     toolNames: $openapi['tool_names'] ?? [],
                     modifier: $operationModifier,
                     dryRunOperations: $openapi['dry_run'] ?? [],
+                );
+            }
+
+            /** @var array{enable?: bool, definitions?: list<array<string, mixed>>} $apps */
+            $apps = $params['rasuvaeff/yii3-mcp']['apps'] ?? [];
+            $appDefinitions = $apps['definitions'] ?? [];
+
+            // the extension is announced for attribute-based apps too, so
+            // `enable` alone (no declarative definitions) is a valid setup
+            if (($apps['enable'] ?? false) || $appDefinitions !== []) {
+                $configurators[] = new McpAppsConfigurator(
+                    array_map(AppParamParser::parse(...), $appDefinitions),
                 );
             }
 
@@ -314,6 +328,9 @@ return [
             /** @var array<string, string|list<string>> $clientSecrets */
             $clientSecrets = $params['rasuvaeff/yii3-mcp']['client_secrets'] ?? [];
 
+            /** @var array{enable?: bool, definitions?: list<array<string, mixed>>} $apps */
+            $apps = $params['rasuvaeff/yii3-mcp']['apps'] ?? [];
+
             return new McpDoctor(
                 container: $container,
                 sessionStore: $container->get(SessionStoreInterface::class),
@@ -327,6 +344,8 @@ return [
                 expectedHttpHost: $params['rasuvaeff/yii3-mcp']['expected_http_host'] ?? '',
                 allowedHosts: $params['rasuvaeff/yii3-mcp']['allowed_hosts'],
                 toolResultCacheEnabled: ($params['rasuvaeff/yii3-mcp']['cache']['tools'] ?? []) !== [],
+                appsEnabled: $apps['enable'] ?? false,
+                appDefinitions: $apps['definitions'] ?? [],
             );
         },
     ],

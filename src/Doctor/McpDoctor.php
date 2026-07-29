@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Doctor;
 
+use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Server;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
@@ -13,6 +14,7 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Yii3Mcp\Apps\AppParamParser;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Rasuvaeff\Yii3Mcp\Utf8;
@@ -49,6 +51,8 @@ final readonly class McpDoctor
      * @param string $sessionDirectory the effective session directory (defaults already resolved)
      * @param array<string, string> $openApiHeaders used for the spec fetch only; never reported
      * @param list<string> $clientSecretIds ids (NOT secrets) from the `client_secrets` param
+     * @param list<array<string, mixed>> $appDefinitions raw `apps.definitions` entries, parsed here so a
+     *                                                   malformed one is reported even when the server build check skips
      */
     public function __construct(
         private ContainerInterface $container,
@@ -65,6 +69,8 @@ final readonly class McpDoctor
         private string $expectedHttpHost = '',
         private array $allowedHosts = [],
         private bool $toolResultCacheEnabled = false,
+        private bool $appsEnabled = false,
+        private array $appDefinitions = [],
     ) {}
 
     public function diagnose(bool $probeUpstream = false): DoctorReport
@@ -76,6 +82,7 @@ final readonly class McpDoctor
             $this->checkSessionDirectory(),
             $this->checkSessionStore(),
             $this->checkOpenApiSpec($probeUpstream),
+            $this->checkMcpApps(),
             $this->checkServerBuild($probeUpstream),
         ]);
     }
@@ -389,6 +396,47 @@ final readonly class McpDoctor
             category: CheckCategory::Config,
             status: CheckStatus::Pass,
             details: sprintf('Spec file parsed: %s', $path),
+        );
+    }
+
+    /**
+     * Declarative apps are parsed here, not only during the server build: with
+     * a URL spec the build check skips without `--probe`, and a malformed
+     * definition would then go unreported.
+     */
+    private function checkMcpApps(): CheckResult
+    {
+        if (!$this->appsEnabled && $this->appDefinitions === []) {
+            return new CheckResult(
+                name: 'mcp_apps',
+                category: CheckCategory::Config,
+                status: CheckStatus::Skip,
+                details: 'MCP Apps are disabled ("apps.enable" is false and "apps.definitions" is empty)',
+            );
+        }
+
+        $uris = [];
+
+        foreach ($this->appDefinitions as $index => $definition) {
+            try {
+                $uris[] = AppParamParser::parse($definition)->uri;
+            } catch (\Throwable $failure) {
+                return new CheckResult(
+                    name: 'mcp_apps',
+                    category: CheckCategory::Config,
+                    status: CheckStatus::Fail,
+                    details: sprintf('App definition #%d is invalid: %s', $index, $this->throwableDetail($failure)),
+                );
+            }
+        }
+
+        return new CheckResult(
+            name: 'mcp_apps',
+            category: CheckCategory::Config,
+            status: CheckStatus::Pass,
+            details: $uris === []
+                ? sprintf('Extension "%s" announced; no declarative apps', McpApps::EXTENSION_ID)
+                : sprintf('Extension "%s" announced; %d declarative app(s): %s', McpApps::EXTENSION_ID, count($uris), implode(', ', $uris)),
         );
     }
 

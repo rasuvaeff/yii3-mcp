@@ -164,5 +164,29 @@ return [
             // reject.
             'dry_run' => [],
         ],
+        // MCP Apps (io.modelcontextprotocol/ui): interactive HTML applications
+        // the client renders in a sandboxed iframe. 'enable' => true announces
+        // the extension, which is what attribute-based apps (#[McpResource]
+        // with a ui:// URI) need to be recognized as apps. 'definitions'
+        // declares apps without a PHP class; a non-empty list also enables the
+        // extension.
+        //
+        // Every definition is an array:
+        //   'uri'  => 'ui://dashboard',        // required, must start with ui://
+        //   'name' => 'dashboard',             // required, unique
+        //   'html' => '<!DOCTYPE html>…',      // string, or Closure(): string
+        //                                      // re-evaluated on every read
+        //   'title' => 'Dashboard',            // optional
+        //   'description' => 'Sales overview', // optional
+        //   'csp' => ['connect_domains' => ['api.example.com']], // optional
+        //   'permissions' => ['geolocation' => true],            // optional
+        //   'domain' => null,                  // optional
+        //   'prefers_border' => null,          // optional
+        // CSP domains are passed to the client verbatim — the host enforces
+        // the policy, and these definitions are application-owned config.
+        'apps' => [
+            'enable' => false,
+            'definitions' => [],
+        ],
     ],
 ];

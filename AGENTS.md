@@ -38,6 +38,8 @@ OutputSchemaProjector, OperationContractValidator are @internal;
 OpenApiServerConfigurator,
 SpecLoader, Operation, OperationModifierInterface, ExecutionIdentity,
 ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface}`,
+`Apps\{McpAppsConfigurator, AppDefinition; AppParamParser and
+AppResourceHandler are @internal}`,
 `Prompts\MarkdownPromptsConfigurator` (file format is
 vjik/my-prompts-mcp-compatible — keep it that way), exceptions in
 `Exception\`, `OpenApi\Exception\` and `Prompts\Exception\`
@@ -232,6 +234,33 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   so rejecting a path without one only enforces the spec, not an extra
   restriction. Checked in `SpecIndex::buildOperation()`, same fail-closed
   shape as the existing empty-`operationId`/empty-`path` guard.
+- **MCP Apps: `_meta.ui` means two different things at two levels, and the
+  wrong one is silently ignored.** The resource DESCRIPTOR (`resources/list`)
+  carries only the bare marker (`McpApps::resourceMarker()`, an empty
+  `\stdClass`) — that is what flags the resource as an app. The resource
+  CONTENT (`resources/read`) carries `UiResourceContentMeta` (CSP,
+  permissions, domain, prefersBorder) — the sandbox contract. A policy placed
+  on the descriptor does nothing; a marker on the content tells the host
+  nothing. `AppResourceHandler` therefore returns a `TextResourceContents`,
+  not a string and not a `ReadResourceResult`: the SDK's resource formatter
+  only carries `_meta` through on a ready `ResourceContents`, and it has no
+  branch for `ReadResourceResult` at all (it throws on the unhandled type).
+  `McpAppsConfigurator` is also the SINGLE enabler of the extension —
+  `Builder::enableExtension()` throws `LogicException` on a duplicate id, so
+  an application configurator that also enables `McpApps` while
+  `apps.enable` is on fails the build. That is the intended fail-fast.
+- **`Apps\AppParamParser` must never call the SDK's `UiResourceCsp::fromArray()`
+  or `UiResourcePermissions::fromArray()`.** Both would misread this package's
+  params format SILENTLY: permissions treat a PRESENT key as requested
+  (`isset()`), so `'camera' => false` would switch the camera ON, and CSP
+  reads camelCase (`connectDomains`) while params are snake_case
+  (`connect_domains`) like every other option here — every field would come
+  out `null`, no CSP would be emitted, and the operator would believe a domain
+  was allow-listed while the host applied its own restrictive default. Map
+  explicitly into the constructors; `tests/Apps/AppParamParserTest.php` is the
+  regression guard. CSP domains themselves are passed through verbatim — the
+  host enforces the policy and `definitions` is application-owned config, not
+  client input.
 - **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect

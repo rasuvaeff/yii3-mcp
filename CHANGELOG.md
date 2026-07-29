@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **MCP Apps (`io.modelcontextprotocol/ui`).** Interactive HTML applications
+  served as `ui://` resources and rendered by the client in a sandboxed
+  iframe. `Apps\McpAppsConfigurator` announces the extension and registers
+  declarative apps; `Apps\AppDefinition` is the value object behind them
+  (HTML as a string or a `Closure(): string` re-evaluated on every read).
+  New `apps` params block: `enable` alone announces the extension for
+  attribute-based apps (`#[McpResource]` with a `ui://` URI), a non-empty
+  `definitions` list also enables it. Tool↔app linking through `UiToolMeta`
+  in a tool's `_meta` works out of the box. `mcp:doctor` gains an `mcp_apps`
+  check that parses every declarative definition, so a malformed one is
+  reported even when the server-build check is skipped.
 - **[security] `completion/complete` now obeys prompt and resource
   visibility.** The SDK serves argument autocompletion straight off the
   registry, bypassing the reference handler where visibility lives, so a

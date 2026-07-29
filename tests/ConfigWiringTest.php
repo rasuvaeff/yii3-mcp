@@ -6,6 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Closure;
 use LogicException;
+use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
@@ -433,6 +434,58 @@ final class ConfigWiringTest
         $definition(new Psr17Factory());
     }
 
+    public function appsAreOffByDefault(): void
+    {
+        $params = $this->params();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['apps'], ['enable' => false, 'definitions' => []]);
+
+        $capabilities = (array) ($this->appsTester($params)->initialize()['capabilities'] ?? []);
+
+        Assert::false(isset($capabilities['extensions']));
+    }
+
+    public function enableAloneAdvertisesTheAppsExtension(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['apps']['enable'] = true;
+
+        $capabilities = (array) ($this->appsTester($params)->initialize()['capabilities'] ?? []);
+        $extensions = (array) ($capabilities['extensions'] ?? []);
+
+        Assert::true(isset($extensions[McpApps::EXTENSION_ID]));
+    }
+
+    public function declarativeDefinitionsEnableTheExtensionAndAreServed(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['apps']['definitions'] = [[
+            'uri' => 'ui://dashboard',
+            'name' => 'dashboard',
+            'html' => '<h1>Sales</h1>',
+            'csp' => ['connect_domains' => ['api.example.com']],
+            'permissions' => ['camera' => false, 'geolocation' => true],
+        ]];
+
+        $tester = $this->appsTester($params);
+        $extensions = (array) (((array) ($tester->initialize()['capabilities'] ?? []))['extensions'] ?? []);
+
+        Assert::true(isset($extensions[McpApps::EXTENSION_ID]));
+        Assert::same(array_column($tester->listResources(), 'uri'), ['ui://dashboard']);
+
+        $content = ((array) ($tester->readResource('ui://dashboard')['contents'] ?? []))[0] ?? [];
+        $content = is_array($content) ? $content : [];
+
+        Assert::same($content['text'] ?? null, '<h1>Sales</h1>');
+        // `'camera' => false` must NOT become a requested permission
+        Assert::same($content['_meta'] ?? null, [
+            'ui' => [
+                'csp' => ['connectDomains' => ['api.example.com']],
+                'permissions' => ['geolocation' => []],
+            ],
+        ]);
+    }
+
     public function doctorDefinitionBuildsFromParamsAndContainer(): void
     {
         /** @var Closure $definition */
@@ -465,6 +518,24 @@ final class ConfigWiringTest
             static fn(array $check): bool => $check['name'] === 'session_directory',
         ));
         Assert::string($sessionDirectory[0]['details'])->contains('yii3-mcp-sessions');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function appsTester(array $params): McpTester
+    {
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+
+        return new McpTester($server, $psr17, $psr17, $psr17);
     }
 
     /**

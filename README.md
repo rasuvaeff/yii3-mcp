@@ -324,8 +324,9 @@ treat the report as operator-facing diagnostics):
 Checks include endpoint secret, the optional `expected_http_host` allow-list,
 every PSR service required by enabled entry points/features, session storage
 (including **confidentiality**: a session directory readable by group/others
-fails the check, not just an unwritable one), the OpenAPI spec and a real
-server build. Missing services are reported by
+fails the check, not just an unwritable one), the OpenAPI spec, the MCP Apps
+configuration (every declarative definition is parsed, so a malformed one is
+reported even when the server build check is skipped) and a real server build. Missing services are reported by
 their exact interface. Exit codes are stable for scripting: `0` healthy,
 `2` config error, `3` storage error, `4` upstream error — the category of the
 **first** failing check (checks run root-causes-first, so a broken config
@@ -1105,6 +1106,121 @@ A dry-run call still passes through the full interceptor chain (session
 budget, RBAC/audit, caching, size limit) like any other call — previewing a
 write action requires the same permission as actually calling it.
 
+## MCP Apps: interactive UI in the conversation
+
+[MCP Apps](https://github.com/modelcontextprotocol/ext-apps)
+(`io.modelcontextprotocol/ui`) are HTML documents served as `ui://` resources
+and rendered by the client in a sandboxed iframe, inside the conversation.
+The extension must be announced during the handshake — a `ui://` resource on
+a server that does not announce it is just text to the client.
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'apps' => [
+        // announce the extension (enough for attribute-based apps)
+        'enable' => true,
+        // declarative apps — no PHP class needed
+        'definitions' => [
+            [
+                'uri' => 'ui://dashboard',        // required, must start with ui://
+                'name' => 'dashboard',            // required, unique
+                'html' => '<!DOCTYPE html>…',     // string, or Closure(): string
+                'title' => 'Dashboard',
+                'description' => 'Sales overview',
+                'csp' => ['connect_domains' => ['api.example.com']],
+                'permissions' => ['geolocation' => true],
+                'prefers_border' => true,
+            ],
+        ],
+    ],
+],
+```
+
+A non-empty `definitions` list enables the extension on its own. `html` as a
+`Closure(): string` is re-evaluated on **every** `resources/read` — the hook
+for templating and DI-provided data, and the reason an expensive render costs
+that much per read.
+
+### Attribute-based apps
+
+For an app with logic behind it, declare a `ui://` resource the usual way and
+return the content yourself:
+
+```php
+#[McpResource(
+    uri: 'ui://report',
+    name: 'report',
+    mimeType: McpApps::MIME_TYPE,
+    meta: ['ui' => new \stdClass()],        // descriptor marker
+)]
+public function report(): TextResourceContents
+{
+    return new TextResourceContents(
+        uri: 'ui://report',
+        mimeType: McpApps::MIME_TYPE,
+        text: '<!DOCTYPE html><h1>Report</h1>',
+        meta: ['ui' => new UiResourceContentMeta(  // sandbox contract
+            csp: new UiResourceCsp(connectDomains: ['api.example.com']),
+            prefersBorder: true,
+        )],
+    );
+}
+```
+
+This path still needs `'apps' => ['enable' => true]` — that is what announces
+the extension. Returning a plain string works too, but only a returned
+`TextResourceContents` can carry `_meta.ui`.
+
+### Where `_meta.ui` goes
+
+| Level | Value | Carries |
+|---|---|---|
+| Descriptor (`resources/list`) | `McpApps::resourceMarker()` — an empty `{}` | "this resource is an app" and nothing else |
+| Content (`resources/read`) | `UiResourceContentMeta` | `csp`, `permissions`, `domain`, `prefersBorder` |
+
+Mixing them up is the one easy mistake here: a sandbox policy placed on the
+descriptor is ignored, and a marker placed on the content tells the host
+nothing.
+
+### Sandbox: CSP and permissions
+
+`UiResourceCsp` allow-lists what the iframe may reach (`connect_domains` for
+fetch/XHR/WebSocket, `resource_domains` for images/scripts/styles,
+`frame_domains`, `base_uri_domains`); omitting the CSP entirely leaves the
+host's own restrictive default in place. `UiResourcePermissions` requests
+sandbox capabilities (`camera`, `microphone`, `geolocation`,
+`clipboard_write`) — in params these are plain booleans, and only `true` ones
+are sent.
+
+Domains are passed to the client verbatim: the policy is enforced by the host,
+and `definitions` is application-owned configuration, not client input. The
+app HTML itself is served as-is — it is your responsibility not to interpolate
+untrusted data into it.
+
+### Linking a tool to an app
+
+```php
+#[McpTool(
+    name: 'refresh_report',
+    meta: ['ui' => new UiToolMeta(resourceUri: 'ui://report')],
+)]
+public function refresh(): string { /* … */ }
+```
+
+`UiToolMeta::$visibility` (`ToolVisibility::Model` / `ToolVisibility::App`)
+declares who may call it — an app-only tool is hidden from the model's
+`tools/list` **by the host**; the server only states the intent, so do not
+treat it as an access control boundary. For a server-side guarantee use
+`Visibility\ToolVisibilityInterface`, which fail-closed rejects the call
+itself.
+
+App resources are ordinary resources otherwise: `ResourceVisibilityInterface`
+filters them, `resource_interceptors` wrap their reads, and a `ui://` URI
+colliding with an attribute resource fails the build like any other duplicate.
+`McpAppsConfigurator` is the single enabler of the extension — a second
+`enableExtension(new McpApps())` from an application configurator fails the
+build (the SDK rejects a duplicate extension id).
+
 ## Components
 
 | Class | Role |
@@ -1143,6 +1259,8 @@ write action requires the same permission as actually calling it.
 | `OpenApi\OperationModifierInterface` | per-operation customization hook, applied after the `tool_names` rename |
 | `OpenApi\Operation` | read-only operation context passed to `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
+| `Apps\McpAppsConfigurator` | announces the MCP Apps extension and registers declarative `ui://` app resources (`apps` params) |
+| `Apps\AppDefinition` | one declarative app: `ui://` URI, name, HTML (string or `Closure(): string`) and its `UiResourceContentMeta` |
 
 ## Security
 
@@ -1188,6 +1306,7 @@ See [examples/](examples/) — every script runs offline.
 | [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
 | [`server-initiated.php`](examples/server-initiated.php) | Official `ToolAnnotations` and a schema-safe `RequestContext` parameter for progress/elicitation | no |
+| [`mcp-apps.php`](examples/mcp-apps.php) | MCP Apps: declarative and attribute-based `ui://` apps, `_meta.ui` placement, CSP/permissions, a tool linked to an app | no |
 
 ## Testing your tools
 
