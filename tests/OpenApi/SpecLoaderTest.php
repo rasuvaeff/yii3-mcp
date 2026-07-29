@@ -243,7 +243,7 @@ final class SpecLoaderTest
 
     public function specExactlyAtTheDocumentLimitParses(): void
     {
-        $index = $this->loader(new FakeHttpClient(body: self::specPaddedTo(SpecIndex::MAX_DOCUMENT_BYTES)))
+        $index = $this->loader(new FakeHttpClient(body: $this->specPaddedTo(SpecIndex::MAX_DOCUMENT_BYTES)))
             ->fromUrl('https://api.test/openapi.json');
 
         Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
@@ -253,9 +253,9 @@ final class SpecLoaderTest
     {
         // chunked transfer: no advertised size, body larger than one read
         // chunk — the loader must accumulate the chunks, not keep the last
-        $body = self::specPaddedTo(20_000);
+        $body = $this->specPaddedTo(20_000);
         $loader = new SpecLoader(
-            httpClient: new StreamBodyHttpClient(new StubStream(content: $body, advertisedSize: null)),
+            httpClient: new StreamBodyHttpClient(new StubStream(content: $body)),
             requestFactory: new Psr17Factory(),
         );
 
@@ -284,7 +284,7 @@ final class SpecLoaderTest
      * The fixture spec JSON padded (via an ignored top-level key) to exactly
      * $bytes bytes.
      */
-    private static function specPaddedTo(int $bytes): string
+    private function specPaddedTo(int $bytes): string
     {
         $spec = OpenApiFixture::spec();
         $spec['x-pad'] = '';

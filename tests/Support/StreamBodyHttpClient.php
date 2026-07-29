@@ -10,11 +10,11 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 
-final class StreamBodyHttpClient implements ClientInterface
+final readonly class StreamBodyHttpClient implements ClientInterface
 {
     public function __construct(
-        private readonly StreamInterface $body,
-        private readonly int $statusCode = 200,
+        private StreamInterface $body,
+        private int $statusCode = 200,
     ) {}
 
     #[\Override]

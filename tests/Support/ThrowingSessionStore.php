@@ -8,10 +8,10 @@ use Mcp\Server\Session\SessionStoreInterface;
 use RuntimeException;
 use Symfony\Component\Uid\Uuid;
 
-final class ThrowingSessionStore implements SessionStoreInterface
+final readonly class ThrowingSessionStore implements SessionStoreInterface
 {
     public function __construct(
-        private readonly string $message = 'disk on fire',
+        private string $message = 'disk on fire',
     ) {}
 
     #[\Override]

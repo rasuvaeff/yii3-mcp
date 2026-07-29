@@ -31,7 +31,7 @@ final class Utf8Test
         for ($maxBytes = 0; $maxBytes <= strlen($value) + 1; $maxBytes++) {
             $cut = Utf8::cut($value, $maxBytes);
 
-            Assert::true(self::isUtf8($cut), sprintf('invalid UTF-8 at maxBytes=%d', $maxBytes));
+            Assert::true($this->isUtf8($cut), sprintf('invalid UTF-8 at maxBytes=%d', $maxBytes));
             Assert::true(strlen($cut) <= $maxBytes, sprintf('over the limit at maxBytes=%d', $maxBytes));
             json_encode($cut, JSON_THROW_ON_ERROR);
         }
@@ -46,7 +46,7 @@ final class Utf8Test
     public function aBoundaryAlignedCutKeepsEverything(string $value): void
     {
         for ($maxBytes = 0; $maxBytes <= strlen($value); $maxBytes++) {
-            if (!self::isUtf8(substr($value, 0, $maxBytes))) {
+            if (!$this->isUtf8(substr($value, 0, $maxBytes))) {
                 continue;
             }
 
@@ -93,7 +93,7 @@ final class Utf8Test
      * requirements and not in the CI extension list, so a test using it would
      * pass locally in the composer image and fail on CI.
      */
-    private static function isUtf8(string $value): bool
+    private function isUtf8(string $value): bool
     {
         return preg_match('//u', $value) === 1;
     }
