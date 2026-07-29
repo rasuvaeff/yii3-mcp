@@ -6,8 +6,12 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Closure;
 use LogicException;
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Extension\Apps\McpApps;
+use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Server;
+use Mcp\Server\Resource\SessionSubscriptionManager;
+use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -486,6 +490,83 @@ final class ConfigWiringTest
         ]);
     }
 
+    public function instructionsAreServedInInitializeWhenConfigured(): void
+    {
+        $params = $this->params();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['instructions'], '');
+        Assert::false(isset($this->serverTester($params)->initialize()['instructions']));
+
+        $params['rasuvaeff/yii3-mcp']['instructions'] = 'Call order.status before cancelling.';
+
+        Assert::same(
+            $this->serverTester($params)->initialize()['instructions'] ?? null,
+            'Call order.status before cancelling.',
+        );
+    }
+
+    /**
+     * The SDK's own list handlers and this package's filtering ones must page
+     * identically — a limit applied to only one of them silently changes what
+     * a client sees depending on whether visibility is configured.
+     */
+    public function paginationLimitAppliesToPlainAndFilteredListsAlike(): void
+    {
+        $params = $this->params();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['pagination_limit'], 50);
+
+        // GreetingTool declares two tools; a limit of 1 must split them
+        $params['rasuvaeff/yii3-mcp']['pagination_limit'] = 1;
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+
+        $tester = $this->serverTester($params, withGreeting: true);
+        $page = $tester->request('tools/list');
+
+        Assert::same(count((array) ($page['tools'] ?? [])), 1);
+        Assert::true(isset($page['nextCursor']));
+        // McpTester follows the cursors, so the full set is still reachable
+        Assert::same(count($tester->listTools()), 2);
+    }
+
+    public function protocolVersionIsTheSdkDefaultUnlessPinned(): void
+    {
+        $params = $this->params();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['protocol_version'], '');
+        Assert::same(
+            $this->serverTester($params)->initialize()['protocolVersion'] ?? null,
+            MessageInterface::PROTOCOL_VERSION->value,
+        );
+
+        $params['rasuvaeff/yii3-mcp']['protocol_version'] = '2025-06-18';
+
+        Assert::same($this->serverTester($params)->initialize()['protocolVersion'] ?? null, '2025-06-18');
+    }
+
+    public function anUnsupportedProtocolVersionFailsAtConfigLoad(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['protocol_version'] = '1999-01-01';
+
+        $caught = null;
+
+        try {
+            $this->di($params);
+        } catch (\InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())
+            ->contains('1999-01-01')
+            ->contains('2025-11-25');
+    }
+
+    public function theSubscriptionManagerIsBoundSoBothSidesShareTheState(): void
+    {
+        Assert::same($this->di()[SubscriptionManagerInterface::class], SessionSubscriptionManager::class);
+    }
+
     public function doctorDefinitionBuildsFromParamsAndContainer(): void
     {
         /** @var Closure $definition */
@@ -518,6 +599,44 @@ final class ConfigWiringTest
             static fn(array $check): bool => $check['name'] === 'session_directory',
         ));
         Assert::string($sessionDirectory[0]['details'])->contains('yii3-mcp-sessions');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function serverTester(array $params, bool $withGreeting = false): McpTester
+    {
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer($withGreeting ? [GreetingTool::class => new GreetingTool(prefix: 'Hi')] : []);
+        /** @var array{instructions?: string, pagination_limit?: int} $mcp */
+        $mcp = $params['rasuvaeff/yii3-mcp'];
+        $factory = new McpServerFactory(
+            container: $container,
+            sessionStore: new InMemorySessionStore(),
+            instructions: $mcp['instructions'] ?? '',
+            paginationLimit: $mcp['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
+            protocolVersion: $this->pinnedProtocolVersion($params),
+        );
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+
+        return new McpTester($server, $psr17, $psr17, $psr17);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function pinnedProtocolVersion(array $params): ?ProtocolVersion
+    {
+        /** @var array{protocol_version?: string} $mcp */
+        $mcp = $params['rasuvaeff/yii3-mcp'];
+        $pinned = $mcp['protocol_version'] ?? '';
+
+        return $pinned === '' ? null : ProtocolVersion::from($pinned);
     }
 
     /**

@@ -164,6 +164,18 @@ return [
             // reject.
             'dry_run' => [],
         ],
+        // free-form "how to use this server" text served in the initialize
+        // result — the agent reads it before its first call. Empty = omitted.
+        'instructions' => '',
+        // page size for every list method (tools/resources/templates/prompts).
+        // Applies to the SDK's handlers and to this package's filtering ones
+        // alike, so paging can never differ between them.
+        'pagination_limit' => 50,
+        // pins the MCP revision advertised in initialize, e.g. '2025-06-18'.
+        // Empty keeps the SDK's own default (2025-11-25 under the ~0.7.0 pin).
+        // The SDK does NOT negotiate: it answers with this revision whatever
+        // the client asked for. An unsupported value fails the server build.
+        'protocol_version' => '',
         // MCP Apps (io.modelcontextprotocol/ui): interactive HTML applications
         // the client renders in a sandboxed iframe. 'enable' => true announces
         // the extension, which is what attribute-based apps (#[McpResource]

@@ -31,9 +31,15 @@ composer require rasuvaeff/yii3-mcp
   the SDK does NOT negotiate — it answers with its own version whatever the
   client asks for. `Testing\McpTester` reads the same constant.
 - `resources/subscribe` is advertised by the SDK whenever any resource exists and
-  subscriptions ARE recorded per session, but nothing here ever emits
-  `notifications/resources/updated` — under FPM no process outlives the request.
-  Known gap: clients should poll `resources/read`.
+  subscriptions ARE recorded per session. `Resource\ResourceUpdateNotifier` sends
+  `notifications/resources/updated` to the CALLING session from inside the request
+  that changed the resource (needs the tool's `RequestContext`); an unsubscribed
+  session gets nothing. Other sessions cannot be reached — under FPM no process
+  outlives the request, so out-of-band push stays impossible.
+- Server-wide params knobs: `instructions` (text served in initialize, '' omits),
+  `pagination_limit` (default 50; applied to BOTH the SDK's list handlers and this
+  package's filtering ones so they never page differently), `protocol_version`
+  ('' = SDK default; an unsupported value throws at config load).
 - Caller-influenced output is bounded BEFORE allocation: upstream bodies
   (`openapi.max_response_bytes`, incremental read), substituted prompts
   (`limits.prompt_result_bytes`, arithmetic pre-check), spec documents
@@ -395,6 +401,35 @@ public function report(
   to a missing one (`Visibility\FilteredCompletionCompleteHandler`).
 - Interceptors do NOT wrap completion/complete — it is a metadata lookup, not a
   capability call. Put authorization in the visibility filter.
+
+### Resource update notifications
+
+```php
+use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
+
+public function __construct(private ResourceUpdateNotifier $notifier) {}
+
+#[McpTool(name: 'order.cancel')]
+public function cancel(string $orderId, RequestContext $context): string
+{
+    $this->orders->cancel($orderId);
+    $this->notifier->notify($context, 'app://orders/' . $orderId);  // true if subscribed
+
+    return 'cancelled';
+}
+```
+
+- Requires the SDK's request-scoped `RequestContext` (a method parameter; the SDK
+  keeps it out of the generated input schema).
+- Checks the subscription first: an unsolicited `notifications/resources/updated`
+  never reaches a client that did not subscribe. Returns whether it was sent.
+- Reaches ONLY the calling session. `SubscriptionManagerInterface` is bound in
+  `config/di.php` (default `SessionSubscriptionManager`) and shared with the SDK's
+  subscribe/unsubscribe handlers — swap the binding and both sides follow.
+- Sends by suspending the handler Fiber; outside a Fiber `ClientGateway::notify()`
+  throws, so test it inside `new Fiber(...)`, not through `Testing\McpTester`
+  (once a handler notifies, the transport streams to output and the PSR-7 body is
+  empty — a known limit of the tester).
 
 ### MCP Apps (io.modelcontextprotocol/ui)
 

@@ -454,14 +454,53 @@ as not found, indistinguishable from a missing one (see
 `completion/complete` — it is a metadata lookup, not a capability call, so put
 authorization in the visibility filter, not in an interceptor.
 
-### Resource subscriptions: advertised, not delivered
+### Server-wide knobs
 
-The SDK unconditionally advertises `resources.subscribe` whenever the server
-has any resource, and it does record `resources/subscribe` per session — but
-nothing in this package ever emits `notifications/resources/updated`. Under
-PHP-FPM there is no process that outlives the request to push from, so a
-subscription is accepted and then silently never fires. Treat it as a known
-gap, not a feature: clients should poll `resources/read` instead.
+```php
+'rasuvaeff/yii3-mcp' => [
+    // free-form "how to use this server" text served in the initialize result —
+    // the agent reads it before its first call. Empty = omitted.
+    'instructions' => 'Prefer order.status over reading app://orders/{id}.',
+    // page size for tools/resources/templates/prompts lists. Applies to the
+    // SDK's handlers AND this package's filtering ones, so they can never page
+    // differently depending on whether visibility is configured.
+    'pagination_limit' => 50,
+    // pins the revision advertised in initialize; empty keeps the SDK's default
+    // (2025-11-25). An unsupported value fails at config load, not at runtime.
+    'protocol_version' => '',
+],
+```
+
+### Resource subscriptions
+
+The SDK advertises `resources.subscribe` whenever the server has any resource
+and records `resources/subscribe` per session. Nothing emits
+`notifications/resources/updated` on its own — but the tool that *causes* the
+change can, inside the same request, through `Resource\ResourceUpdateNotifier`:
+
+```php
+public function __construct(private ResourceUpdateNotifier $notifier) {}
+
+#[McpTool(name: 'order.cancel')]
+public function cancel(string $orderId, RequestContext $context): string
+{
+    $this->orders->cancel($orderId);
+    $this->notifier->notify($context, 'app://orders/' . $orderId);
+
+    return 'cancelled';
+}
+```
+
+`notify()` returns whether the caller was subscribed; a session that never
+subscribed is never sent anything, so an unsolicited notification cannot appear
+on the wire. Bind a custom `Mcp\Server\Resource\SubscriptionManagerInterface`
+and both the subscribe handler and the notifier follow it — the default binding
+is the SDK's session-backed manager.
+
+**Only the calling session is reached.** Other sessions subscribed to the same
+URI are not: that would need a connection this process does not hold. Under
+PHP-FPM nothing outlives the request, so out-of-band push remains impossible —
+clients that need to observe changes they did not cause must poll.
 
 ## Framework-agnostic usage
 
@@ -1303,6 +1342,7 @@ build (the SDK rejects a duplicate extension id).
 | `OpenApi\OperationModifierInterface` | per-operation customization hook, applied after the `tool_names` rename |
 | `OpenApi\Operation` | read-only operation context passed to `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
+| `Resource\ResourceUpdateNotifier` | sends `notifications/resources/updated` to the calling session from inside the request that changed the resource; a session that never subscribed is never notified |
 | `Apps\McpAppsConfigurator` | announces the MCP Apps extension and registers declarative `ui://` app resources (`apps` params) |
 | `Apps\AppDefinition` | one declarative app: `ui://` URI, name, HTML (string or `Closure(): string`) and its `UiResourceContentMeta` |
 

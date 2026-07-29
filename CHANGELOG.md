@@ -25,6 +25,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PHP-FPM nothing outlives the request to push from. Known gap, now stated
   instead of implied.
 
+## Unreleased
+
+- **`Resource\ResourceUpdateNotifier`** — sends `notifications/resources/updated`
+  to the calling session from inside the request that changed the resource
+  (takes the SDK's `RequestContext`). The subscription is checked first, so an
+  unsolicited notification never reaches a client that did not subscribe;
+  `SubscriptionManagerInterface` is bound in `config/di.php` and shared with the
+  SDK's subscribe/unsubscribe handlers, so swapping it moves both sides.
+- **New server-wide params:** `instructions` (free-form "how to use this server"
+  text served in `initialize`), `pagination_limit` (page size for every list
+  method — applied to the SDK's handlers and this package's filtering ones alike,
+  so they can never page differently) and `protocol_version` (pins the advertised
+  revision; an unsupported value fails at config load, not at runtime).
+- `McpServerFactory` gained the matching optional constructor arguments
+  (`instructions`, `paginationLimit`, `protocolVersion`, `subscriptionManager`)
+  and the `DEFAULT_PAGINATION_LIMIT` constant. All additive.
+
 ## 2.1.0 — 2026-07-29
 
 - **MCP Apps (`io.modelcontextprotocol/ui`).** Interactive HTML applications

@@ -10,10 +10,12 @@ use Mcp\Capability\Attribute\McpResourceTemplate;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server;
 use Mcp\Server\Builder;
 use Mcp\Server\Handler\Request\CompletionCompleteHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
+use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -23,6 +25,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredCompletionCompleteHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListPromptsHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListResourcesHandler;
@@ -48,15 +51,36 @@ use ReflectionMethod;
  */
 final readonly class McpServerFactory
 {
+    /**
+     * @param string $instructions free-form "how to use this server" text served in `initialize`; '' omits it
+     * @param int $paginationLimit page size for every list method; applied to the SDK's handlers AND this
+     *                             package's filtering ones, which must never page differently
+     * @param ProtocolVersion|null $protocolVersion pins the revision advertised in `initialize`;
+     *                                              null keeps the SDK's own default
+     * @param SubscriptionManagerInterface|null $subscriptionManager backs resources/subscribe; pass the SAME
+     *                                                               instance {@see ResourceUpdateNotifier} reads
+     */
     public function __construct(
         private ContainerInterface $container,
         private SessionStoreInterface $sessionStore,
         private string $name = 'yii3-mcp',
         private string $version = 'dev',
         private ?LoggerInterface $logger = null,
-    ) {}
+        private string $instructions = '',
+        private int $paginationLimit = self::DEFAULT_PAGINATION_LIMIT,
+        private ?ProtocolVersion $protocolVersion = null,
+        private ?SubscriptionManagerInterface $subscriptionManager = null,
+    ) {
+        if ($paginationLimit < 1) {
+            throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
+        }
+    }
 
-    private const int PAGE_SIZE = 50;
+    /**
+     * Matches the SDK's own default; kept here so the filtering list handlers
+     * and the SDK's pagination cannot drift apart silently.
+     */
+    public const int DEFAULT_PAGINATION_LIMIT = 50;
 
     /**
      * @param list<class-string> $toolClasses
@@ -81,7 +105,23 @@ final readonly class McpServerFactory
         $builder = Server::builder()
             ->setServerInfo(name: $this->name, version: $this->version)
             ->setContainer($this->container)
-            ->setSession(sessionStore: $this->sessionStore);
+            ->setSession(sessionStore: $this->sessionStore)
+            ->setPaginationLimit($this->paginationLimit);
+
+        if ($this->instructions !== '') {
+            $builder->setInstructions($this->instructions);
+        }
+
+        if ($this->protocolVersion instanceof ProtocolVersion) {
+            $builder->setProtocolVersion($this->protocolVersion);
+        }
+
+        // the subscribe/unsubscribe handlers and ResourceUpdateNotifier must
+        // read the same subscription state, so a swapped-in manager has to
+        // reach the builder too
+        if ($this->subscriptionManager instanceof SubscriptionManagerInterface) {
+            $builder->setResourceSubscriptionManager($this->subscriptionManager);
+        }
 
         if ($this->logger instanceof LoggerInterface) {
             $builder->setLogger($this->logger);
@@ -155,7 +195,7 @@ final readonly class McpServerFactory
                 $listHandler = new FilteredListToolsHandler(
                     registry: $registry,
                     visibility: $toolVisibility,
-                    pageSize: self::PAGE_SIZE,
+                    pageSize: $this->paginationLimit,
                 );
                 $builder->addRequestHandler($listHandler);
             }
@@ -165,7 +205,7 @@ final readonly class McpServerFactory
                 $listHandler = new FilteredListPromptsHandler(
                     registry: $registry,
                     visibility: $promptVisibility,
-                    pageSize: self::PAGE_SIZE,
+                    pageSize: $this->paginationLimit,
                 );
                 $builder->addRequestHandler($listHandler);
             }
@@ -175,14 +215,14 @@ final readonly class McpServerFactory
                 $listHandler = new FilteredListResourcesHandler(
                     registry: $registry,
                     visibility: $resourceVisibility,
-                    pageSize: self::PAGE_SIZE,
+                    pageSize: $this->paginationLimit,
                 );
                 $builder->addRequestHandler($listHandler);
                 /** @var RequestHandlerInterface<mixed> $templatesHandler */
                 $templatesHandler = new FilteredListResourceTemplatesHandler(
                     registry: $registry,
                     visibility: $resourceVisibility,
-                    pageSize: self::PAGE_SIZE,
+                    pageSize: $this->paginationLimit,
                 );
                 $builder->addRequestHandler($templatesHandler);
             }
