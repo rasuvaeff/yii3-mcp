@@ -63,6 +63,50 @@ final class McpDoctorTest
         Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Skip);
     }
 
+    public function disabledMcpAppsAreSkipped(): void
+    {
+        Assert::same($this->check($this->doctor()->diagnose(), 'mcp_apps')->status, CheckStatus::Skip);
+    }
+
+    public function enabledMcpAppsWithoutDefinitionsPass(): void
+    {
+        $check = $this->check($this->doctor(appsEnabled: true)->diagnose(), 'mcp_apps');
+
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::string($check->details)
+            ->contains('io.modelcontextprotocol/ui')
+            ->contains('no declarative apps');
+    }
+
+    public function declarativeAppsAreListed(): void
+    {
+        $check = $this->check(
+            $this->doctor(appDefinitions: [
+                ['uri' => 'ui://dashboard', 'name' => 'dashboard', 'html' => '<h1>Hi</h1>'],
+            ])->diagnose(),
+            'mcp_apps',
+        );
+
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::string($check->details)->contains('1 declarative app(s): ui://dashboard');
+    }
+
+    public function malformedAppDefinitionFailsWithItsIndex(): void
+    {
+        $report = $this->doctor(appDefinitions: [
+            ['uri' => 'ui://ok', 'name' => 'ok', 'html' => ''],
+            ['uri' => 'app://wrong', 'name' => 'wrong', 'html' => ''],
+        ])->diagnose();
+
+        $check = $this->check($report, 'mcp_apps');
+
+        Assert::false($report->healthy());
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)
+            ->contains('App definition #1 is invalid')
+            ->contains('app://wrong');
+    }
+
     public function emptySecretFailsWithConfigExitCode(): void
     {
         $report = $this->doctor(secret: '')->diagnose();
@@ -449,6 +493,8 @@ final class McpDoctorTest
         array $clientIds = [],
         string $expectedHttpHost = '',
         array $allowedHosts = [],
+        bool $appsEnabled = false,
+        array $appDefinitions = [],
     ): McpDoctor {
         $factory = new Psr17Factory();
         $definitions = [
@@ -476,6 +522,8 @@ final class McpDoctorTest
             clientSecretIds: $clientIds,
             expectedHttpHost: $expectedHttpHost,
             allowedHosts: $allowedHosts,
+            appsEnabled: $appsEnabled,
+            appDefinitions: $appDefinitions,
         );
     }
 

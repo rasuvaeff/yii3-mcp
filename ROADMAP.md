@@ -163,6 +163,20 @@ from the generated input schema, and yii3-mcp's reference-handler decorator
 preserves that injection. This is documented directly; no yii3-mcp wrapper API
 or parallel protocol abstraction is needed.
 
+## v2.1.0 — MCP Apps
+
+Support for the [MCP Apps](https://github.com/modelcontextprotocol/ext-apps)
+extension (`io.modelcontextprotocol/ui`): interactive HTML applications served
+as `ui://` resources and rendered by the client in a sandboxed iframe.
+`Apps\McpAppsConfigurator` announces the extension and registers declaratively
+configured apps (`apps` params); `Apps\AppDefinition` carries one app's URI,
+name, HTML (a string or a `Closure(): string` evaluated per read) and its
+`UiResourceContentMeta` (CSP allow-lists, sandbox permissions, domain, border
+preference). Attribute-based apps — `#[McpResource]` with a `ui://` URI —
+need only the extension announced. Everything protocol-level comes from the
+SDK's own `Schema\Extension\Apps` value objects, including the tool↔app link
+(`UiToolMeta`), which needs no code here.
+
 ## On demand — waiting for a real use case
 
 | Feature | Notes |

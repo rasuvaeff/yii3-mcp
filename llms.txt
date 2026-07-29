@@ -362,6 +362,80 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   call still passes through the full interceptor chain (session budget,
   RBAC/audit, caching, size limit).
 
+### MCP Apps (io.modelcontextprotocol/ui)
+
+Interactive HTML apps served as `ui://` resources, rendered by the client in
+a sandboxed iframe. The extension must be announced during the handshake —
+without it a `ui://` resource is just text to the client.
+
+```php
+// params: declarative apps (no PHP class), snake_case keys
+'rasuvaeff/yii3-mcp' => [
+    'apps' => [
+        'enable' => true,               // announce the extension
+        'definitions' => [[
+            'uri' => 'ui://dashboard',  // required, must start with ui://
+            'name' => 'dashboard',      // required, unique
+            'html' => '<!DOCTYPE html>…', // string OR Closure(): string
+            'title' => 'Dashboard',
+            'description' => 'Sales overview',
+            'csp' => ['connect_domains' => ['api.example.com']],
+            'permissions' => ['geolocation' => true],
+            'domain' => null,
+            'prefers_border' => true,
+        ]],
+    ],
+],
+
+// programmatic equivalent
+use Rasuvaeff\Yii3Mcp\Apps\AppDefinition;
+use Rasuvaeff\Yii3Mcp\Apps\McpAppsConfigurator;
+
+new McpAppsConfigurator([
+    AppDefinition::create(
+        uri: 'ui://dashboard',
+        name: 'dashboard',
+        html: static fn (): string => renderDashboard(),   // or a plain string
+        title: 'Dashboard',
+        description: 'Sales overview',
+        contentMeta: new UiResourceContentMeta(
+            csp: new UiResourceCsp(connectDomains: ['api.example.com']),
+            permissions: new UiResourcePermissions(geolocation: true),
+            prefersBorder: true,
+        ),
+    ),
+]);
+```
+
+Attribute-based app (logic in PHP): declare `#[McpResource(uri: 'ui://…',
+mimeType: McpApps::MIME_TYPE, meta: ['ui' => new \stdClass()])]` and return a
+`TextResourceContents` carrying `meta: ['ui' => new UiResourceContentMeta(…)]`.
+Still needs `apps.enable = true` — that is what announces the extension.
+Returning a plain string works but cannot carry `_meta.ui`.
+
+- `_meta.ui` placement is NOT interchangeable: descriptor (`resources/list`)
+  gets the bare marker `{}` (`McpApps::resourceMarker()`), content
+  (`resources/read`) gets `UiResourceContentMeta` (csp, permissions, domain,
+  prefersBorder). A policy on the descriptor is ignored.
+- `html` as a `Closure(): string` is re-evaluated on EVERY `resources/read`.
+- Params permissions are plain booleans (`'camera' => false` means off) and
+  CSP keys are snake_case; the SDK's own `fromArray()` factories read
+  presence markers / camelCase and are deliberately not used.
+- `McpAppsConfigurator` is the single enabler: a second
+  `enableExtension(new McpApps())` fails the build (SDK rejects a duplicate
+  extension id).
+- App resources are ordinary resources: `ResourceVisibilityInterface` filters
+  them, `resource_interceptors` wrap their reads, a colliding `ui://` URI
+  fails the build (`DuplicateCapabilityException`).
+- Tool↔app link: `#[McpTool(meta: ['ui' => new UiToolMeta(resourceUri:
+  'ui://dashboard')])]`; `ToolVisibility::App` hides a tool from the model
+  BY THE HOST — declarative intent, not an access boundary. For a server-side
+  guarantee use `Visibility\ToolVisibilityInterface`.
+- CSP domains are passed through verbatim (host enforces the policy;
+  `definitions` is application-owned config, not client input).
+- `mcp:doctor` reports an `mcp_apps` check: skip when disabled, fail with the
+  offending definition index when a definition is malformed.
+
 ### Tool-call interceptors
 
 ```php

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **MCP Apps (`io.modelcontextprotocol/ui`).** Interactive HTML applications
+  served as `ui://` resources and rendered by the client in a sandboxed
+  iframe. `Apps\McpAppsConfigurator` announces the extension and registers
+  declarative apps; `Apps\AppDefinition` is the value object behind them
+  (HTML as a string or a `Closure(): string` re-evaluated on every read).
+  New `apps` params block: `enable` alone announces the extension for
+  attribute-based apps (`#[McpResource]` with a `ui://` URI), a non-empty
+  `definitions` list also enables it. Tool↔app linking through `UiToolMeta`
+  in a tool's `_meta` works out of the box. `mcp:doctor` gains an `mcp_apps`
+  check that parses every declarative definition, so a malformed one is
+  reported even when the server-build check is skipped.
+
 ## 2.0.0 — 2026-07-27
 
 Security-hardening pass over the 2026-07-26 external review (REVIEW-2026-07-26).
