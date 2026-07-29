@@ -29,7 +29,7 @@ container.
 |-------------|---------|
 | PHP | 8.3 – 8.5 |
 | `mcp/sdk` | `~0.7.0` (experimental until 1.0 — hence the tilde pin) |
-| MCP protocol | 2025-06-18 (via SDK) |
+| MCP protocol | 2025-11-25 (the SDK's default; it advertises this in `initialize` regardless of what the client asks for) |
 | `ext-fileinfo` | required by the SDK |
 
 ## Installation
@@ -418,6 +418,50 @@ allocation it refuses.
 > [vjik/my-prompts-mcp](https://github.com/vjik/my-prompts-mcp) by Sergei
 > Predvoditelev: the same prompt file works in a personal stdio prompt
 > manager and on an application server.
+
+### Argument autocompletion (`completion/complete`)
+
+Clients offer values as the user types a prompt argument or a resource-template
+variable. Declare the source with the SDK's `#[CompletionProvider]` — no
+yii3-mcp API is involved:
+
+```php
+use Mcp\Capability\Attribute\CompletionProvider;
+
+#[McpPrompt(name: 'review')]
+public function review(
+    #[CompletionProvider(values: ['security', 'performance'])] string $focus,
+    #[CompletionProvider(enum: Environment::class)] string $environment,
+): string { /* … */ }
+
+#[McpResourceTemplate(uriTemplate: 'app://reports/{region}', name: 'report')]
+public function report(
+    #[CompletionProvider(provider: RegionCompletionProvider::class)] string $region,
+): string { /* … */ }
+```
+
+| Form | Source |
+|---|---|
+| `values: [...]` | a fixed list, prefix-matched |
+| `enum: BackedEnum::class` | the enum's cases |
+| `provider: Foo::class` | a `Mcp\Capability\Completion\ProviderInterface`, **resolved through the DI container** — so it can query a repository or a feature-flag service |
+
+Exactly one of the three per argument; the capability is advertised
+automatically. Completions obey `prompt_visibility` / `resource_visibility`:
+a prompt or template the session cannot see completes nothing and is reported
+as not found, indistinguishable from a missing one (see
+[Tool visibility](#tool-visibility)). Interceptors do **not** wrap
+`completion/complete` — it is a metadata lookup, not a capability call, so put
+authorization in the visibility filter, not in an interceptor.
+
+### Resource subscriptions: advertised, not delivered
+
+The SDK unconditionally advertises `resources.subscribe` whenever the server
+has any resource, and it does record `resources/subscribe` per session — but
+nothing in this package ever emits `notifications/resources/updated`. Under
+PHP-FPM there is no process that outlives the request to push from, so a
+subscription is accepted and then silently never fires. Treat it as a known
+gap, not a feature: clients should poll `resources/read` instead.
 
 ## Framework-agnostic usage
 
@@ -1306,6 +1350,7 @@ See [examples/](examples/) — every script runs offline.
 | [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
 | [`server-initiated.php`](examples/server-initiated.php) | Official `ToolAnnotations` and a schema-safe `RequestContext` parameter for progress/elicitation | no |
+| [`completions.php`](examples/completions.php) | `completion/complete`: value list / enum / container-resolved provider, and visibility applied to completions | no |
 | [`mcp-apps.php`](examples/mcp-apps.php) | MCP Apps: declarative and attribute-based `ui://` apps, `_meta.ui` placement, CSP/permissions, a tool linked to an app | no |
 
 ## Testing your tools

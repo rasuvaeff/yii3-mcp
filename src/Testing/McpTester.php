@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Testing;
 
+use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Server;
 use Mcp\Server\Transport\StreamableHttpTransport;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -27,8 +28,6 @@ use RuntimeException;
  */
 final class McpTester
 {
-    private const string PROTOCOL_VERSION = '2025-06-18';
-
     private string $sessionId = '';
 
     private int $requestId = 0;
@@ -53,7 +52,7 @@ final class McpTester
             'id' => ++$this->requestId,
             'method' => 'initialize',
             'params' => [
-                'protocolVersion' => self::PROTOCOL_VERSION,
+                'protocolVersion' => $this->protocolVersion(),
                 'capabilities' => [],
                 'clientInfo' => ['name' => 'mcp-tester', 'version' => '1.0'],
             ],
@@ -173,6 +172,18 @@ final class McpTester
         return $this->result($this->post($payload));
     }
 
+    /**
+     * The revision the SDK itself advertises in `initialize` — read from the
+     * SDK rather than hardcoded, so the tester never claims a protocol version
+     * the server under test does not answer with (they disagreed once,
+     * silently). A class constant cannot hold it: Psalm does not evaluate an
+     * enum case's `->value` in a constant initializer and infers `mixed`.
+     */
+    private function protocolVersion(): string
+    {
+        return MessageInterface::PROTOCOL_VERSION->value;
+    }
+
     private function notify(string $method): void
     {
         $this->post(['jsonrpc' => '2.0', 'method' => $method]);
@@ -192,7 +203,7 @@ final class McpTester
         if ($this->sessionId !== '') {
             $request = $request
                 ->withHeader('Mcp-Session-Id', $this->sessionId)
-                ->withHeader('MCP-Protocol-Version', self::PROTOCOL_VERSION);
+                ->withHeader('MCP-Protocol-Version', $this->protocolVersion());
         }
 
         return $this->server->run(new StreamableHttpTransport(

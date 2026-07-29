@@ -27,6 +27,13 @@ composer require rasuvaeff/yii3-mcp
 - Capability names are unique across the whole server, enforced: any
   collision (attribute tools, configurators, OpenAPI bridge, prompts) fails
   the build with Exception\DuplicateCapabilityException.
+- Protocol revision served is 2025-11-25 (the SDK's default, `MessageInterface::PROTOCOL_VERSION`);
+  the SDK does NOT negotiate — it answers with its own version whatever the
+  client asks for. `Testing\McpTester` reads the same constant.
+- `resources/subscribe` is advertised by the SDK whenever any resource exists and
+  subscriptions ARE recorded per session, but nothing here ever emits
+  `notifications/resources/updated` — under FPM no process outlives the request.
+  Known gap: clients should poll `resources/read`.
 - Caller-influenced output is bounded BEFORE allocation: upstream bodies
   (`openapi.max_response_bytes`, incremental read), substituted prompts
   (`limits.prompt_result_bytes`, arithmetic pre-check), spec documents
@@ -361,6 +368,33 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
   call still passes through the full interceptor chain (session budget,
   RBAC/audit, caching, size limit).
+
+### Argument autocompletion (completion/complete)
+
+```php
+use Mcp\Capability\Attribute\CompletionProvider;
+
+#[McpPrompt(name: 'review')]
+public function review(
+    #[CompletionProvider(values: ['security', 'performance'])] string $focus,
+    #[CompletionProvider(enum: Environment::class)] string $environment,
+): string { ... }
+
+#[McpResourceTemplate(uriTemplate: 'app://reports/{region}', name: 'report')]
+public function report(
+    #[CompletionProvider(provider: RegionCompletionProvider::class)] string $region,
+): string { ... }
+```
+
+- Exactly ONE of `values` / `enum` / `provider` per argument (the SDK attribute
+  throws otherwise). `provider` is a `Mcp\Capability\Completion\ProviderInterface`
+  FQCN resolved through the DI container, so it can query application services.
+- The `completions` capability is advertised automatically; no params key.
+- Completions respect `prompt_visibility` / `resource_visibility`: a hidden
+  prompt or template completes nothing and answers "not found", byte-identical
+  to a missing one (`Visibility\FilteredCompletionCompleteHandler`).
+- Interceptors do NOT wrap completion/complete — it is a metadata lookup, not a
+  capability call. Put authorization in the visibility filter.
 
 ### MCP Apps (io.modelcontextprotocol/ui)
 

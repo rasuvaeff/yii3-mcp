@@ -128,6 +128,13 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   (a legacy-encoded upstream error page) is validated separately with
   `preg_match('//u', …)` and replaced by a byte-count placeholder. Tests must
   assert with PCRE, not `mb_check_encoding` — mbstring is absent from CI.
+- **The served protocol revision comes from the SDK and is NOT negotiated.**
+  `MessageInterface::PROTOCOL_VERSION` (2025-11-25 under the `~0.7.0` pin) is
+  what `initialize` answers with, whatever the client requested. Do not
+  hardcode a revision anywhere — `Testing\McpTester` reads that constant, so
+  the test client and the server can never silently disagree again (they did:
+  the tester claimed 2025-06-18 while the server answered 2025-11-25, and both
+  READMEs documented the client's number). Re-read it on any SDK pin bump.
 - **`completion/complete` does not go through the reference handler, so
   visibility has to be applied to it separately.** The SDK's
   `CompletionCompleteHandler` reads the registry directly; before
