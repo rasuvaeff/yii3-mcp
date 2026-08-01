@@ -1,0 +1,68 @@
+name: Release
+
+# A pushed tag is the release. Without this job the repository sidebar reads
+# "no releases" forever: Packagist works off tags, but GitHub only shows what
+# a Release object declares, and writing those by hand never happens.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      # creating a Release object is a write to the repository
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Extract the changelog section for this tag
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          # The section runs from its own heading to the next one; a tag with
+          # no section still releases, with a pointer to the changelog.
+          notes=$(awk -v v="$version" '
+            $0 ~ "^## +" v "( |$|—|-)" { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            notes="See [CHANGELOG.md](CHANGELOG.md)."
+          fi
+          {
+            echo 'body<<RELEASE_NOTES_EOF'
+            printf '%s\n' "$notes"
+            echo 'RELEASE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          BODY: ${{ steps.notes.outputs.body }}
+        run: |
+          # Idempotent: a re-run of the workflow must not fail on an existing
+          # release, and a release is never re-created (Packagist blocks
+          # re-tagged versions forever).
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+          printf '%s' "$BODY" | gh release create "$TAG" --title "$TAG" --notes-file -
