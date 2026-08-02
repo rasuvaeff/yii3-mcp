@@ -13,6 +13,7 @@ use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OpenApi\BridgedToolHandler;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
@@ -33,6 +34,8 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 
 #[Test]
 #[Covers(OpenApiServerConfigurator::class)]
+#[Covers(BridgedToolHandler::class)]
+#[Covers(UnsafeOperationException::class)]
 final class OpenApiServerConfiguratorTest
 {
     public function bridgedOperationsAppearInToolsList(): void

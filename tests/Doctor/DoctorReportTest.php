@@ -15,6 +15,9 @@ use Testo\Test;
 
 #[Test]
 #[Covers(DoctorReport::class)]
+#[Covers(CheckCategory::class)]
+#[Covers(CheckResult::class)]
+#[Covers(CheckStatus::class)]
 final class DoctorReportTest
 {
     public function healthyWhenNoCheckFails(): void

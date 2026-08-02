@@ -9,6 +9,7 @@ use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
+use Rasuvaeff\Yii3Mcp\Exception\SessionOwnershipException;
 use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -30,6 +31,8 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
  */
 #[Test]
 #[Covers(McpAction::class)]
+#[Covers(ClientIdentityContext::class)]
+#[Covers(SessionOwnershipException::class)]
 final class SessionOwnershipTest
 {
     private McpAction $action;

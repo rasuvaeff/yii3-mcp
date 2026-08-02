@@ -6,7 +6,12 @@ namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
+use Rasuvaeff\Yii3Mcp\OpenApi\JsonPointerResolver;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationContractValidator;
+use Rasuvaeff\Yii3Mcp\OpenApi\OutputSchemaProjector;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
+use Rasuvaeff\Yii3Mcp\OpenApi\ToolNameValidator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -15,6 +20,13 @@ use Testo\Test;
 
 #[Test]
 #[Covers(SpecIndex::class)]
+#[Covers(InvalidSpecException::class)]
+#[Covers(UnknownOperationException::class)]
+#[Covers(JsonPointerResolver::class)]
+#[Covers(Operation::class)]
+#[Covers(OperationContractValidator::class)]
+#[Covers(OutputSchemaProjector::class)]
+#[Covers(ToolNameValidator::class)]
 final class SpecIndexTest
 {
     public function indexesOperationById(): void
@@ -507,6 +519,54 @@ final class SpecIndexTest
         }
     }
 
+    public function styleMismatchMessageNamesTheExpectedStylePerParameterLocation(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter(['name' => 'id', 'in' => 'path', 'style' => 'matrix']);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('only "simple" is supported for path parameters');
+
+        $caught = null;
+
+        try {
+            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'style' => 'spaceDelimited']);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('only "form" is supported for query parameters');
+    }
+
+    public function explodeMismatchMessageNamesTheActualExplodeValue(): void
+    {
+        $caught = null;
+
+        try {
+            // query parameters expect explode=true; false is the mismatch
+            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'explode' => false]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('unsupported explode=false');
+
+        $caught = null;
+
+        try {
+            // path parameters expect explode=false; true is the mismatch
+            $this->operationWithParameter(['name' => 'id', 'in' => 'path', 'explode' => true]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('unsupported explode=true');
+    }
+
     public function refSiblingsSurviveResolution(): void
     {
         $index = new SpecIndex([
@@ -610,6 +670,51 @@ final class SpecIndexTest
 
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('reference-resolution budget');
+    }
+
+    /**
+     * Exercises JsonPointerResolver::resolve() directly (not through
+     * SpecIndex) for exact control over the node count: a wide, shallow
+     * fan-out — one root plus N leaf-array children, each child a single
+     * resolve() call — avoids the deep RECURSION a chain of the same length
+     * would need (resolve() recurses once per nesting level, so a 100k-deep
+     * chain would risk exhausting the C stack; a 2-level-deep fan-out never
+     * does).
+     */
+    public function nodeBudgetAtTheLimitIsAccepted(): void
+    {
+        $resolver = new JsonPointerResolver([]);
+
+        // 1 (root) + 99_999 (children) = 100_000, exactly MAX_RESOLVED_NODES
+        $node = $this->wideNode(99_999);
+
+        Assert::same($resolver->resolve($node), $node);
+    }
+
+    public function nodeBudgetBeyondTheLimitThrows(): void
+    {
+        $resolver = new JsonPointerResolver([]);
+
+        // 1 (root) + 100_000 (children) = 100_001, one over MAX_RESOLVED_NODES
+        $node = $this->wideNode(100_000);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $resolver->resolve($node);
+    }
+
+    /**
+     * @return array<string, array{leaf: int}>
+     */
+    private function wideNode(int $children): array
+    {
+        $node = [];
+
+        for ($i = 0; $i < $children; ++$i) {
+            $node['c' . $i] = ['leaf' => 1];
+        }
+
+        return $node;
     }
 
     public function oversizedDocumentIsRejectedBeforeDecoding(): void
