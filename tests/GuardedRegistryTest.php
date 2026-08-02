@@ -24,6 +24,7 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 
 #[Test]
 #[Covers(GuardedRegistry::class)]
+#[Covers(DuplicateCapabilityException::class)]
 final class GuardedRegistryTest
 {
     public function duplicateToolNameThrowsInsteadOfLastWriteWins(): void

@@ -8,7 +8,180 @@
         "summary": "build/infection-summary.log"
     },
     "testFramework": "testo",
-    "minMsi": 94,
+    // Honest ceiling after closing the ER-003 #[Covers]-attribution gap on
+    // 21 classes (Total: 1375 -> 1584 mutants) and killing every reachable
+    // survivor, old and new. 38 documented equivalents remain (no ignores —
+    // Infection still generates and runs them every time, this is a record,
+    // not a suppression). Grouped by the reasoning that makes each one
+    // unkillable; every entry names its own file:line+mutator.
+    //
+    // A. `if (cond) { return X; }` guard whose FALLTHROUGH still lands on
+    //    the same X, because the code after it is either (a) a foreach over
+    //    a non-iterable — PHP 8 warns and runs zero iterations, leaving the
+    //    accumulator at its initial (already-X) value — or (b) a chain of
+    //    `?? null`/`arrayOrEmpty()` calls that all degrade to the same
+    //    empty/null result the guard would have returned directly.
+    //    Sandbox-verified for both shapes, not just reasoned about:
+    //    - OpenApi/SpecIndex.php:219 ReturnRemoval (extractTags: !is_array -> [])
+    //    - OpenApi/SpecIndex.php:298 ReturnRemoval (extractRequestBodySchema:
+    //      $body === [] -> null; every subsequent `?? null` on the empty
+    //      array is warning-free and converges on null)
+    //    - Visibility/DeclarativeToolVisibility.php:96 ReturnRemoval (tagsOf:
+    //      same shape as SpecIndex:219)
+    //    - Prompts/PromptFile.php:106 ReturnRemoval (parseArguments:
+    //      !is_array($raw) -> []; verified in a PHP 8.4 sandbox that
+    //      `foreach ($raw as $item)` over null/string emits the warning and
+    //      leaves $arguments === [], same as the removed early return)
+    //    - OpenApi/SpecLoader.php:164 ReturnRemoval (readCache's catch block:
+    //      removing `return null;` falls through to `return is_string($value)
+    //      ? $value : null;` with $value never assigned — an "Undefined
+    //      variable" warning, but $value is still effectively null either way)
+    //
+    // B. `mkdir($dir, 0o700, true)` mode argument (447/449 vs 448=0o700).
+    //    The boolean success of mkdir() does not depend on the requested
+    //    mode bits, and BOTH call sites chmod() the directory to 0o700
+    //    immediately afterward ("an explicit chmod beats the umask") —
+    //    the final on-disk permissions are identical regardless of what
+    //    mode mkdir() was asked for:
+    //    - Doctor/McpDoctor.php:259 DecrementInteger, IncrementInteger
+    //    - Session/PrivateFileSessionStore.php:34 DecrementInteger, IncrementInteger
+    //
+    // C. `$stream->read(8192)` chunk size (8191/8193). A read-accumulate
+    //    loop's FINAL concatenated content does not depend on the chunk
+    //    size used to get there, only on eof()/empty-chunk termination —
+    //    verified against the actual test doubles' plain substr()-based
+    //    read():
+    //    - OpenApi/HttpOperationExecutor.php:252 DecrementInteger, IncrementInteger
+    //    - OpenApi/SpecLoader.php:121 DecrementInteger, IncrementInteger
+    //
+    // D. Testing/McpTester.php — this class's return values are the only
+    //    thing any test can observe; several mutants touch state nothing
+    //    reads back, or inputs the real mcp/sdk (~0.7.0) never produces:
+    //    - :52, :166 Increment (`++$this->requestId` -> `--`): requestId is
+    //      write-only (never read back, no response-id matching), so it
+    //      only needs to be unique per session — a strictly DEcreasing
+    //      sequence is exactly as unique as an increasing one.
+    //    - :62 MethodCallRemoval, :189 ArrayItemRemoval + MethodCallRemoval:
+    //      `notify()` is `private function notify(string $method): void` —
+    //      its `post()` call's return value is discarded unconditionally,
+    //      and nothing in mcp/sdk ~0.7.0 reads the `notifications/initialized`
+    //      session flag it sends (grepped the vendored SDK: only the
+    //      handler that WRITES `session->set('initialized', true)` exists,
+    //      nothing reads it) — no payload shape or presence/absence of this
+    //      call is observable from McpTester's public API.
+    //    - :120 LogicalAnd (`is_string($nextCursor) && $nextCursor !== ''`
+    //      -> `||`): for the only two values mcp/sdk's pagination handlers
+    //      ever put in `nextCursor` — a genuine non-empty string, or absent
+    //      (decoded as null) — `&&` and `||` compute the identical $cursor.
+    //      They diverge only for a malformed peer response (a non-string
+    //      cursor, or an explicit `""`), which this SDK never sends and
+    //      `final class McpTester` cannot be subclassed/faked to inject.
+    //    - :122 NotIdentical (`$cursor !== null && isset(...)` -> `===`):
+    //      disables the repeated-cursor guard, but only a buggy/malicious
+    //      peer that repeats a cursor can trigger it — same "can't fake the
+    //      server" limit as :120.
+    //    - :126 NotIdentical (`if ($cursor !== null) { $seenCursors[$cursor]
+    //      = true; }` -> `=== null`): the mutant's write only fires on the
+    //      FINAL iteration (cursor already null), and `while ($cursor !==
+    //      null)` exits immediately after — the stray `$seenCursors[null]`
+    //      entry is never consulted by any later loop check. Unconditionally
+    //      dead, not just SDK-contingent.
+    //    - :127 TrueValue (`$seenCursors[$cursor] = true` -> `= false`):
+    //      every read of $seenCursors is `isset($seenCursors[$cursor])`,
+    //      which only checks key presence — a stored `false` is not null,
+    //      so isset() still returns true. Unconditionally dead.
+    //    - :231 LogicalAnd (`isset($decoded['error']) && is_array(...)` ->
+    //      `||`): diverges only when 'error' is present but NOT an array
+    //      (e.g. a bare string) — mcp/sdk's error responses always
+    //      serialize a proper object. Same SDK-contingent limit as :120.
+    //
+    // E. Everything else, each independently verified:
+    //    - Doctor/McpDoctor.php:110 IncrementInteger (`explode($h, 2)[0]` ->
+    //      `explode($h, 3)[0]`): index [0] is the substring before the
+    //      FIRST separator regardless of the limit, for any limit >= 2 —
+    //      sandbox-verified.
+    //    - Doctor/McpDoctor.php:172 UnwrapArrayUnique, UnwrapArrayValues
+    //      (`array_values(array_unique($features))`): every call site that
+    //      appends to a given interface's $requirements[...] array uses a
+    //      DIFFERENT literal feature string (grepped every occurrence) — no
+    //      duplicate can ever occur to unique() away, and the sole consumer
+    //      is `implode(', ', $features)`, which does not care about array
+    //      key sequentiality either way.
+    //    - Identity/StaticSecretResolver.php:52 UnwrapArrayValues
+    //      (`array_values($clientSecrets)`): $list's only two consumers are
+    //      `$list === []` and `foreach ($list as $secret)` (no key
+    //      capture) — both are key-structure-agnostic; the resulting
+    //      `$normalized[$clientId] = $list` is never introspected by key
+    //      shape either (no getter exposes it).
+    //    - Interceptor/ResponseSizeLimitInterceptor.php:63 LessThanOrEqualTo
+    //      (`$size <= $this->maxBytes ? $result : Utf8::cut(...)`): at
+    //      $size === $maxBytes exactly, Utf8::cut()'s OWN first line
+    //      (`if (strlen($value) <= $maxBytes) return $value;`) makes it a
+    //      no-op — $kept is byte-identical to $result either way, for any
+    //      content, valid UTF-8 or not.
+    //    - McpServerFactory.php:277 PlusEqual (`$registered += ... ` ->
+    //      `-=`): every per-method term is >= 0, so the `-=` running total
+    //      is exactly the negation of the `+=` total — `=== 0` gives the
+    //      identical boolean either way, for any sequence of terms.
+    //    - OpenApi/HttpOperationExecutor.php:126 Identical
+    //      (`($arguments[K] ?? false) === true` mutated via operator
+    //      preceding into `$dryRunnable && $arguments[K] ?? (false !== true)`,
+    //      i.e. `($dryRunnable && $arguments[K]) ?? true`): `&&` always
+    //      returns a genuine bool (never null), so the `?? true` never
+    //      actually substitutes; the expression reduces to `$dryRunnable &&
+    //      (bool) $arguments[K]`. The earlier `!is_bool($arguments[K])`
+    //      guard (same method, a few lines up) already rejects any present
+    //      non-bool value, so when the key IS present it is exactly `true`
+    //      or `false` — bool-coercion and strict `=== true` agree on both.
+    //      Sandbox-verified against the exact expression.
+    //    - OpenApi/HttpOperationExecutor.php:153 LogicalAnd
+    //      (`$identityProvider instanceof X && $delegatedHeaderProvider
+    //      instanceof Y` -> `||`): the constructor rejects configuring
+    //      exactly one of the two (`(!...instanceof X) !== (!...instanceof
+    //      Y)` throws) — only "both set" or "both null" is ever reachable,
+    //      and `&&`/`||` agree on both those states.
+    //    - OpenApi/SpecIndex.php:275 Concat x2, ConcatOperandRemoval
+    //      (`$in . ':' . $name` losing/moving the separator): $in is
+    //      validated against exactly `['path','query','header','cookie']`
+    //      a few lines above — four strings with four DISTINCT first
+    //      characters (p/q/h/c) placed as a fixed PREFIX in every mutant
+    //      variant, so no two different $in values can ever produce the
+    //      same concatenation, and same-$in keys are injective in $name
+    //      trivially (removing an identical prefix). No separator choice
+    //      can create a real collision.
+    //    - OpenApi/SpecIndex.php:278 CastBool (`(bool) ($raw['required'] ??
+    //      false)` -> `$raw['required'] ?? false`, i.e. operator-precedence
+    //      reparsed as `($in === 'path' || $raw['required']) ?? false`):
+    //      exhaustively checked (present bool/int/string/null/absent) in a
+    //      sandbox — `(bool)` cast and PHP's own truthy coercion in `||`
+    //      agree on every case; the only difference is an extra "Undefined
+    //      array key" warning on the missing-key branch, not a value change.
+    //    - Prompts/PromptFile.php:53 PregMatchRemoveDollar (trailing `$` on
+    //      `/^---\R(.*?)\R---\R?(.*)$/s`): group 2 is `(.*)$`, GREEDY, under
+    //      `/s` (`.` matches `\n`) with nothing after it in the pattern —
+    //      it already consumes to the true end of the subject with or
+    //      without the anchor. Sandbox-verified byte-identical captures.
+    //    - Utf8.php:55 DecrementInteger (`default => 1` -> `default => 0`
+    //      in the lead-byte-width `match`): the `default` arm is only
+    //      reached for a plain ASCII lead byte (the preceding while loop
+    //      already backs over every continuation byte), and at that point
+    //      `strlen($cut) - $index` is provably >= 1 (index is a valid
+    //      position within $cut) — `>= 0` and `>= 1` are both always true.
+    //    - Visibility/DeclarativeToolVisibility.php:132 ArrayItemRemoval
+    //      (`['kind' => 'tag', 'regex' => ...]` losing the 'kind' key):
+    //      the sole consumer, matchesAny(), is a binary `if ($pattern['kind']
+    //      === 'name') {... } else { /* tag matching */ }` — a MISSING
+    //      'kind' key still fails the `=== 'name'` check and falls into the
+    //      same tag-matching else branch a real 'tag' value would take.
+    //
+    // F. Errored (not escaped — already counted as detected): the
+    //    ReturnRemoval on HttpOperationExecutor's readUpTo() cap-check
+    //    (line ~261) removes the early return that stops an unbounded
+    //    stream read; the existing EndlessStream test then runs the mutant
+    //    out of the 2 GiB memory limit — a Fatal Error, which Infection
+    //    scores as a kill via a different mechanism, not a normal
+    //    assertion failure.
+    "minMsi": 97,
     "mutators": {
         "@default": true
     }

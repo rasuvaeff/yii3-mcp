@@ -13,6 +13,7 @@ use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OpenApi\BridgedToolHandler;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnknownOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
@@ -33,6 +34,8 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 
 #[Test]
 #[Covers(OpenApiServerConfigurator::class)]
+#[Covers(BridgedToolHandler::class)]
+#[Covers(UnsafeOperationException::class)]
 final class OpenApiServerConfiguratorTest
 {
     public function bridgedOperationsAppearInToolsList(): void
@@ -199,9 +202,16 @@ final class OpenApiServerConfiguratorTest
 
     public function toolNamesWithUnknownOperationIdFailsAtBuildTime(): void
     {
-        Expect::exception(InvalidArgumentException::class);
+        $caught = null;
 
-        $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // singular for exactly one: "operationId:", not "operationIds:"
+        Assert::string($caught->getMessage())->contains('operationId: nonExistentOperation');
     }
 
     public function toolNamesWithSeveralUnknownOperationIdsPluralizesTheMessage(): void
@@ -545,9 +555,16 @@ final class OpenApiServerConfiguratorTest
 
     public function dryRunWithUnknownOperationIdFailsAtBuildTime(): void
     {
-        Expect::exception(InvalidArgumentException::class);
+        $caught = null;
 
-        $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // singular for exactly one: "operationId:", not "operationIds:"
+        Assert::string($caught->getMessage())->contains('operationId: nonExistentOperation');
     }
 
     public function dryRunWithSeveralUnknownOperationIdsPluralizesTheMessage(): void

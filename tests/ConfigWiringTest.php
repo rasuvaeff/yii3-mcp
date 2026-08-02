@@ -33,13 +33,18 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
-use Testo\Codecov\CoversNothing;
+use Testo\Codecov\Covers;
 use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
+// Deliberately not #[CoversNothing]: this suite wires config/di.php end to
+// end and is not "coverage" for any src/ class in the usual sense, but it is
+// the ONLY place that constructs OpenApi\ExecutionIdentity (a bare readonly
+// VO with no logic — a #[Covers] here produces zero mutants, it only makes
+// the class visible to Infection instead of silently invisible, per ER-003).
 #[Test]
-#[CoversNothing]
+#[Covers(ExecutionIdentity::class)]
 final class ConfigWiringTest
 {
     public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void

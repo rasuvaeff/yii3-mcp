@@ -48,6 +48,7 @@ use Yiisoft\Test\Support\Log\SimpleLogger;
 
 #[Test]
 #[Covers(McpServerFactory::class)]
+#[Covers(InvalidToolClassException::class)]
 final class McpServerFactoryTest
 {
     public function buildsServerFromAttributedToolClass(): void

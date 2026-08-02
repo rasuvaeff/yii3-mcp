@@ -169,6 +169,36 @@ final class McpDoctorTest
         Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Fail);
     }
 
+    public function localFileSpecPathDoesNotRequireHttpClientServices(): void
+    {
+        // a LOCAL path (isUrl() === false) must not pull in ClientInterface/
+        // RequestFactoryInterface — only a URL spec needs an HTTP client
+        $path = sys_get_temp_dir() . '/yii3-mcp-doctor-spec-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+
+        try {
+            $factory = new Psr17Factory();
+            $doctor = new McpDoctor(
+                container: new SimpleContainer([
+                    ServerRequestFactoryInterface::class => $factory,
+                    ResponseFactoryInterface::class => $factory,
+                    StreamFactoryInterface::class => $factory,
+                ]),
+                sessionStore: new InMemorySessionStore(),
+                endpointSecret: 'test-secret',
+                sessionDirectory: $this->sessionDir,
+                openApiSpecPath: $path,
+            );
+
+            $checks = array_column($doctor->diagnose()->toArray()['checks'], 'name');
+
+            Assert::false(in_array('service_psr_http_client_clientinterface', $checks, true));
+            Assert::false(in_array('service_http_message_requestfactoryinterface', $checks, true));
+        } finally {
+            unlink($path);
+        }
+    }
+
     public function urlSpecIsSkippedWithoutProbeAndTheReportStaysHealthy(): void
     {
         $report = $this->doctor(specPath: 'https://api.example.test/openapi.json')->diagnose();
@@ -274,6 +304,10 @@ final class McpDoctorTest
             ->contains('https://***@internal.test/x')
             ->contains('…');
         Assert::false(str_contains($details, 'hunter2'));
+        // the ellipsis marks what was CUT OFF — it must trail the kept
+        // content, not lead it
+        Assert::true(str_ends_with($details, '…'));
+        Assert::string($details)->contains('RuntimeException: token leak');
     }
 
     public function exceptionMessageAtTheTruncationBoundaryIsKeptWhole(): void
@@ -283,6 +317,16 @@ final class McpDoctorTest
         $details = $this->check($report, 'session_store')->details;
         Assert::string($details)->contains(str_repeat('B', 500));
         Assert::false(str_contains($details, '…'));
+    }
+
+    public function exceptionMessageOverTheBoundaryKeepsExactlyFiveHundredBytes(): void
+    {
+        $report = $this->doctor(store: new ThrowingSessionStore(str_repeat('C', 700)))->diagnose();
+
+        $details = $this->check($report, 'session_store')->details;
+
+        // exactly 500 kept bytes, then the ellipsis marker — neither 499 nor 501
+        Assert::same($details, 'Session round-trip threw RuntimeException: ' . str_repeat('C', 500) . '…');
     }
 
     public function nonUtf8ExceptionMessageBecomesAPlaceholder(): void
@@ -329,6 +373,12 @@ final class McpDoctorTest
 
         Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Fail);
         Assert::string($this->check($report, 'openapi_spec')->details)->contains('must be bound in the container');
+
+        // a bound-but-wrong-type service must fail its OWN check too, not
+        // silently report Pass because the type mismatch was ignored
+        $serviceCheck = $this->check($report, 'service_http_message_requestfactoryinterface');
+        Assert::same($serviceCheck->status, CheckStatus::Fail);
+        Assert::string($serviceCheck->details)->contains('resolves to stdClass');
     }
 
     public function reportNeverContainsTheSecret(): void
@@ -379,6 +429,9 @@ final class McpDoctorTest
         Assert::same($check->status, CheckStatus::Fail);
         Assert::string($check->details)->contains(ServerRequestFactoryInterface::class);
         Assert::false(str_contains($check->details, RequestFactoryInterface::class . ';'));
+        // an unbound service must fail with "Missing ...", not fall through
+        // to the container's own NotFoundException wording
+        Assert::true(str_starts_with($check->details, 'Missing '));
     }
 
     public function toolResultCacheEnabledWithoutABoundCacheFails(): void

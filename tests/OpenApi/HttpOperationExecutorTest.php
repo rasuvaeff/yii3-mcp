@@ -26,6 +26,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(HttpOperationExecutor::class)]
+#[Covers(OperationFailedException::class)]
 final class HttpOperationExecutorTest
 {
     public function buildsUrlWithQueryParameters(): void
