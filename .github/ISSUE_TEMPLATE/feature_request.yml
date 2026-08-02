@@ -1,0 +1,41 @@
+name: Feature request
+description: Something you need this package to do that it doesn't yet
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        Describe the task, not the API you imagine solving it. The concrete
+        problem is what makes a good design possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Why the current API doesn't cover it
+      description: What you tried, and where it fell short or forced a workaround.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API (optional)
+      description: A sketch of the method/class signature you'd expect, if you have one.
+      render: php
+    validations:
+      required: false
+
+  - type: dropdown
+    id: pr
+    attributes:
+      label: Would you be willing to open a PR for this?
+      options:
+        - "Yes"
+        - "No"
+        - "Maybe, with some guidance"
+    validations:
+      required: true

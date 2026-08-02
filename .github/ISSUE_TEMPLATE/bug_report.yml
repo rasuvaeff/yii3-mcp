@@ -1,0 +1,55 @@
+name: Bug report
+description: Something doesn't work the way the docs say it should
+labels: ["bug"]
+body:
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: The exact version (or commit) you installed, e.g. `2.1.0` or `dev-master@abc1234`
+      placeholder: "2.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: php-version
+    attributes:
+      label: PHP version
+      placeholder: "8.3.12"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Full error message / stack trace if there is one
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >
+        A short script or code snippet that reproduces the problem from a
+        clean install. Issues without a reproduction are much harder to act
+        on and may be closed if one can't be worked out together.
+      render: php
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Relevant config, related packages and their versions, etc.
+    validations:
+      required: false
