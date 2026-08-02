@@ -767,6 +767,27 @@ final class SpecIndexTest
         Assert::string($caught->getMessage())->contains('is not readable');
     }
 
+    public function fromFileAtExactlyTheSizeLimitParses(): void
+    {
+        // a file of exactly MAX_DOCUMENT_BYTES must NOT be rejected by the
+        // early filesize() check (`>`, not `>=`) — only content beyond the
+        // limit is
+        $path = sys_get_temp_dir() . '/yii3-mcp-spec-exact-' . bin2hex(random_bytes(8)) . '.json';
+        $spec = OpenApiFixture::spec();
+        $spec['x-pad'] = '';
+        $missing = SpecIndex::MAX_DOCUMENT_BYTES - strlen(json_encode($spec, JSON_THROW_ON_ERROR));
+        $spec['x-pad'] = str_repeat('a', $missing);
+        $json = json_encode($spec, JSON_THROW_ON_ERROR);
+        Assert::same(strlen($json), SpecIndex::MAX_DOCUMENT_BYTES);
+        file_put_contents($path, $json);
+
+        try {
+            Assert::same(SpecIndex::fromFile($path)->get('getBlogTags')->operationId, 'getBlogTags');
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function fromFileRejectsAnOversizedDocumentByItsPath(): void
     {
         $path = sys_get_temp_dir() . '/yii3-mcp-spec-big-' . bin2hex(random_bytes(8)) . '.json';

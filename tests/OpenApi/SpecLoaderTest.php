@@ -112,6 +112,25 @@ final class SpecLoaderTest
         Assert::same($cache->values, []);
     }
 
+    public function zeroTtlIgnoresAPreviouslyCachedDocument(): void
+    {
+        $cache = new FakeCache();
+        $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+
+        // seed the cache via a normal, cached load
+        $this->loader(new FakeHttpClient(body: $body), cache: $cache, cacheTtl: 60)
+            ->fromUrl('https://api.test/openapi.json');
+        Assert::true($cache->values !== []);
+
+        // a SECOND loader configured with cacheTtl: 0 must still hit HTTP,
+        // ignoring the value the first loader just cached under the same key
+        $freshClient = new FakeHttpClient(body: $body);
+        $this->loader($freshClient, cache: $cache, cacheTtl: 0)
+            ->fromUrl('https://api.test/openapi.json');
+
+        Assert::same($freshClient->requestCount, 1);
+    }
+
     public function urlAndHeaderScopeProduceDifferentCacheKeys(): void
     {
         $cache = new FakeCache();
@@ -130,6 +149,20 @@ final class SpecLoaderTest
             Assert::false(str_contains($key, 'Bearer'));
             Assert::false(str_contains($key, 'api.test'));
         }
+    }
+
+    public function headerNameCasingAndInsertionOrderDoNotAffectTheCacheKey(): void
+    {
+        $cache1 = new FakeCache();
+        $cache2 = new FakeCache();
+        $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+
+        $this->loader(new FakeHttpClient(body: $body), ['X-Api-Key' => 'k', 'Accept' => 'json'], $cache1, 60)
+            ->fromUrl('https://api.test/a');
+        $this->loader(new FakeHttpClient(body: $body), ['accept' => 'json', 'x-api-key' => 'k'], $cache2, 60)
+            ->fromUrl('https://api.test/a');
+
+        Assert::same(array_key_first($cache1->values), array_key_first($cache2->values));
     }
 
     public function cacheKeyIsPsr16SafeAndFormatStable(): void

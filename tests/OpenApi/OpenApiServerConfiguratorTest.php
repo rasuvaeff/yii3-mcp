@@ -202,9 +202,16 @@ final class OpenApiServerConfiguratorTest
 
     public function toolNamesWithUnknownOperationIdFailsAtBuildTime(): void
     {
-        Expect::exception(InvalidArgumentException::class);
+        $caught = null;
 
-        $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // singular for exactly one: "operationId:", not "operationIds:"
+        Assert::string($caught->getMessage())->contains('operationId: nonExistentOperation');
     }
 
     public function toolNamesWithSeveralUnknownOperationIdsPluralizesTheMessage(): void
@@ -548,9 +555,16 @@ final class OpenApiServerConfiguratorTest
 
     public function dryRunWithUnknownOperationIdFailsAtBuildTime(): void
     {
-        Expect::exception(InvalidArgumentException::class);
+        $caught = null;
 
-        $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
+        try {
+            $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        // singular for exactly one: "operationId:", not "operationIds:"
+        Assert::string($caught->getMessage())->contains('operationId: nonExistentOperation');
     }
 
     public function dryRunWithSeveralUnknownOperationIdsPluralizesTheMessage(): void

@@ -114,6 +114,26 @@ final class SessionOwnershipTest
         Assert::same($this->tool->calls, 0);
     }
 
+    public function scalarValueAtAnIntermediateSegmentIsTreatedAsNoOwner(): void
+    {
+        $sessionId = $this->initialize('client-a');
+        $uuid = Uuid::fromString($sessionId);
+
+        // the first segment resolves to a SCALAR, not an array and not
+        // missing: nestedGet() must still read this as "no owner" rather
+        // than attempt array-offset access into the scalar (a non-numeric
+        // string offset on a string throws a TypeError in PHP 8.3+)
+        $this->store->write($uuid, json_encode([
+            'initialized' => true,
+            'rasuvaeff' => 'unexpected-scalar-value',
+        ], JSON_THROW_ON_ERROR));
+
+        $response = $this->callTool($sessionId, clientId: 'client-b');
+
+        Assert::same($response->getStatusCode(), 404);
+        Assert::same($this->tool->calls, 0);
+    }
+
     public function identityHolderIsDisarmedEvenWhenTheTransportThrows(): void
     {
         $request = (new ServerRequest(

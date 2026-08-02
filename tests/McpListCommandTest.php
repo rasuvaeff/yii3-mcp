@@ -12,6 +12,7 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
+use Rasuvaeff\Yii3Mcp\Tests\Support\UnicodeDescriptionTool;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Testo\Assert;
@@ -109,6 +110,33 @@ final class McpListCommandTest
         Assert::same(array_column($decoded['tools'], 'name'), ['explode', 'greet']);
         Assert::same($decoded['tools'][1]['inputSchema']['required'] ?? null, ['name']);
         Assert::same(count($decoded['prompts']), 3);
+    }
+
+    public function jsonOptionEncodesWithPrettyPrintUnescapedSlashesAndUnicode(): void
+    {
+        // json_decode() would normalize slash/unicode escaping away and
+        // collapse whitespace, hiding a flipped encode flag — assert the
+        // RAW bytes instead of the decoded value
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([UnicodeDescriptionTool::class => new UnicodeDescriptionTool()]),
+            sessionStore: new InMemorySessionStore(),
+            name: 'unicode-suite',
+            version: '1.0.0',
+        ))->create([UnicodeDescriptionTool::class]);
+
+        $tester = $this->command($server);
+        $tester->execute(['--json' => true]);
+        $display = $tester->getDisplay();
+
+        // JSON_UNESCAPED_UNICODE: raw UTF-8, not \uXXXX escapes
+        Assert::string($display)->contains('Ünïcödé');
+        Assert::false(str_contains($display, '\\u00'));
+        // JSON_UNESCAPED_SLASHES: a literal "/", not "\/"
+        Assert::string($display)->contains('slash /');
+        Assert::false(str_contains($display, '\\/'));
+        // JSON_PRETTY_PRINT: more than the single trailing writeln() newline
+        Assert::true(substr_count($display, "\n") > 1);
     }
 
     public function jsonOptionDoesNotRenderTables(): void

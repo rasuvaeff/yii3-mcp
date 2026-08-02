@@ -53,7 +53,11 @@ final class McpTesterTest
 
     public function listsEveryCapabilityAcrossPages(): void
     {
-        $tester = $this->tester(withManyCapabilities: true);
+        // the default page size (50) alone would fit all 23 tools on one
+        // page — a small limit forces listAll() to genuinely follow several
+        // cursors, not just make a single request that happens to return
+        // everything
+        $tester = $this->tester(withManyCapabilities: true, paginationLimit: 5);
 
         Assert::same(count($tester->listTools()), 23);
         Assert::same(count($tester->listResources()), 22);
@@ -117,19 +121,19 @@ final class McpTesterTest
         Assert::false(str_contains($caught->getMessage(), 'unknown error'));
     }
 
-    private function tester(bool $withDisabledTool = false, bool $withManyCapabilities = false): McpTester
+    private function tester(bool $withDisabledTool = false, bool $withManyCapabilities = false, ?int $paginationLimit = null): McpTester
     {
         $factory = new Psr17Factory();
 
         return new McpTester(
-            server: $this->server($withDisabledTool, $withManyCapabilities),
+            server: $this->server($withDisabledTool, $withManyCapabilities, $paginationLimit),
             requestFactory: $factory,
             responseFactory: $factory,
             streamFactory: $factory,
         );
     }
 
-    private function server(bool $withDisabledTool, bool $withManyCapabilities): Server
+    private function server(bool $withDisabledTool, bool $withManyCapabilities, ?int $paginationLimit = null): Server
     {
         $classes = [GreetingTool::class];
 
@@ -145,6 +149,7 @@ final class McpTesterTest
             sessionStore: new InMemorySessionStore(),
             name: 'tester-suite',
             version: '1.0.0',
+            paginationLimit: $paginationLimit ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
         ))->create(
             $classes,
             $withManyCapabilities ? [new ManyCapabilitiesConfigurator()] : [],
