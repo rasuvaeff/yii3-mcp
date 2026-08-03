@@ -14,8 +14,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Relevant changes
+    runs-on: ubuntu-latest
+
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$BASE_SHA"
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            BASE="$BEFORE_SHA"
+          fi
+
+          if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
+            src tests config examples composer.json testo.php psalm.xml \
+            rector.php .php-cs-fixer.php infection.json5 \
+            .github/workflows/static-analysis.yml; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   psalm:
     name: Psalm
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run == 'true') }}
     runs-on: ubuntu-latest
 
     steps:
