@@ -1,0 +1,38 @@
+name: GitHub Actions security
+
+on:
+  pull_request:
+    paths: &paths
+      - '.github/**/*.yml'
+      - '.github/**/*.yaml'
+  push:
+    branches:
+      - master
+    paths: *paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Audit GitHub Actions
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: false
+          annotations: true
+          online-audits: false
+          persona: auditor
+          version: 1.25.2
