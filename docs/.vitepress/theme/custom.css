@@ -1,0 +1,28 @@
+/*
+ * Light-mode-only "cool technical" pass — dark mode is untouched.
+ * VitePress's default light theme keeps the page canvas and cards at
+ * (almost) the same near-white, so cards/code never visibly separate from
+ * the page — everything reads as one flat surface. This scopes every
+ * override to `:root:not(.dark)` and works purely through VitePress's own
+ * CSS custom properties, so it can never fight dark mode or Shiki's
+ * light/dark token-color pairing (forcing a dark code background here
+ * would leave light-mode-optimized token colors on it — unreadable).
+ */
+:root:not(.dark) {
+    --vp-c-bg: #f4f6f9;
+    --vp-c-bg-alt: #eef1f5;
+    --vp-c-bg-elv: #ffffff;
+    --vp-c-bg-soft: #ffffff;
+    --vp-c-divider: #d7dee6;
+    --vp-c-gutter: #d7dee6;
+    --vp-c-text-1: #1b2028;
+    --vp-code-block-bg: #eef1f6;
+}
+
+:root:not(.dark) div[class*='language-'] {
+    border: 1px solid var(--vp-c-divider);
+}
+
+:root:not(.dark) .VPFeature {
+    border-color: var(--vp-c-divider);
+}
