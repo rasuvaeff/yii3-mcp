@@ -1,5 +1,6 @@
 ---
 title: "Security"
+description: "Securing an MCP server: the fail-closed shared secret, client identity and secret rotation, session ownership, and size-bounded output in yii3-mcp."
 ---
 
 # Security

@@ -61,6 +61,86 @@ foreach ($bridges as $packageDir => $namespace) {
     $packages[] = ['namespace' => $namespace, 'src' => $dir . '/src'];
 }
 
+/**
+ * Splits a docblock into its free-text summary/description (everything
+ * before the first @tag) and any @param descriptions, keyed by parameter
+ * name — reflection alone (class/method signatures) throws this prose away,
+ * and it is usually where the actual "what does this do" lives in this
+ * codebase (see e.g. SessionIdentityInterceptor's class docblock).
+ *
+ * @return array{summary: string, params: array<string, string>}
+ */
+function parseDocComment(string|false $docComment): array
+{
+    if ($docComment === false) {
+        return ['summary' => '', 'params' => []];
+    }
+
+    $clean = [];
+    foreach (explode("\n", $docComment) as $line) {
+        $line = trim($line);
+        $line = preg_replace('#^/\*\*#', '', $line);
+        $line = preg_replace('#\*/$#', '', $line);
+        $line = preg_replace('#^\*\s?#', '', $line) ?? '';
+        $clean[] = rtrim($line);
+    }
+    while ($clean !== [] && $clean[0] === '') {
+        array_shift($clean);
+    }
+    while ($clean !== [] && end($clean) === '') {
+        array_pop($clean);
+    }
+
+    $summaryLines = [];
+    $params = [];
+    $currentParam = null;
+    $buffer = [];
+
+    $flush = static function () use (&$currentParam, &$buffer, &$params): void {
+        if ($currentParam === null) {
+            return;
+        }
+        $text = trim(implode(' ', $buffer));
+        if ($text !== '') {
+            $params[$currentParam] = $text;
+        }
+        $buffer = [];
+    };
+
+    foreach ($clean as $line) {
+        if (preg_match('/^@param\s+\S+\s+\$(\w+)\s*(.*)$/', $line, $m) === 1) {
+            $flush();
+            $currentParam = $m[1];
+            $buffer = $m[2] !== '' ? [$m[2]] : [];
+
+            continue;
+        }
+        if (preg_match('/^@\w+/', $line) === 1) {
+            $flush();
+            $currentParam = 'done'; // any non-null sentinel: stop collecting into $summaryLines
+            $buffer = [];
+
+            continue;
+        }
+        if ($currentParam === null) {
+            $summaryLines[] = $line;
+        } elseif ($currentParam !== 'done') {
+            $buffer[] = $line;
+        }
+    }
+    $flush();
+
+    $summary = trim(implode("\n", $summaryLines));
+    $summary = preg_replace('/\n{3,}/', "\n\n", $summary) ?? $summary;
+    $summary = preg_replace('/\{@(?:see|link)\s+([^}]+)\}/', '$1', $summary) ?? $summary;
+
+    foreach ($params as $name => $text) {
+        $params[$name] = preg_replace('/\{@(?:see|link)\s+([^}]+)\}/', '$1', $text) ?? $text;
+    }
+
+    return ['summary' => $summary, 'params' => $params];
+}
+
 /** @return list<string> */
 function findPhpFiles(string $dir): array
 {
@@ -100,6 +180,7 @@ foreach ($packages as $package) {
         $reflection = new ReflectionClass($className);
         $docComment = $reflection->getDocComment();
         $isApi = $docComment !== false && str_contains($docComment, '@api');
+        $classDoc = parseDocComment($docComment);
 
         $methods = [];
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
@@ -110,11 +191,14 @@ foreach ($packages as $package) {
                 continue; // reported as constructorPromotedProperties below
             }
 
+            $methodDoc = parseDocComment($method->getDocComment());
+
             $params = [];
             foreach ($method->getParameters() as $param) {
                 $params[] = [
                     'name' => $param->getName(),
                     'type' => $param->getType()?->__toString(),
+                    'description' => $methodDoc['params'][$param->getName()] ?? '',
                 ];
             }
 
@@ -123,6 +207,7 @@ foreach ($packages as $package) {
                 'static' => $method->isStatic(),
                 'params' => $params,
                 'returnType' => $method->getReturnType()?->__toString(),
+                'summary' => $methodDoc['summary'],
             ];
         }
 
@@ -165,6 +250,7 @@ foreach ($packages as $package) {
             'package' => trim($package['namespace'], '\\'),
             'kind' => $reflection->isInterface() ? 'interface' : ($reflection->isEnum() ? 'enum' : 'class'),
             'isApi' => $isApi,
+            'summary' => $classDoc['summary'],
             'extends' => ($reflection->getParentClass() ?: null)?->getName(),
             'publicProperties' => [...$constructorPromotedProperties, ...$declaredPublicProperties],
             'publicMethods' => $methods,

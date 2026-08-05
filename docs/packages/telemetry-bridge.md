@@ -1,5 +1,6 @@
 ---
 title: "rasuvaeff/yii3-mcp-telemetry-bridge"
+description: "rasuvaeff/yii3-mcp-telemetry-bridge — tracing and metrics interceptors for yii3-mcp. Requirements and public API."
 ---
 
 # rasuvaeff/yii3-mcp-telemetry-bridge

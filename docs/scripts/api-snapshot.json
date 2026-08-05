@@ -4,6 +4,7 @@
         "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
         "kind": "interface",
         "isApi": true,
+        "summary": "Decides WHO the audit trail credits for a tools/call. The shipped\nClientAuditActorResolver credits the MCP connection (session id +\nhandshake client name); an application that authenticates its MCP\nendpoint implements this to credit the user instead, so the journal can\nanswer \"which user did what\" long after the session store dropped the\nsession.\n\nThe session id and the formatted client name are passed in because the\ninterceptor already derived them \u2014 a resolver that falls back to the\nconnection (a guest call, say) does not have to re-read the handshake.\nBoth are null on transports without a session.\n\nResolvers must not swallow failures: an exception propagates and the\ntools/call fails loudly rather than being recorded under the wrong actor.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -13,18 +14,22 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "sessionId",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     },
                     {
                         "name": "clientName",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor"
+                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor",
+                "summary": ""
             }
         ]
     },
@@ -33,6 +38,7 @@
         "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Records every MCP tools/call into the audit trail: who called, which tool,\nthe arguments, the outcome and the duration.\n\nWHO is decided by an AuditActorResolverInterface. The default\nClientAuditActorResolver credits the MCP connection (session id +\nhandshake client name); an authenticated endpoint binds a resolver that\ncredits the user, which is the only way the journal still answers \"which\nuser did what\" after the session store dropped the session. Either way the\nconnection itself is recorded as `mcp.session` / `mcp.client` /\n`mcp.client_id`, so it is never lost.\n\nEach tool argument becomes its own change field, so the AuditLogger's\nSensitiveValueMasker masks arguments named `password`, `token` etc. the\nsame way it masks any other audited value. Call metadata fields are\nprefixed with `mcp.` to stay clear of argument names.\n\n`mcp.outcome` follows the core's shared CallOutcome vocabulary:\n`success`, `rejected` (a client-visible refusal \u2014 rate limit, RBAC,\nbudget, or the tool itself throwing ToolCallException) or `error` (an\nunexpected failure). The interceptor never swallows failures: the\nexception is recorded and rethrown, so the MCP error envelope the agent\nsees is unchanged.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -42,14 +48,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -58,6 +67,7 @@
         "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Default resolver: the actor is the MCP connection \u2014 id = session id,\nname = the client from the initialize handshake. Correct for servers\nwhose endpoint is not tied to an end user (a single machine agent, a\nstdio server); for authenticated endpoints implement\nAuditActorResolverInterface against the application's identity.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -67,18 +77,22 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "sessionId",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     },
                     {
                         "name": "clientName",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor"
+                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor",
+                "summary": ""
             }
         ]
     },
@@ -87,6 +101,7 @@
         "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Credits the authenticated user, taking the identity from\nrasuvaeff/yii3-mcp-rbac-bridge's `IdentitySourceInterface` \u2014 the same\nsource its RBAC and session-binding interceptors use, so the audit trail\nand the access decision can never disagree about who is calling.\n\nA guest call (no identity) falls back to the connection: type\n`mcp-client`, id = session id \u2014 exactly what ClientAuditActorResolver\nwould have written, so a mixed authenticated/anonymous endpoint stays\nreadable.\n\n`rasuvaeff/yii3-mcp-rbac-bridge` is a `suggest`, not a hard dependency:\ninstall it and bind the resolver, or implement\nAuditActorResolverInterface against whatever identity the\napplication already has.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -96,18 +111,22 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "sessionId",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     },
                     {
                         "name": "clientName",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor"
+                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor",
+                "summary": ""
             }
         ]
     },
@@ -116,6 +135,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Identity from yiisoft/user's CurrentUser \u2014 the id the authentication\nmiddleware resolved for the current HTTP request.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -123,7 +143,8 @@
                 "name": "getId",
                 "static": false,
                 "params": [],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": ""
             }
         ]
     },
@@ -132,6 +153,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "A permission map that cannot be what the author meant: empty names, an\nunknown tool class, or #[RequiredPermission] on a method that is not a\ntool (fail-fast \u2014 a silently unenforced permission is a security bug).",
         "extends": "InvalidArgumentException",
         "publicProperties": [],
         "publicMethods": []
@@ -141,6 +163,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "interface",
         "isApi": true,
+        "summary": "Where the current user id comes from. In an HTTP deployment the shipped\nCurrentUserIdentitySource adapter reads yiisoft/user's CurrentUser\n(populated by the authentication middleware \u2014 under FPM one HTTP request\nis one tool call, so \"current\" is exact). For stdio or custom setups\nimplement this with an env-/config-driven source.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -148,7 +171,8 @@
                 "name": "getId",
                 "static": false,
                 "params": [],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": ""
             }
         ]
     },
@@ -157,6 +181,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "tool name \u2192 required RBAC permission. Tools absent from the map are\nunrestricted (no permission needed) \u2014 restriction is an explicit,\nper-tool decision.\n\nBuilt from an explicit array, from #[RequiredPermission] attributes on\nthe same tool classes the server registers, or both (explicit entries\noverride attribute-derived ones).",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -166,14 +191,17 @@
                 "params": [
                     {
                         "name": "toolClasses",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     },
                     {
                         "name": "overrides",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3McpRbacBridge\\PermissionMap"
+                "returnType": "Rasuvaeff\\Yii3McpRbacBridge\\PermissionMap",
+                "summary": "Scans the tool classes for #[McpTool] methods carrying\n#[RequiredPermission] \u2014 the same classes listed in the yii3-mcp\n`tools` params.\n\nOne tool name mapped to two different permissions by attributes is a\nconfiguration bug and throws \u2014 the last-one-wins silent overwrite\nwould enforce an arbitrary permission. Explicit $overrides win by\ndesign and are exempt."
             },
             {
                 "name": "permissionFor",
@@ -181,10 +209,12 @@
                 "params": [
                     {
                         "name": "toolName",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": ""
             }
         ]
     },
@@ -193,6 +223,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Enforces the RBAC permission from the PermissionMap on every\ntools/call. Tools without a mapped permission pass through; a mapped tool\nrequires the current identity to hold the permission \u2014 a guest (null id)\nis checked as a guest and denied by any sane RBAC setup (fail-closed).\n\nThe denial is a regular MCP tool-error envelope, so the agent sees the\nreason instead of a transport failure.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -202,14 +233,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -218,6 +252,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "The tools/list counterpart of RbacToolCallInterceptor: a tool whose\nmapped permission the current identity does not hold disappears from the\nlisting (and yii3-mcp's visibility layer also fail-closed rejects calling\nit by name). Same map, same decision \u2014 list and call can never disagree.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -227,14 +262,17 @@
                 "params": [
                     {
                         "name": "tool",
-                        "type": "Mcp\\Schema\\Tool"
+                        "type": "Mcp\\Schema\\Tool",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                        "type": "?Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -243,6 +281,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Declares the RBAC permission required to call the tool defined by this\nmethod. Read by PermissionMap::fromToolClasses() next to the SDK's\n#[McpTool] attribute.",
         "extends": null,
         "publicProperties": [
             {
@@ -258,6 +297,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Binds the MCP session to the identity that first used it and rejects any\nrequest presenting the same Mcp-Session-Id with a different identity \u2014\nwithout this, a leaked session id plus the attacker's own valid token\nrides the victim's session.\n\nThe binding happens on the first intercepted tools/call (the core\ninterceptor chain does not see `initialize`); a guest binds as a guest.\nRun this OUTERMOST \u2014 before RBAC and anything that trusts the session.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -267,14 +307,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -283,6 +326,7 @@
         "package": "Rasuvaeff\\Yii3McpRbacBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Fixed identity for stdio/config-driven deployments. Null represents guest.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -290,7 +334,8 @@
                 "name": "getId",
                 "static": false,
                 "params": [],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": ""
             }
         ]
     },
@@ -299,6 +344,7 @@
         "package": "Rasuvaeff\\Yii3McpTelemetryBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Counts every MCP tools/call into `mcp_tool_calls_total{tool,outcome}` and\nsamples its duration into `mcp_tool_call_duration_seconds{tool}`. Duration\nis the wall time of the wrapped chain measured with hrtime(); outcomes are\ndistinguished by the counter's `outcome` label, not by a separate duration\nseries, to keep histogram cardinality low.\n\nThe `outcome` label follows the core's shared CallOutcome\nvocabulary: `success`, `rejected` (a client-visible refusal \u2014 rate limit,\nRBAC, budget) or `error` (an unexpected failure) \u2014 so alert thresholds on\nerror rate are not polluted by expected rejections. A tool exception is\nrecorded and rethrown unchanged, so the MCP error envelope the agent sees\nis byte-identical with and without this bridge.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -308,14 +354,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -324,6 +373,7 @@
         "package": "Rasuvaeff\\Yii3McpTelemetryBridge",
         "kind": "class",
         "isApi": true,
+        "summary": "Wraps every MCP tools/call in a `mcp.tool <name>` span: the tool name,\nmasked arguments, the client identity (endpoint secret id and initialize\nhandshake info), the session id and \u2014 when the session budget is\nconfigured \u2014 how many calls remain.\n\nArguments are recorded as one scalar attribute per argument\n(`mcp.tool.argument.<name>`), masked, stringified and truncated \u2014 the\nOTel attribute model only accepts primitives and homogeneous lists of\nprimitives, so a single nested-array attribute would be dropped by the\nOTel backend (same flattening the ecosystem's OtelMiddleware uses for\n`http.request.param.<name>`).\n\nThe span follows the frozen trace() contract of rasuvaeff/yii3-telemetry:\na tool exception is recorded on the span, the span status becomes Error\nand the ORIGINAL exception is rethrown, so the MCP error envelope the\nagent sees is unchanged. The `mcp.outcome` attribute follows the core's\nshared CallOutcome vocabulary: `success`, `rejected` (a\nclient-visible refusal \u2014 rate limit, RBAC, budget) or `error` (an\nunexpected failure).",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -333,14 +383,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -349,6 +402,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "One MCP App (`io.modelcontextprotocol/ui`): an interactive HTML document\nserved as a `ui://` resource and rendered by the client in a sandboxed\niframe.\n\nThe HTML is either a fixed string or a `Closure(): string` evaluated on\nevery `resources/read` \u2014 a closure is the hook for templating, DI-provided\ndata or per-request state, and its cost is paid per read.\n\n`$contentMeta` carries the sandbox contract (CSP allow-lists, permissions,\ndomain, border preference) and belongs to the resource CONTENT; the\ndescriptor in `resources/list` only ever carries the extension's marker\n(McpApps::resourceMarker()), which McpAppsConfigurator adds.\nLeaving it `null` is valid: the host then applies its own restrictive\ndefault policy.",
         "extends": null,
         "publicProperties": [
             {
@@ -389,36 +443,44 @@
                 "params": [
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "html",
-                        "type": "Closure|string"
+                        "type": "Closure|string",
+                        "description": ""
                     },
                     {
                         "name": "title",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     },
                     {
                         "name": "description",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     },
                     {
                         "name": "contentMeta",
-                        "type": "?Mcp\\Schema\\Extension\\Apps\\UiResourceContentMeta"
+                        "type": "?Mcp\\Schema\\Extension\\Apps\\UiResourceContentMeta",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition",
+                "summary": ""
             },
             {
                 "name": "renderHtml",
                 "static": false,
                 "params": [],
-                "returnType": "string"
+                "returnType": "string",
+                "summary": "The markup to serve now: a closure is re-evaluated on every call, a\nstring is returned as given."
             }
         ]
     },
@@ -427,6 +489,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Converts one `apps.definitions` entry of the params array into an\nAppDefinition.\n\nThe SDK's own `UiResourceCsp::fromArray()` / `UiResourcePermissions::fromArray()`\nare deliberately NOT used, because both would misread this params format\nSILENTLY:\n\n- permissions treat a PRESENT key as \"requested\" (`isset()`), so the\n  perfectly natural `'camera' => false` would switch the camera ON;\n- CSP reads camelCase keys (`connectDomains`), while params use snake_case\n  (`connect_domains`) like every other option in this package \u2014 every field\n  would come out `null`, no CSP would be emitted, and the operator would\n  believe a domain was allow-listed when the host actually applied its own\n  restrictive default.\n\nDomains are passed through verbatim: the policy is enforced by the client\nhost, and `definitions` is application-owned configuration, not client\ninput.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -436,10 +499,12 @@
                 "params": [
                     {
                         "name": "app",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition",
+                "summary": ""
             }
         ]
     },
@@ -448,6 +513,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Serves one AppDefinition on `resources/read`.\n\nReturns `TextResourceContents` rather than a raw string on purpose: the\nSDK's resource formatter only carries `_meta` through when the handler\nhands it a ready `ResourceContents`, and `_meta.ui` (CSP, permissions) is\nthe app's sandbox contract. A `ReadResourceResult` would NOT work here \u2014\nthe formatter has no branch for it and throws on the unhandled type.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -457,14 +523,17 @@
                 "params": [
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "gateway",
-                        "type": "Mcp\\Server\\ClientGateway"
+                        "type": "Mcp\\Server\\ClientGateway",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -473,6 +542,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Enables the MCP Apps extension (`io.modelcontextprotocol/ui`) and registers\nthe declaratively configured apps as `ui://` resources.\n\nEnabling the extension is what makes attribute-based apps\n(`#[McpResource]` with a `ui://` URI) visible to clients as well \u2014 an app\nresource a client does not know is an app renders as plain text. It is\ntherefore enabled whenever `apps.enable` is on, with or without\ndeclarative definitions.\n\nThis configurator is the single enabler of the extension in this package:\n`Builder::enableExtension()` throws on a second registration of the same\nextension id, so an application configurator that also enables\nMcpApps while `apps.enable` is on fails the server build.\n\n`_meta` placement follows the spec and is not interchangeable: the\ndescriptor (`resources/list`) carries the bare marker, the content\n(`resources/read`) carries \\Mcp\\Schema\\Extension\\Apps\\UiResourceContentMeta.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -482,10 +552,12 @@
                 "params": [
                     {
                         "name": "builder",
-                        "type": "Mcp\\Server\\Builder"
+                        "type": "Mcp\\Server\\Builder",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             }
         ]
     },
@@ -494,6 +566,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Lets a configured capability holder opt out of registration at server\nbuild time \u2014 e.g. gate it behind a feature flag or an environment check.\nThe instance is resolved through the DI container to make the decision,\nso it can inject whatever it needs (FeatureFlags, config, \u2026).",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -501,7 +574,8 @@
                 "name": "shouldRegister",
                 "static": false,
                 "params": [],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -510,6 +584,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "enum",
         "isApi": true,
+        "summary": "Failure domain of a McpDoctor check \u2014 determines the command's exit\ncode, so scripts can tell a misconfiguration from a broken disk from an\nunreachable upstream without parsing output.",
         "extends": null,
         "publicProperties": [
             {
@@ -528,13 +603,15 @@
                 "name": "exitCode",
                 "static": false,
                 "params": [],
-                "returnType": "int"
+                "returnType": "int",
+                "summary": "Stable per-category exit code (0 is reserved for a healthy report,\n1 for generic console errors)."
             },
             {
                 "name": "cases",
                 "static": true,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "from",
@@ -542,10 +619,12 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string|int"
+                        "type": "string|int",
+                        "description": ""
                     }
                 ],
-                "returnType": "static"
+                "returnType": "static",
+                "summary": ""
             },
             {
                 "name": "tryFrom",
@@ -553,10 +632,12 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string|int"
+                        "type": "string|int",
+                        "description": ""
                     }
                 ],
-                "returnType": "?static"
+                "returnType": "?static",
+                "summary": ""
             }
         ]
     },
@@ -565,6 +646,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Immutable result of one McpDoctor check. Details are human-readable\nand never contain secrets or header values.",
         "extends": null,
         "publicProperties": [
             {
@@ -593,7 +675,8 @@
                 "name": "toArray",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -602,6 +685,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "enum",
         "isApi": true,
+        "summary": "Outcome of a single McpDoctor check.",
         "extends": null,
         "publicProperties": [
             {
@@ -620,7 +704,8 @@
                 "name": "cases",
                 "static": true,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "from",
@@ -628,10 +713,12 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string|int"
+                        "type": "string|int",
+                        "description": ""
                     }
                 ],
-                "returnType": "static"
+                "returnType": "static",
+                "summary": ""
             },
             {
                 "name": "tryFrom",
@@ -639,10 +726,12 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string|int"
+                        "type": "string|int",
+                        "description": ""
                     }
                 ],
-                "returnType": "?static"
+                "returnType": "?static",
+                "summary": ""
             }
         ]
     },
@@ -651,6 +740,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Immutable outcome of a full McpDoctor run: the ordered check results\nplus the derived health verdict and exit code.",
         "extends": null,
         "publicProperties": [
             {
@@ -664,19 +754,22 @@
                 "name": "healthy",
                 "static": false,
                 "params": [],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "exitCode",
                 "static": false,
                 "params": [],
-                "returnType": "int"
+                "returnType": "int",
+                "summary": "0 when healthy; otherwise the CheckCategory::exitCode() of the\nFIRST failing check \u2014 checks run in diagnosis order, so the first\nfailure is the root cause (a broken config also breaks the server\nbuild, but the config error is what needs fixing)."
             },
             {
                 "name": "toArray",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -685,6 +778,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Health/readiness diagnostics for the MCP server configuration: runs a fixed\nset of checks in diagnosis order (root causes first) and returns an\nimmutable DoctorReport. Backs the `mcp:doctor` console command.\n\nChecks: endpoint secret configured (config), session directory usable and\na session round-trip through the configured store (storage), OpenAPI spec\nloadable (config for a local file, upstream for a URL), server build\n(config). Network is touched only when explicitly requested\n(diagnose() with `$probeUpstream = true`) \u2014 with a URL spec the\nspec fetch AND the server build (which loads the spec eagerly) are skipped\notherwise, so the base health check stays local.\n\nDetails never contain the configured secret or header VALUES, and any URL\nprinted is stripped of userinfo credentials. Exception messages from\napplication services are passed through (truncated) \u2014 a blanket \"no\nsecrets ever\" promise is not enforceable over arbitrary third-party\nexceptions, so treat doctor output as operator-facing diagnostics, not\nsomething to hand to untrusted parties.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -694,10 +788,12 @@
                 "params": [
                     {
                         "name": "probeUpstream",
-                        "type": "bool"
+                        "type": "bool",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\Doctor\\DoctorReport"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Doctor\\DoctorReport",
+                "summary": ""
             }
         ]
     },
@@ -706,6 +802,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Two capability registrations resolved to the same identity (tool/prompt\nname, resource URI, resource template). The SDK registry is last-write-wins\nand would silently serve only one of them \u2014 while visibility rules, cache\npartitions, RBAC and audit keep referring to the name, possibly describing\nthe handler that vanished. Registration is trusted developer input, so a\ncollision is a wiring mistake that must fail the server build.",
         "extends": "LogicException",
         "publicProperties": [],
         "publicMethods": []
@@ -715,6 +812,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "An entry of the `tools` configuration does not exist or exposes no MCP\ncapability attributes \u2014 a wiring mistake that must fail fast.",
         "extends": "LogicException",
         "publicProperties": [],
         "publicMethods": []
@@ -724,6 +822,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "A capability call arrived with a client identity different from the one the\nsession was created by. The session-to-client binding is immutable \u2014 this is\neither a hijack attempt with a leaked session id or a broken embedding, and\nboth must fail closed.",
         "extends": "RuntimeException",
         "publicProperties": [],
         "publicMethods": []
@@ -733,6 +832,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Registry decorator making capability identity collisions a build-time\nerror. The SDK registry is last-write-wins with no duplicate check, and\nits explicit loader runs before the reflected one \u2014 so on a collision one\nregistration silently disappears from the served set while every rule\nkeyed by its name (visibility, cache, RBAC, audit) keeps \"working\" against\nthe wrong handler. McpServerFactory installs this guard on every\nserver it builds, covering ALL registration paths at the single point they\nconverge: attribute tools, configurators, OpenAPI-bridged operations and\nMarkdown prompts alike. Re-registering after an explicit unregister stays\nallowed \u2014 only a duplicate among live registrations throws.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -742,14 +842,17 @@
                 "params": [
                     {
                         "name": "tool",
-                        "type": "Mcp\\Schema\\Tool"
+                        "type": "Mcp\\Schema\\Tool",
+                        "description": ""
                     },
                     {
                         "name": "handler",
-                        "type": "callable|array|string"
+                        "type": "callable|array|string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\ToolReference"
+                "returnType": "Mcp\\Capability\\Registry\\ToolReference",
+                "summary": ""
             },
             {
                 "name": "registerResource",
@@ -757,14 +860,17 @@
                 "params": [
                     {
                         "name": "resource",
-                        "type": "Mcp\\Schema\\ResourceDefinition"
+                        "type": "Mcp\\Schema\\ResourceDefinition",
+                        "description": ""
                     },
                     {
                         "name": "handler",
-                        "type": "callable|array|string"
+                        "type": "callable|array|string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\ResourceReference"
+                "returnType": "Mcp\\Capability\\Registry\\ResourceReference",
+                "summary": ""
             },
             {
                 "name": "registerResourceTemplate",
@@ -772,18 +878,22 @@
                 "params": [
                     {
                         "name": "template",
-                        "type": "Mcp\\Schema\\ResourceTemplate"
+                        "type": "Mcp\\Schema\\ResourceTemplate",
+                        "description": ""
                     },
                     {
                         "name": "handler",
-                        "type": "callable|array|string"
+                        "type": "callable|array|string",
+                        "description": ""
                     },
                     {
                         "name": "completionProviders",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\ResourceTemplateReference"
+                "returnType": "Mcp\\Capability\\Registry\\ResourceTemplateReference",
+                "summary": ""
             },
             {
                 "name": "registerPrompt",
@@ -791,18 +901,22 @@
                 "params": [
                     {
                         "name": "prompt",
-                        "type": "Mcp\\Schema\\Prompt"
+                        "type": "Mcp\\Schema\\Prompt",
+                        "description": ""
                     },
                     {
                         "name": "handler",
-                        "type": "callable|array|string"
+                        "type": "callable|array|string",
+                        "description": ""
                     },
                     {
                         "name": "completionProviders",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\PromptReference"
+                "returnType": "Mcp\\Capability\\Registry\\PromptReference",
+                "summary": ""
             },
             {
                 "name": "unregisterTool",
@@ -810,10 +924,12 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             },
             {
                 "name": "unregisterResource",
@@ -821,10 +937,12 @@
                 "params": [
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             },
             {
                 "name": "unregisterResourceTemplate",
@@ -832,10 +950,12 @@
                 "params": [
                     {
                         "name": "uriTemplate",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             },
             {
                 "name": "unregisterPrompt",
@@ -843,10 +963,12 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             },
             {
                 "name": "hasTool",
@@ -854,10 +976,12 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "hasResource",
@@ -865,10 +989,12 @@
                 "params": [
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "hasResourceTemplate",
@@ -876,10 +1002,12 @@
                 "params": [
                     {
                         "name": "uriTemplate",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "hasPrompt",
@@ -887,16 +1015,19 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "hasTools",
                 "static": false,
                 "params": [],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "getTools",
@@ -904,14 +1035,17 @@
                 "params": [
                     {
                         "name": "limit",
-                        "type": "?int"
+                        "type": "?int",
+                        "description": ""
                     },
                     {
                         "name": "cursor",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\Page"
+                "returnType": "Mcp\\Schema\\Page",
+                "summary": ""
             },
             {
                 "name": "getTool",
@@ -919,16 +1053,19 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\ToolReference"
+                "returnType": "Mcp\\Capability\\Registry\\ToolReference",
+                "summary": ""
             },
             {
                 "name": "hasResources",
                 "static": false,
                 "params": [],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "getResources",
@@ -936,14 +1073,17 @@
                 "params": [
                     {
                         "name": "limit",
-                        "type": "?int"
+                        "type": "?int",
+                        "description": ""
                     },
                     {
                         "name": "cursor",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\Page"
+                "returnType": "Mcp\\Schema\\Page",
+                "summary": ""
             },
             {
                 "name": "getResource",
@@ -951,20 +1091,24 @@
                 "params": [
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "includeTemplates",
-                        "type": "bool"
+                        "type": "bool",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\ResourceReference|Mcp\\Capability\\Registry\\ResourceTemplateReference"
+                "returnType": "Mcp\\Capability\\Registry\\ResourceReference|Mcp\\Capability\\Registry\\ResourceTemplateReference",
+                "summary": ""
             },
             {
                 "name": "hasResourceTemplates",
                 "static": false,
                 "params": [],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "getResourceTemplates",
@@ -972,14 +1116,17 @@
                 "params": [
                     {
                         "name": "limit",
-                        "type": "?int"
+                        "type": "?int",
+                        "description": ""
                     },
                     {
                         "name": "cursor",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\Page"
+                "returnType": "Mcp\\Schema\\Page",
+                "summary": ""
             },
             {
                 "name": "getResourceTemplate",
@@ -987,16 +1134,19 @@
                 "params": [
                     {
                         "name": "uriTemplate",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\ResourceTemplateReference"
+                "returnType": "Mcp\\Capability\\Registry\\ResourceTemplateReference",
+                "summary": ""
             },
             {
                 "name": "hasPrompts",
                 "static": false,
                 "params": [],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "getPrompts",
@@ -1004,14 +1154,17 @@
                 "params": [
                     {
                         "name": "limit",
-                        "type": "?int"
+                        "type": "?int",
+                        "description": ""
                     },
                     {
                         "name": "cursor",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\Page"
+                "returnType": "Mcp\\Schema\\Page",
+                "summary": ""
             },
             {
                 "name": "getPrompt",
@@ -1019,10 +1172,12 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Capability\\Registry\\PromptReference"
+                "returnType": "Mcp\\Capability\\Registry\\PromptReference",
+                "summary": ""
             }
         ]
     },
@@ -1031,6 +1186,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Process-local carrier of the client id for the CURRENT request: the SDK's\nreference handler receives the JSON-RPC request (not the PSR-7 one), so\nthe id resolved by \\Rasuvaeff\\Yii3Mcp\\SharedSecretMiddleware cannot\ntravel as a request attribute all the way down \u2014\n\\Rasuvaeff\\Yii3Mcp\\McpAction arms this holder before running the\ntransport and disarms it in a finally block.\n\nThis holder is deliberately NOT the primary identity source: capability\ncalls read the client id from the session's immutable owner (stamped at\n`initialize` by McpAction), which travels with the request and stays\ncorrect when requests interleave. The holder covers only the fallback\npaths \u2014 sessionless calls and sessions with no recorded owner \u2014 and a\ndisagreement between holder and owner fails closed\n(\\Rasuvaeff\\Yii3Mcp\\Exception\\SessionOwnershipException).\n\nConcurrency contract: one mutable slot per PHP process. Safe under\nPHP-FPM/CLI (one request at a time, arm/disarm bracketed). In a\nconcurrent or reentrant runtime (Swoole, AMPHP, RoadRunner with\ninterleaved Fibers) the FALLBACK paths above may observe another\nrequest's id \u2014 do not rely on unstamped-session attribution there; the\nowner-stamped main path is unaffected.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1040,22 +1196,26 @@
                 "params": [
                     {
                         "name": "clientId",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             },
             {
                 "name": "current",
                 "static": true,
                 "params": [],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": ""
             },
             {
                 "name": "disarm",
                 "static": true,
                 "params": [],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             }
         ]
     },
@@ -1064,6 +1224,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Maps a presented endpoint secret to a client identity \u2014 the seam that lets\nseveral clients (and several ACTIVE secrets per client, for a rotation\nwindow) share one MCP endpoint without the middleware knowing where the\nsecrets live.\n\nImplementations MUST compare secrets in constant time (hash_equals())\nand MUST NOT log or embed the presented secret in exceptions.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1073,10 +1234,12 @@
                 "params": [
                     {
                         "name": "presentedSecret",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": "The client id owning the presented secret, or null when no configured\nsecret matches (the caller rejects the request fail-closed)."
             }
         ]
     },
@@ -1085,6 +1248,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Config-backed SecretResolverInterface: a map of client id to one or\nseveral active secrets. Two secrets under one id are how rotation works \u2014\nadd the new secret, roll the clients, remove the old one; both stay valid\nduring the window, and a removed (revoked) secret stops matching\nimmediately.\n\nEvery comparison uses hash_equals(); the presented secret is never\nstored or reported.\n\nA secret shared by two DIFFERENT client ids is rejected at construction:\nresolution returns the first match, so a duplicate would silently\nattribute one client's calls (audit, rate limits, cache partitions,\nsession ownership) to the other. A duplicate within one client's own\nlist is rejected too \u2014 it is always a configuration mistake.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1094,10 +1258,12 @@
                 "params": [
                     {
                         "name": "presentedSecret",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "?string"
+                "returnType": "?string",
+                "summary": ""
             }
         ]
     },
@@ -1106,6 +1272,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Masks sensitive tool-call arguments before they leave the process \u2014 into an\naudit trail, a trace span or a log line. A key matching the sensitive list\n(case-insensitive, at every nesting level) has its whole value replaced\nwith `***`; everything else passes through untouched.\n\nOne shared helper so every consumer (audit bridge, telemetry bridge,\napplication interceptors) masks with identical semantics instead of\ndrifting apart. The default key list starts from rasuvaeff/yii3-audit-log's\nSensitiveValueMasker list, then adds the credential/token spellings its\nexact-match comparison would otherwise miss: bare `pass`/`pwd`/`auth`,\nbearer/JWT tokens (`bearer`, `jwt`), session/cookie carriers (`cookie`,\n`session_token`), API keys (`apikey`, `api-key`, `x-api-key`), OAuth-style\npairs (`access_token`, `access-token`, `id_token`, `auth_token`,\n`refresh_token`, `client_secret`), `private_key` and `authorization`.\nMasking more than audit-log is the safe direction \u2014 an over-masked field\nonly costs log fidelity, an under-masked one leaks a credential. Comparison\nis case-insensitive but exact, so `apikey` covers `ApiKey` while\n`apiKeyHeader` stays visible: pass your own list to cover\napplication-specific names.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1115,10 +1282,12 @@
                 "params": [
                     {
                         "name": "arguments",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -1127,6 +1296,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Caches successful tool results per client, for tools explicitly opted\ninto `$ttlSeconds` \u2014 a read-heavy tool (a lookup table, an OpenAPI GET)\ncalled repeatedly with the same arguments inside a session skips the\nhandler entirely. Opt-in by tool name only; the interceptor has no notion\nof which tools are safe to cache.\n\nThe cache key always includes the resolved client id \u2014 a shared cache\nbetween distinct clients would leak one client's result to another, which\nis never acceptable regardless of configuration. The key material is a\ntyped JSON structure, not sentinel strings: an ABSENT client id (stdio)\nencodes as `null` and can never collide with a real client that happens\nto be named \"anonymous\". When an $identityProvider is configured, the\nresolved ExecutionIdentity is part of the key too: delegated upstream\ncredentials mean the same tool + same arguments can produce\nidentity-specific results, and the identity may be finer-grained than the\nclient id (many end users behind one MCP client). An identity provider\nfailure fails CLOSED for cached tools \u2014 serving a result without knowing\nwhose it is would be the exact leak the key exists to prevent.\n\nThe mandatory `$namespace` isolates applications/servers sharing one\ncache backend (a common Redis): without it, two applications bridging\nsame-named tools would read each other's results. An external PSR-16\nprefix is defence in depth, never the primary isolation. The key material\nalso carries a cache-format version, so a future encoding change can\nnever surface values written by an older one.\n\nExceptions are never cached (only `$next()`'s successful return value\nis written). A cache read/write failure fails OPEN \u2014 this is an\navailability optimization, not a security gate, so an unavailable cache\nsimply means the tool runs.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1136,14 +1306,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1152,6 +1325,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "enum",
         "isApi": true,
+        "summary": "The shared outcome vocabulary for audit/telemetry bridges, so a rate-limit\nrejection is never counted as a tool crash and every bridge classifies\nidentically:\n\n- `Success` \u2014 the handler ran and returned;\n- `Rejected` \u2014 the call was refused with a client-visible message\n  (ToolCallException / PromptGetException /\n  ResourceReadException), by an interceptor (RBAC, rate limit,\n  budget) or by the capability itself;\n- `Error` \u2014 any other exception: an unexpected failure the client sees\n  only as an opaque internal error.",
         "extends": null,
         "publicProperties": [
             {
@@ -1172,16 +1346,19 @@
                 "params": [
                     {
                         "name": "exception",
-                        "type": "Throwable"
+                        "type": "Throwable",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\Interceptor\\CallOutcome"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Interceptor\\CallOutcome",
+                "summary": ""
             },
             {
                 "name": "cases",
                 "static": true,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "from",
@@ -1189,10 +1366,12 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string|int"
+                        "type": "string|int",
+                        "description": ""
                     }
                 ],
-                "returnType": "static"
+                "returnType": "static",
+                "summary": ""
             },
             {
                 "name": "tryFrom",
@@ -1200,10 +1379,12 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string|int"
+                        "type": "string|int",
+                        "description": ""
                     }
                 ],
-                "returnType": "?static"
+                "returnType": "?static",
+                "summary": ""
             }
         ]
     },
@@ -1212,6 +1393,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Decorates the SDK reference handler with per-session visibility and\ninterceptor chains for every capability call: tools/call, prompts/get and\nresources/read (static resources and templates alike). Visibility is\nfail-closed \u2014 an invisible tool cannot be called even by its exact name,\nand a hidden prompt/resource is reported as not found, indistinguishable\nfrom a missing one.\n\nThe client identity of a call comes FROM THE SESSION first\n(self::CLIENT_ID_SESSION_KEY \u2014 the immutable owner\n\\Rasuvaeff\\Yii3Mcp\\McpAction stamps at `initialize`), so it travels\nwith the request instead of through process state and stays correct even in\na concurrent (Fiber-interleaving) runtime. The process-local\nClientIdentityContext is only the fallback for sessions that carry\nno owner yet (a pre-ownership session, an embedding without McpAction) \u2014\nin that case the id is mirrored into the session on first use. When both\nare present and DISAGREE, the call fails closed with\nSessionOwnershipException: a session must never be re-attributed to\nanother client. This check runs before visibility, so a foreign session is\nnever consulted for what the caller may see.\n\nThe stored id is attribution, not a live revocation check: if a client's\nsecret is removed from `client_secrets` mid-session, its already-mirrored\nid survives in the session until the session's own TTL expires. Revoking\naccess immediately requires also invalidating the affected sessions.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1221,14 +1403,17 @@
                 "params": [
                     {
                         "name": "reference",
-                        "type": "Mcp\\Capability\\Registry\\ElementReference"
+                        "type": "Mcp\\Capability\\Registry\\ElementReference",
+                        "description": ""
                     },
                     {
                         "name": "arguments",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1237,6 +1422,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Everything an interceptor may inspect about one prompts/get: the prompt\nname, the arguments as sent by the client (SDK-internal keys stripped),\nthe MCP session carrying initialize-handshake data, and the client\nidentity resolved by \\Rasuvaeff\\Yii3Mcp\\SharedSecretMiddleware\n(never the raw secret).",
         "extends": null,
         "publicProperties": [
             {
@@ -1265,7 +1451,8 @@
                 "name": "getClientInfo",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Client identity from the initialize handshake (name, version, \u2026);\nempty before initialize or without a session."
             }
         ]
     },
@@ -1274,6 +1461,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Public extension point wrapping every prompts/get \u2014 attribute prompts and\nconfigurator-registered ones (e.g. MarkdownPromptsConfigurator) alike.\nImplementations run in configured order (first = outermost) and decide\nwhether to call $next: auditing, tracing, ACL.\n\nThrow \\Mcp\\Exception\\PromptGetException to reject the call with a\nclient-visible message; any other exception becomes an opaque internal\nerror. To pretend the prompt does not exist, throw\n\\Mcp\\Exception\\PromptNotFoundException.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1283,14 +1471,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\PromptGetContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\PromptGetContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1299,6 +1490,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Delegates per-client/per-tool limits to the application's rate limiter via\nToolCallLimiterInterface. Complements (does not replace)\nSessionBudgetInterceptor: the budget is an in-session anti-loop\nguard, this is the client quota keyed by the identity that\n\\Rasuvaeff\\Yii3Mcp\\Identity\\SecretResolverInterface resolved.\n\nFail-closed: when the limiter backend throws, the call is rejected \u2014 an\nenforced quota must not silently turn into \"unlimited\" on an outage.\n\nAn absent client id (stdio, no middleware) is passed to the limiter as\n`null` \u2014 typed absence, never a reserved string like \"anonymous\" that a\nreal client id could collide with.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1308,14 +1500,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1324,6 +1519,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Everything an interceptor may inspect about one resources/read: the\nrequested URI, the variables extracted from a resource template (empty\nfor a static resource), the template the URI matched (null for a static\nresource), the MCP session and the client identity resolved by\n\\Rasuvaeff\\Yii3Mcp\\SharedSecretMiddleware (never the raw secret).",
         "extends": null,
         "publicProperties": [
             {
@@ -1357,7 +1553,8 @@
                 "name": "getClientInfo",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Client identity from the initialize handshake (name, version, \u2026);\nempty before initialize or without a session."
             }
         ]
     },
@@ -1366,6 +1563,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Public extension point wrapping every resources/read \u2014 static resources\nand resource templates alike, whatever the registration path.\nImplementations run in configured order (first = outermost) and decide\nwhether to call $next: auditing, tracing, ACL.\n\nThrow \\Mcp\\Exception\\ResourceReadException to reject the call with\na client-visible message; any other exception becomes an opaque internal\nerror. To pretend the resource does not exist, throw\n\\Mcp\\Exception\\ResourceNotFoundException.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1375,14 +1573,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ResourceReadContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ResourceReadContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1391,6 +1592,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Guards against a tool result burning an agent's context window \u2014 a bridged\nGET against a real API, or a hand-written tool over a large table, can\nreturn megabytes of JSON with no natural upper bound. A string result over\nthe limit is truncated with an explicit marker (still useful to the\nagent); any other result (array, object \u2014 the shapes that become\n`structuredContent`) is rejected outright instead, because a truncated\nJSON payload is invalid JSON, not a smaller valid one. A string result\nthat is not valid UTF-8 (a bridged operation can return a foreign,\nnon-JSON upstream body as-is) is rejected with a `ToolCallException`\nrather than reaching the SDK's envelope encoding and failing there\nopaquely.\n\nSemantics of the limit: for a STRING result it counts the raw string's\nbytes BEFORE JSON encoding \u2014 control characters and non-ASCII expand on\nthe wire (up to ~6x for a control-character-heavy payload), so this is a\nresult-size budget, not an exact wire-size cap. For array/object results\nit counts the JSON-encoded bytes (there is no raw form to measure). It\nbounds what reaches the agent's context window; the memory of producing\nthe result is bounded separately (the OpenAPI executor's\n`max_response_bytes` reads incrementally and stops at its cap).",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1400,14 +1602,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1416,6 +1621,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Caps the number of tools/call per MCP session (initialize \u2192 TTL expiry).\nProtection against an agent burning calls in a loop INSIDE one session \u2014\nnot a client quota: re-initializing starts a fresh counter; client quotas\nbelong to an application-level rate limiter.\n\nAn exhausted budget is reported as a regular MCP tool-error envelope, so\nthe agent sees the reason instead of a transport failure.\n\nNOT safe against concurrent calls on the SAME session: the counter is a\nplain read-modify-write (`get()` then `set()`) with no compare-and-swap,\nbecause SessionInterface (from `mcp/sdk`) exposes none and is a\ngeneric key-value abstraction over an arbitrary \\Mcp\\Server\\Session\\SessionStoreInterface backend \u2014 there is no lock\nprimitive to reach for that would work across every backend a consumer\nmight bind (the shipped \\Mcp\\Server\\Session\\FileSessionStore\nlocks only its own write, not the read-modify-write span). N concurrent\nrequests racing on one session can overrun the budget by up to N-1 calls.\nThis is accepted: the guard's purpose is stopping a runaway agent loop,\nnot enforcing a hard cap under adversarial concurrency \u2014 a real quota\nbelongs in an application-level rate limiter with a proper atomic store.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1425,14 +1631,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1441,6 +1650,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Everything an interceptor may inspect about one tools/call: the tool name,\nthe arguments as sent by the client (SDK-internal keys stripped), the\nMCP session carrying initialize-handshake data, and the client identity\nresolved by \\Rasuvaeff\\Yii3Mcp\\SharedSecretMiddleware (never the\nraw secret).",
         "extends": null,
         "publicProperties": [
             {
@@ -1469,7 +1679,8 @@
                 "name": "getClientInfo",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Client identity from the initialize handshake (name, version, \u2026);\nempty before initialize or without a session."
             }
         ]
     },
@@ -1478,6 +1689,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Public extension point wrapping every tools/call \u2014 attribute tools,\nOpenAPI-bridged operations and configurator-registered handlers alike.\nImplementations run in configured order (first = outermost) and decide\nwhether to call $next: tracing, rate limiting, ACL, budgets.\n\nThrow \\Mcp\\Exception\\ToolCallException to reject the call with a\nregular MCP tool-error envelope; any other exception becomes an opaque\ninternal error.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1487,14 +1699,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+                        "description": ""
                     },
                     {
                         "name": "next",
-                        "type": "callable"
+                        "type": "callable",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1503,6 +1718,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Port to the application's rate limiter for tool calls. This package\ndeliberately ships NO limiter storage of its own \u2014 implement this over\n`yiisoft/rate-limiter`, Redis, or whatever the application already runs,\nand wire RateLimitInterceptor into the `interceptors` params list.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1512,14 +1728,17 @@
                 "params": [
                     {
                         "name": "clientId",
-                        "type": "?string"
+                        "type": "?string",
+                        "description": ""
                     },
                     {
                         "name": "toolName",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": "Whether this client may execute this tool call now. Returning false\nrejects the call; a thrown exception also rejects it (enforced quotas\nfail closed when the limiter backend is unavailable).\n\nA `null` client id means the transport carries no authenticated\nidentity (stdio, no middleware) \u2014 it is typed as absence, never as a\nreserved string, so it can never collide with a real client id. The\nimplementation decides how to bucket anonymous calls."
             }
         ]
     },
@@ -1528,6 +1747,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "PSR-15 endpoint serving the MCP Streamable HTTP transport. Route it behind\nSharedSecretMiddleware (or a network ACL) \u2014 the endpoint is trusted-only.\n\nWhen both a resolved client id (SharedSecretMiddleware upstream) and a\n`$sessionStore` are present, sessions are BOUND to the client that created\nthem: the owner is stamped into the session at `initialize`, immutably, and\nevery subsequent POST/DELETE carrying an `Mcp-Session-Id` is verified\nagainst it BEFORE the transport runs. A request presenting another client's\nsession id \u2014 or a session with no recorded owner \u2014 is answered with the\nsame 404 the SDK uses for a missing session, indistinguishable from an\nexpired one. The SDK itself only checks that the session UUID exists, so\nwithout this guard any authenticated client could act inside (or DELETE)\nanother client's session by replaying its id.\n\nThe SDK's DNS-rebinding protection allows only localhost by default;\nproduction deployments behind a real domain list it in $allowedHosts.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1537,10 +1757,12 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Psr\\Http\\Message\\ServerRequestInterface"
+                        "type": "Psr\\Http\\Message\\ServerRequestInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Psr\\Http\\Message\\ResponseInterface"
+                "returnType": "Psr\\Http\\Message\\ResponseInterface",
+                "summary": ""
             }
         ]
     },
@@ -1549,6 +1771,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Health/readiness diagnostics for the MCP server configuration: endpoint\nsecret, session directory and store, OpenAPI spec, server build. Output\nnever contains the secret or configured header values.\n\nExit codes are stable for scripting: 0 = healthy, 2 = config error,\n3 = storage error, 4 = upstream error (the category of the FIRST failing\ncheck \u2014 checks run in diagnosis order, so the first failure is the root\ncause). `--json` prints the machine-readable report; `--probe` allows\nnetwork access (fetching a URL OpenAPI spec) \u2014 without it the check stays\nlocal and network-dependent checks are reported as skipped.",
         "extends": "Symfony\\Component\\Console\\Command\\Command",
         "publicProperties": [],
         "publicMethods": []
@@ -1558,6 +1781,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Prints every registered MCP capability (tools, resources, resource\ntemplates, prompts) without an MCP client: the introspection goes through\nthe same in-process JSON-RPC path a real client uses, so the output shows\nwhat is actually served \u2014 attribute tools, OpenAPI-bridged operations and\nMarkdown prompts alike.\n\n`--json` prints the full capability definitions as normalized JSON (the\nSchemaSnapshot format: sections keyed, items ordered by identity, object\nkeys sorted) \u2014 stable for CI diffs and external automation.",
         "extends": "Symfony\\Component\\Console\\Command\\Command",
         "publicProperties": [],
         "publicMethods": []
@@ -1567,6 +1791,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Serves the MCP server over the stdio transport \u2014 for local development\nwith Claude Code / Claude Desktop and other stdio-based MCP clients.",
         "extends": "Symfony\\Component\\Console\\Command\\Command",
         "publicProperties": [],
         "publicMethods": []
@@ -1576,6 +1801,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Builds an SDK Server from a list of application tool classes.\n\nCapability methods are declared with the SDK's own attributes (#[McpTool],\n#[McpResource], #[McpResourceTemplate], #[McpPrompt]) on public methods;\nhandlers are registered as [class, method] references, so instances are\nresolved lazily through the DI container and receive their dependencies\nthe normal Yii3 way. Classes implementing ConditionalToolInterface may opt\nout of registration at build time.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1585,38 +1811,47 @@
                 "params": [
                     {
                         "name": "toolClasses",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     },
                     {
                         "name": "configurators",
-                        "type": "iterable"
+                        "type": "iterable",
+                        "description": ""
                     },
                     {
                         "name": "interceptors",
-                        "type": "iterable"
+                        "type": "iterable",
+                        "description": "tool-call chain, first = outermost"
                     },
                     {
                         "name": "toolVisibility",
-                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\ToolVisibilityInterface"
+                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\ToolVisibilityInterface",
+                        "description": "per-session filter for tools/list + fail-closed tools/call"
                     },
                     {
                         "name": "promptInterceptors",
-                        "type": "iterable"
+                        "type": "iterable",
+                        "description": "prompts/get chain, first = outermost"
                     },
                     {
                         "name": "resourceInterceptors",
-                        "type": "iterable"
+                        "type": "iterable",
+                        "description": "resources/read chain (static + templates), first = outermost"
                     },
                     {
                         "name": "promptVisibility",
-                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\PromptVisibilityInterface"
+                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\PromptVisibilityInterface",
+                        "description": "per-session filter for prompts/list + fail-closed prompts/get"
                     },
                     {
                         "name": "resourceVisibility",
-                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\ResourceVisibilityInterface"
+                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\ResourceVisibilityInterface",
+                        "description": "per-session filter for resources/list, resources/templates/list + fail-closed resources/read"
                     }
                 ],
-                "returnType": "Mcp\\Server"
+                "returnType": "Mcp\\Server",
+                "summary": ""
             }
         ]
     },
@@ -1625,6 +1860,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Executes one bridged OpenAPI operation with the raw MCP argument bag.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1634,14 +1870,17 @@
                 "params": [
                     {
                         "name": "arguments",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     },
                     {
                         "name": "gateway",
-                        "type": "Mcp\\Server\\ClientGateway"
+                        "type": "Mcp\\Server\\ClientGateway",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1650,6 +1889,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Exchanges an application identity for upstream headers on every bridged\noperation call. Implementations must not forward the inbound MCP\nAuthorization/shared-secret header verbatim.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1659,22 +1899,27 @@
                 "params": [
                     {
                         "name": "operationId",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "method",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "path",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "identity",
-                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity"
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -1683,6 +1928,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "The OpenAPI document cannot be used by the bridge (unreadable file,\nmalformed JSON, no paths).",
         "extends": "LogicException",
         "publicProperties": [],
         "publicMethods": []
@@ -1692,6 +1938,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "The upstream REST call behind a bridged tool returned a non-2xx response.\nThe SDK converts it into an MCP tool error envelope.",
         "extends": "RuntimeException",
         "publicProperties": [],
         "publicMethods": []
@@ -1701,6 +1948,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "An allow-listed operationId is not present in the OpenAPI document \u2014\na wiring mistake that must fail fast at server build time.",
         "extends": "LogicException",
         "publicProperties": [],
         "publicMethods": []
@@ -1710,6 +1958,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "An allow-listed operation uses a non-GET HTTP method while the bridge is\nconfigured with `safe_methods_only` \u2014 a wiring mistake that must fail\nfast at server build time instead of exposing a write operation.",
         "extends": "LogicException",
         "publicProperties": [],
         "publicMethods": []
@@ -1719,6 +1968,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Minimal application identity passed to delegated upstream credential\nproviders. It deliberately excludes the raw MCP shared secret.",
         "extends": null,
         "publicProperties": [
             {
@@ -1744,6 +1994,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Resolves the current application identity at operation execution time.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1751,7 +2002,8 @@
                 "name": "current",
                 "static": false,
                 "params": [],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity",
+                "summary": ""
             }
         ]
     },
@@ -1760,6 +2012,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Executes a bridged operation as a real HTTP call against the upstream\nREST API \u2014 the request passes the application's full middleware stack\n(validation, rate limiting, auth), unlike direct handler invocation.\n\nThe response body is read INCREMENTALLY up to `$maxResponseBytes` and the\ncall fails before a byte over the cap is buffered \u2014 an advertised size\n(Content-Length/stream size) over the cap is rejected without reading at\nall. `ResponseSizeLimitInterceptor` bounds what reaches the agent's\ncontext window, but it runs after the executor returns; this cap is what\nprotects the worker's memory from an unbounded upstream body.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1769,18 +2022,22 @@
                 "params": [
                     {
                         "name": "operation",
-                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation",
+                        "description": ""
                     },
                     {
                         "name": "arguments",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     },
                     {
                         "name": "dryRunnable",
-                        "type": "bool"
+                        "type": "bool",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -1789,6 +2046,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Builds the MCP tool input schema (JSON Schema object) for an operation:\none property per path/query parameter, plus a `body` property when the\noperation has an application/json request body.\n\nTool arguments are keyed by name only, so an operation declaring a path\nand a query parameter with the same name \u2014 or a parameter named `body`\nalongside a request body \u2014 cannot be bridged and throws at build time\ninstead of silently collapsing two inputs into one argument.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1798,14 +2056,17 @@
                 "params": [
                     {
                         "name": "operation",
-                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation",
+                        "description": ""
                     },
                     {
                         "name": "dryRunnable",
-                        "type": "bool"
+                        "type": "bool",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -1814,6 +2075,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Inlines local `#/components/...` references with an explicit work budget:\nthe depth limit bounds a single `$ref` chain (circular references), the\nnode budget bounds the TOTAL number of nodes resolution may touch across\nthe document \u2014 a hostile or degenerate remote spec (deeply fanned-out\nshared schemas) must not be able to make indexing allocate and recurse\nwithout bound. External (URL/file) references pass through verbatim.\n\nNot readonly: the node budget is a counter shared across every resolution\nthis instance performs, deliberately \u2014 per-call budgets would multiply by\nthe number of operations.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1823,14 +2085,17 @@
                 "params": [
                     {
                         "name": "node",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     },
                     {
                         "name": "refDepth",
-                        "type": "int"
+                        "type": "int",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Inlines local `#/components/...` references, recursively. The depth\nlimit counts `$ref` hops along a branch \u2014 plain array nesting without\nreferences is unlimited (but still counts against the node budget)."
             }
         ]
     },
@@ -1839,6 +2104,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Bridges allow-listed OpenAPI operations onto the MCP server: each\noperationId becomes a tool named after it (or after its $toolNames\noverride), with the input schema derived from the operation's\nparameters/request body, the output schema derived from its success\nresponse (object-typed application/json only) and calls executed as real\nHTTP requests against the upstream API \u2014 passing its full middleware\nstack (validation, rate limiting, auth).\n\nFail-closed: an empty allow-list exposes nothing; an operationId missing\nfrom the document throws UnknownOperationException at build time; with\n$safeMethodsOnly a non-GET operation in the allow-list throws\nUnsafeOperationException instead of being exposed; an unknown operationId\nin $toolNames or $dryRunOperations throws InvalidArgumentException, and a\nrename \u2014 from $toolNames or from $modifier \u2014 that is invalid or collides\nwith another bridged tool's name (or with an attribute tool's, which\nMcpServerFactory reserves through ReservedToolNamesAwareInterface) throws\nInvalidSpecException.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1848,10 +2114,12 @@
                 "params": [
                     {
                         "name": "names",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "static"
+                "returnType": "static",
+                "summary": ""
             },
             {
                 "name": "configure",
@@ -1859,10 +2127,12 @@
                 "params": [
                     {
                         "name": "builder",
-                        "type": "Mcp\\Server\\Builder"
+                        "type": "Mcp\\Server\\Builder",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             }
         ]
     },
@@ -1871,6 +2141,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "One OpenAPI operation, reduced to what the MCP bridge needs. Read-only\ncontext passed to OperationModifierInterface::modify() \u2014 construct it\nyourself only in tests.",
         "extends": null,
         "publicProperties": [
             {
@@ -1926,6 +2197,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Asserts an operation's parameters fit what HttpOperationExecutor\ncan actually serialize: path/query only, scalar schemas, default styles,\nno reserved-character passthrough. This is the executor's CONTRACT made\nexplicit at build time \u2014 an unsupported parameter fails the server build\ninstead of producing a silently wrong upstream request at call time.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1935,10 +2207,12 @@
                 "params": [
                     {
                         "name": "operation",
-                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             }
         ]
     },
@@ -1947,6 +2221,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Per-operation customization hook for the OpenAPI bridge: called once per\nbridged operation, after OpenApiServerConfigurator has built the Tool\n(including any `tool_names` rename), so implementations see the tool as\nit would otherwise be served and may return a modified copy \u2014 a different\ndescription, annotations, or a further name change (fail-closed: the\nreturned name is validated and checked for collisions exactly like a\n`tool_names` rename).\n\nFor server-wide setup (registering unrelated capabilities) use\nServerConfiguratorInterface instead; this hook is per-operation only.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1956,14 +2231,17 @@
                 "params": [
                     {
                         "name": "operation",
-                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation",
+                        "description": ""
                     },
                     {
                         "name": "tool",
-                        "type": "Mcp\\Schema\\Tool"
+                        "type": "Mcp\\Schema\\Tool",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\Tool"
+                "returnType": "Mcp\\Schema\\Tool",
+                "summary": ""
             }
         ]
     },
@@ -1972,6 +2250,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Projects an operation's OpenAPI success response onto the MCP tool\n`outputSchema` shape: the lowest concrete 2xx response with an\n`application/json` OBJECT schema. MCP requires `outputSchema` to be of\ntype \"object\", so array/scalar responses (and `2XX` wildcards) are not\nadvertised \u2014 `structuredContent` still flows for their JSON object\npayloads, just without an upfront contract.\n\nThe result is canonicalized to the MCP tool output-schema keywords\n(`type`, `properties`, `required`, `additionalProperties`, `description`);\nother top-level keywords are dropped.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -1981,10 +2260,12 @@
                 "params": [
                     {
                         "name": "responses",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "?array"
+                "returnType": "?array",
+                "summary": ""
             }
         ]
     },
@@ -1993,6 +2274,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Indexes a decoded OpenAPI 3.x document by operationId. Composed of\nfocused collaborators so trust and resource decisions live in one place\neach: JsonPointerResolver inlines local `#/components/...`\nreferences under an explicit depth + node budget (external URL/file\n`$ref`s pass through verbatim), OutputSchemaProjector derives the\nMCP `outputSchema` from the success response, and\nOperationContractValidator asserts at build time that the\nparameters fit what the HTTP executor can serialize. The document itself\nis size-bounded before decoding. Operations without an operationId cannot\nbe bridged and are skipped.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2002,10 +2284,12 @@
                 "params": [
                     {
                         "name": "json",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex",
+                "summary": ""
             },
             {
                 "name": "fromFile",
@@ -2013,10 +2297,12 @@
                 "params": [
                     {
                         "name": "path",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex",
+                "summary": ""
             },
             {
                 "name": "get",
@@ -2024,10 +2310,12 @@
                 "params": [
                     {
                         "name": "operationId",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation",
+                "summary": ""
             }
         ]
     },
@@ -2036,6 +2324,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Fetches the OpenAPI document over HTTP \u2014 for APIs that serve their spec\nfrom an endpoint (always current, no exported file to regenerate).\n\n`$headers` is the SPEC fetch's own credential scope (`spec_headers` in\nparams), deliberately separate from the operation calls' headers: when\n`spec_path` and `base_url` point at different origins, a shared header set\nwould send the API's token to the spec host. A spec URL embedding\ncredentials (userinfo) is rejected outright \u2014 such a URL ends up in\ndiagnostics, logs and exception messages.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2045,10 +2334,12 @@
                 "params": [
                     {
                         "name": "url",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex",
+                "summary": ""
             }
         ]
     },
@@ -2057,6 +2348,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Shared between SpecIndex (raw operationId) and OpenApiServerConfigurator\n(operationId renamed via `tool_names`): mcp/sdk's own\nCapability\\Tool\\NameValidator only logs a warning on a mismatch and still\nregisters the tool, so both call sites fail closed instead of relying on\nthe SDK. Charset matches the SDK validator; `\\z`, not `$` \u2014 PCRE `$`\nmatches before a trailing \"\\n\".",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2066,10 +2358,12 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -2078,6 +2372,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "A prompt Markdown file (or the prompts directory) is unusable: unreadable,\nmalformed frontmatter, empty name or a duplicate name. Thrown at server\nbuild time \u2014 fail-fast, never a silently missing prompt.",
         "extends": "RuntimeException",
         "publicProperties": [],
         "publicMethods": []
@@ -2087,6 +2382,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Serves a Markdown prompt: substitutes `{{name}}` placeholders for the\ndeclared arguments (missing ones become empty strings, undeclared\nplaceholders are left intact \u2014 vjik/my-prompts-mcp semantics).\n\nSubstitution amplifies caller input: one argument value is inserted at\nEVERY occurrence of its placeholder, so a template with N occurrences\nmultiplies the caller's bytes by N. The result size is therefore computed\narithmetically and checked against `$maxResultBytes` BEFORE the substituted\nstring is built \u2014 an over-budget prompt fails without the allocation it is\nrefusing.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2096,14 +2392,17 @@
                 "params": [
                     {
                         "name": "arguments",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     },
                     {
                         "name": "gateway",
-                        "type": "Mcp\\Server\\ClientGateway"
+                        "type": "Mcp\\Server\\ClientGateway",
+                        "description": ""
                     }
                 ],
-                "returnType": "mixed"
+                "returnType": "mixed",
+                "summary": ""
             }
         ]
     },
@@ -2112,6 +2411,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Registers every `*.md` file of a directory as an MCP prompt: YAML\nfrontmatter provides the metadata (`name` defaults to the file name),\nthe body is the prompt text with `{{argument}}` placeholders.\n\nPrompts become content, not code: edited without a deployment and\nversioned like any other file.\n\nA missing directory throws at build time; a directory without `*.md`\nfiles (or one the process cannot list) registers no prompts \u2014 an empty\nprompts directory is a valid state, not an error.\n\nThe file format is intentionally compatible with \u2014 and inspired by \u2014\nhttps://github.com/vjik/my-prompts-mcp vjik/my-prompts-mcp\nby Sergei Predvoditelev.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2121,10 +2421,12 @@
                 "params": [
                     {
                         "name": "builder",
-                        "type": "Mcp\\Server\\Builder"
+                        "type": "Mcp\\Server\\Builder",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             }
         ]
     },
@@ -2133,6 +2435,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "One parsed prompt Markdown file: optional YAML frontmatter (`name`,\n`title`, `description`, `arguments`) followed by the prompt body.\nThe file format is compatible with vjik/my-prompts-mcp, so prompts are\nportable between a personal prompt manager and an application server.",
         "extends": null,
         "publicProperties": [
             {
@@ -2168,10 +2471,12 @@
                 "params": [
                     {
                         "name": "path",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "Rasuvaeff\\Yii3Mcp\\Prompts\\PromptFile"
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Prompts\\PromptFile",
+                "summary": ""
             }
         ]
     },
@@ -2180,6 +2485,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "A ServerConfiguratorInterface that wants to know which tool names the\nattribute-based tools already occupy, so it can fail fast instead of\nregistering a colliding one.\n\nThe SDK's registry is last-write-wins and its loaders run explicit\nregistrations (Builder::add(), used by configurators) BEFORE reflected\nones (Builder::addTool(), used for #[McpTool] methods) \u2014 so a configurator\nthat picks an already-taken name does not overwrite the attribute tool, it\nsilently loses its own. McpServerFactory hands the reserved names to every\nconfigurator implementing this interface before calling configure().",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2189,10 +2495,12 @@
                 "params": [
                     {
                         "name": "names",
-                        "type": "array"
+                        "type": "array",
+                        "description": "tool names already registered from #[McpTool] attributes"
                     }
                 ],
-                "returnType": "static"
+                "returnType": "static",
+                "summary": ""
             }
         ]
     },
@@ -2201,6 +2509,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Tells the calling client that a resource it subscribed to has changed.\n\nThe MCP server advertises `resources.subscribe` and records subscriptions\nper session, but nothing emits `notifications/resources/updated` on its own \u2014\nand under PHP-FPM nothing outlives the request to push from either. What IS\npossible is notifying **inside** the request that caused the change: a tool\nthat writes the data behind a resource takes the SDK's request-scoped\n`RequestContext` and calls this notifier, and the subscriber sees the update\non the same SSE stream.\n\n```php\n#[McpTool(name: 'order.cancel')]\npublic function cancel(string $orderId, RequestContext $context): string\n{\n    $this->orders->cancel($orderId);\n    $this->notifier->notify($context, 'app://orders/' . $orderId);\n\n    return 'cancelled';\n}\n```\n\nOnly the session making the call is notified \u2014 the one whose gateway is\nreachable. Other sessions subscribed to the same URI are NOT reached; that\nwould need a connection this process does not hold. A session that never\nsubscribed is not notified at all, so an unsolicited\n`notifications/resources/updated` never appears on the wire.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2210,14 +2519,17 @@
                 "params": [
                     {
                         "name": "context",
-                        "type": "Mcp\\Server\\RequestContext"
+                        "type": "Mcp\\Server\\RequestContext",
+                        "description": ""
                     },
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -2226,6 +2538,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Extension point: contributes additional capabilities to the SDK server\nbuilder before it is built (OpenAPI bridge, hand-registered prompts, \u2026).",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2235,10 +2548,12 @@
                 "params": [
                     {
                         "name": "builder",
-                        "type": "Mcp\\Server\\Builder"
+                        "type": "Mcp\\Server\\Builder",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": ""
             }
         ]
     },
@@ -2247,6 +2562,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Owner-only file session store: the SDK's FileSessionStore creates\nits directory `0775` and writes files with the process umask (typically\n`0644`), which lets any local OS user read session JSON \u2014 client metadata,\nUUID-associated state, queued messages, and everything needed to replay a\nsession id. This wrapper creates the directory with effective mode `0700`\n(chmod after mkdir, so the umask cannot widen it) and clamps every written\nsession file to `0600`.\n\nA pre-existing directory is NOT re-chmodded \u2014 deliberately sharing one is\nthe operator's call; `mcp:doctor` reports a directory readable by group or\nothers instead.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2256,10 +2572,12 @@
                 "params": [
                     {
                         "name": "id",
-                        "type": "Symfony\\Component\\Uid\\Uuid"
+                        "type": "Symfony\\Component\\Uid\\Uuid",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "read",
@@ -2267,10 +2585,12 @@
                 "params": [
                     {
                         "name": "id",
-                        "type": "Symfony\\Component\\Uid\\Uuid"
+                        "type": "Symfony\\Component\\Uid\\Uuid",
+                        "description": ""
                     }
                 ],
-                "returnType": "string|false"
+                "returnType": "string|false",
+                "summary": ""
             },
             {
                 "name": "write",
@@ -2278,14 +2598,17 @@
                 "params": [
                     {
                         "name": "id",
-                        "type": "Symfony\\Component\\Uid\\Uuid"
+                        "type": "Symfony\\Component\\Uid\\Uuid",
+                        "description": ""
                     },
                     {
                         "name": "data",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "destroy",
@@ -2293,16 +2616,19 @@
                 "params": [
                     {
                         "name": "id",
-                        "type": "Symfony\\Component\\Uid\\Uuid"
+                        "type": "Symfony\\Component\\Uid\\Uuid",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "gc",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -2311,6 +2637,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Resolves the effective session directory from configuration: an explicit\n`session.dir` wins; the default is application-specific (derived from the\nconfigured server name) so two applications on one host never share a\nsession directory under the world-writable temp dir \u2014 a shared default is\nboth a confidentiality and a session-fixation hazard.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2320,14 +2647,17 @@
                 "params": [
                     {
                         "name": "configured",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "serverName",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "string"
+                "returnType": "string",
+                "summary": ""
             }
         ]
     },
@@ -2336,6 +2666,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Fail-closed shared-secret guard for the MCP endpoint: requests without a\nvalid header value are rejected with 401. An unconfigured middleware (empty\nsecret, no resolver) rejects every request with a clear 503 explanation \u2014\nan unprotected endpoint must be an explicit decision (network ACL), never a\nsilent default.\n\nA SecretResolverInterface enables several clients and secret\nrotation; the resolved client id travels down the pipeline as the\nself::CLIENT_ID_ATTRIBUTE request attribute (the raw secret does\nnot). The single `$secret` form stays as the backward-compatible adapter \u2014\nit behaves as one client named self::DEFAULT_CLIENT_ID.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2345,14 +2676,17 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Psr\\Http\\Message\\ServerRequestInterface"
+                        "type": "Psr\\Http\\Message\\ServerRequestInterface",
+                        "description": ""
                     },
                     {
                         "name": "handler",
-                        "type": "Psr\\Http\\Server\\RequestHandlerInterface"
+                        "type": "Psr\\Http\\Server\\RequestHandlerInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Psr\\Http\\Message\\ResponseInterface"
+                "returnType": "Psr\\Http\\Message\\ResponseInterface",
+                "summary": ""
             }
         ]
     },
@@ -2361,6 +2695,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "In-process MCP client for testing application tools without HTTP or a\ntransport process: drives the same Streamable HTTP code path the real\nendpoint uses (initialize handshake, session id, JSON-RPC framing) and\nreturns decoded results.\n\n```php\n$tester = new McpTester($server, $requestFactory, $responseFactory, $streamFactory);\n$tester->callTool('order.status', ['orderId' => '42']);\n```",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2368,31 +2703,36 @@
                 "name": "initialize",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Performs the initialize handshake; called implicitly by the other\nmethods when needed."
             },
             {
                 "name": "listTools",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "listResources",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "listResourceTemplates",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "listPrompts",
                 "static": false,
                 "params": [],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "callTool",
@@ -2400,14 +2740,17 @@
                 "params": [
                     {
                         "name": "name",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "arguments",
-                        "type": "array"
+                        "type": "array",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Calls a tool and returns the decoded result envelope\n(content, isError, structuredContent, \u2026)."
             },
             {
                 "name": "readResource",
@@ -2415,10 +2758,12 @@
                 "params": [
                     {
                         "name": "uri",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             },
             {
                 "name": "request",
@@ -2426,14 +2771,17 @@
                 "params": [
                     {
                         "name": "method",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "params",
-                        "type": "?array"
+                        "type": "?array",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": ""
             }
         ]
     },
@@ -2442,6 +2790,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Contract canary for MCP capability schemas: snapshots every served tool,\nresource, resource template and prompt definition into a committed JSON\nfile and fails when the served set drifts \u2014 a changed method signature\nsilently changes the generated inputSchema and breaks agents mid-flight,\nso drift must be an explicit, reviewed act.\n\nThree modes:\n- verify() \u2014 for CI: a missing snapshot is an error, so a deleted\n  or never-committed file cannot yield a green build.\n- assert() \u2014 migration-friendly: a missing snapshot is generated on\n  first run, then compared like verify().\n- record() \u2014 deliberately (re)writes the snapshot.\n\nSetting the `MCP_SNAPSHOT_RECORD` environment variable to any value except\n`''`/`'0'` switches assert()/verify() into record mode \u2014 the explicit\nregeneration path (`MCP_SNAPSHOT_RECORD=1 vendor/bin/testo`); CI must not\nset it.\n\n```php\nSchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');\n```",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2451,14 +2800,17 @@
                 "params": [
                     {
                         "name": "tester",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester",
+                        "description": ""
                     },
                     {
                         "name": "path",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": "Compares the served capability schemas against the snapshot file.\nA missing file is generated (first run passes); a mismatch throws\nwith a per-section summary of the drift. Prefer verify() in CI,\nwhere a missing snapshot must be an error."
             },
             {
                 "name": "verify",
@@ -2466,14 +2818,17 @@
                 "params": [
                     {
                         "name": "tester",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester",
+                        "description": ""
                     },
                     {
                         "name": "path",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": "Strict form of assert() for CI: a missing snapshot file is an\nerror instead of being silently generated, so a lost or never-committed\nsnapshot cannot produce a green build."
             },
             {
                 "name": "record",
@@ -2481,14 +2836,17 @@
                 "params": [
                     {
                         "name": "tester",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester",
+                        "description": ""
                     },
                     {
                         "name": "path",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "void"
+                "returnType": "void",
+                "summary": "Deliberately (re)writes the snapshot file from the currently served\ncapability schemas."
             },
             {
                 "name": "capture",
@@ -2496,10 +2854,12 @@
                 "params": [
                     {
                         "name": "tester",
-                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester",
+                        "description": ""
                     }
                 ],
-                "returnType": "array"
+                "returnType": "array",
+                "summary": "Captures the currently served capability definitions, normalized for\nstable comparison (sections keyed, lists ordered by their identity key,\nobjects with sorted keys)."
             }
         ]
     },
@@ -2508,6 +2868,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Extracts the JSON-RPC payload from a Streamable HTTP response body:\na plain JSON body is returned as-is; an SSE-framed body yields the data\nof its first event, with multi-line `data:` fields joined by newlines\nper the SSE specification.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2517,10 +2878,12 @@
                 "params": [
                     {
                         "name": "raw",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     }
                 ],
-                "returnType": "string"
+                "returnType": "string",
+                "summary": ""
             }
         ]
     },
@@ -2529,6 +2892,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "Byte-budget truncation that never leaves a half-written UTF-8 character\nbehind. Every string this package cuts down (an over-limit tool result, an\nupstream error-body excerpt) ends up inside a JSON-RPC response the SDK\nencodes with JSON_THROW_ON_ERROR \u2014 and a broken multi-byte sequence makes\nthat encode fail, which on the Streamable HTTP transport drops the whole\nresponse silently.\n\nImplemented byte-wise on purpose: mb_strcut would pull ext-mbstring into\nthe package requirements (and into every CI job's extension list) for two\ncall sites.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2538,14 +2902,17 @@
                 "params": [
                     {
                         "name": "value",
-                        "type": "string"
+                        "type": "string",
+                        "description": ""
                     },
                     {
                         "name": "maxBytes",
-                        "type": "int"
+                        "type": "int",
+                        "description": ""
                     }
                 ],
-                "returnType": "string"
+                "returnType": "string",
+                "summary": "Truncates to at most $maxBytes bytes, dropping a trailing character\nonly when it did not fit whole. A cut that already lands on a\ncharacter boundary keeps everything up to it."
             }
         ]
     },
@@ -2554,6 +2921,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": true,
+        "summary": "Tool visibility from declarative deny/allow patterns \u2014 the typical \"hide\nadmin tools from this endpoint\" case without writing a\nToolVisibilityInterface class. A pattern matches the tool name with `*`\nmatching any run of characters (`admin.*`, `*.delete`); a `tag:` prefix\nmatches instead against the tool's tags (e.g. the OpenAPI bridge's\n`tag:admin-*`, propagated from OpenAPI `tags` into the tool's `_meta`) \u2014\na tool with no tags never matches a `tag:` pattern.\n\nDeny wins over allow; a non-empty allow list hides everything it does not\nmatch; an empty allow list allows everything not denied. The rules are\nsession-independent \u2014 implement ToolVisibilityInterface directly for\nper-session logic.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2563,14 +2931,17 @@
                 "params": [
                     {
                         "name": "tool",
-                        "type": "Mcp\\Schema\\Tool"
+                        "type": "Mcp\\Schema\\Tool",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                        "type": "?Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -2579,6 +2950,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "completion/complete with per-session visibility \u2014 registered by\nMcpServerFactory ahead of the SDK handler (custom request handlers win),\nwhich it then delegates to for everything visible.\n\nThe SDK's own handler reads the registry DIRECTLY instead of going through\nthe reference handler, so neither visibility nor the interceptor chains\napply to it: a prompt hidden from a session still returned completions for\nits arguments, leaking both the argument values and the prompt's existence\n(a hidden prompt answered, a missing one errored). This handler closes that\nhole with the same fail-closed shape the rest of the package uses \u2014 a\nhidden prompt/resource is reported as not found, byte-for-byte identical to\na missing one, because the message comes from the SDK's own exception.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2588,10 +2960,12 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "handle",
@@ -2599,14 +2973,17 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                        "type": "Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error"
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error",
+                "summary": ""
             }
         ]
     },
@@ -2615,6 +2992,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "prompts/list with per-session visibility filtering \u2014 registered by\nMcpServerFactory ahead of the SDK handler (custom request handlers win),\nmirroring its pagination and dropping invisible prompts from the page.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2624,10 +3002,12 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "handle",
@@ -2635,14 +3015,17 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                        "type": "Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response",
+                "summary": ""
             }
         ]
     },
@@ -2651,6 +3034,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "resources/templates/list with per-session visibility filtering \u2014\nregistered by McpServerFactory ahead of the SDK handler (custom request\nhandlers win), mirroring its pagination and dropping invisible templates\nfrom the page.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2660,10 +3044,12 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "handle",
@@ -2671,14 +3057,17 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                        "type": "Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response",
+                "summary": ""
             }
         ]
     },
@@ -2687,6 +3076,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "resources/list with per-session visibility filtering \u2014 registered by\nMcpServerFactory ahead of the SDK handler (custom request handlers win),\nmirroring its pagination and dropping invisible resources from the page.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2696,10 +3086,12 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "handle",
@@ -2707,14 +3099,17 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                        "type": "Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response",
+                "summary": ""
             }
         ]
     },
@@ -2723,6 +3118,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "class",
         "isApi": false,
+        "summary": "tools/list with per-session visibility filtering \u2014 registered by\nMcpServerFactory ahead of the SDK handler (custom request handlers win),\nmirroring its pagination and dropping invisible tools from the page.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2732,10 +3128,12 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "handle",
@@ -2743,14 +3141,17 @@
                 "params": [
                     {
                         "name": "request",
-                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                        "type": "Mcp\\Schema\\JsonRpc\\Request",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                        "type": "Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response",
+                "summary": ""
             }
         ]
     },
@@ -2759,6 +3160,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Per-session prompt visibility: filters prompts/list AND fail-closed guards\nprompts/get \u2014 a hidden prompt cannot be fetched even by its exact name\n(it is reported as not found, indistinguishable from a missing one). One\nimplementation serves both paths so list and get can never disagree.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2768,14 +3170,17 @@
                 "params": [
                     {
                         "name": "prompt",
-                        "type": "Mcp\\Schema\\Prompt"
+                        "type": "Mcp\\Schema\\Prompt",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                        "type": "?Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -2784,6 +3189,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Per-session resource visibility: filters resources/list and\nresources/templates/list AND fail-closed guards resources/read \u2014 a hidden\nresource (or any URI matching a hidden template) cannot be read even by\nits exact URI (it is reported as not found, indistinguishable from a\nmissing one). One implementation serves both paths so list and read can\nnever disagree.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2793,14 +3199,17 @@
                 "params": [
                     {
                         "name": "resource",
-                        "type": "Mcp\\Schema\\ResourceDefinition"
+                        "type": "Mcp\\Schema\\ResourceDefinition",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                        "type": "?Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             },
             {
                 "name": "isTemplateVisible",
@@ -2808,14 +3217,17 @@
                 "params": [
                     {
                         "name": "template",
-                        "type": "Mcp\\Schema\\ResourceTemplate"
+                        "type": "Mcp\\Schema\\ResourceTemplate",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                        "type": "?Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     },
@@ -2824,6 +3236,7 @@
         "package": "Rasuvaeff\\Yii3Mcp",
         "kind": "interface",
         "isApi": true,
+        "summary": "Per-session tool visibility: decides which tools THIS session may see and\ncall \u2014 based on the session's initialize handshake (`client_info`), tenant\nor any other session data. The complement of ConditionalToolInterface,\nwhich gates registration globally at build time.\n\nApplied in two places, consistently: tools/list filters the listing, and\ntools/call fail-closed rejects a call to an invisible tool (a client that\nguesses a hidden name still cannot call it).\n\nThis is an early filter, not a replacement for application-level ACL.",
         "extends": null,
         "publicProperties": [],
         "publicMethods": [
@@ -2833,14 +3246,17 @@
                 "params": [
                     {
                         "name": "tool",
-                        "type": "Mcp\\Schema\\Tool"
+                        "type": "Mcp\\Schema\\Tool",
+                        "description": ""
                     },
                     {
                         "name": "session",
-                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                        "type": "?Mcp\\Server\\Session\\SessionInterface",
+                        "description": ""
                     }
                 ],
-                "returnType": "bool"
+                "returnType": "bool",
+                "summary": ""
             }
         ]
     }

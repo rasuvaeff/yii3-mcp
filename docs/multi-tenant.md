@@ -1,5 +1,6 @@
 ---
 title: "Multi-tenant serving"
+description: "Serving a multi-tenant MCP endpoint with Yii3: middleware order, per-tenant session isolation, and tool visibility scoped by tenant."
 ---
 
 # Multi-tenant serving

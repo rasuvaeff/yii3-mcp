@@ -1,5 +1,6 @@
 ---
 title: "Protocol"
+description: "The MCP protocol in yii3-mcp: Streamable HTTP and stdio transports, session handling under PHP-FPM, and the served protocol version."
 ---
 
 # Protocol

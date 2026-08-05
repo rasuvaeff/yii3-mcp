@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="32" height="32" role="img" aria-label="Yii3 MCP">
+  <title>Yii3 MCP</title>
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#4B45B2"/>
+  <path d="M60 16 L96 30 V63 C96 85 80 99 60 106 C40 99 24 85 24 63 V30 Z" fill="#FFFFFF"/>
+  <g transform="rotate(-45 60 58)" fill="none" stroke="#4B45B2" stroke-width="6">
+    <rect x="36" y="50" width="29" height="16" rx="8"/>
+    <rect x="55" y="50" width="29" height="16" rx="8"/>
+  </g>
+</svg>

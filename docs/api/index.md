@@ -1,5 +1,6 @@
 ---
 title: "API reference"
+description: "Generated API reference for yii3-mcp and its three bridges — every @api class reflected from src/ across all four packages."
 ---
 
 # API reference

@@ -1,5 +1,6 @@
 ---
 title: "Cookbook: debugging with mcp:doctor"
+description: "Diagnosing a broken MCP deployment with mcp:doctor: shared-secret errors, missing PSR services, session confidentiality, and OpenAPI bridge failures."
 ---
 
 # Cookbook: debugging with mcp:doctor

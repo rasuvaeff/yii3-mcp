@@ -1,5 +1,6 @@
 ---
 title: "rasuvaeff/yii3-mcp-rbac-bridge"
+description: "rasuvaeff/yii3-mcp-rbac-bridge — RBAC interceptor, visibility and session-identity binding for yii3-mcp. Requirements and public API."
 ---
 
 # rasuvaeff/yii3-mcp-rbac-bridge

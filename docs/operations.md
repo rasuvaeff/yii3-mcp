@@ -1,5 +1,6 @@
 ---
 title: "Operations"
+description: "Operating an MCP server: mcp:list introspection and the mcp:doctor health check, with stable exit codes for CI and deploy gates."
 ---
 
 # Operations

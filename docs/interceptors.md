@@ -1,5 +1,6 @@
 ---
 title: "Interceptors"
+description: "Wrapping every MCP tools/call with interceptors: session budget, argument masking, result caching, rate limiting, and the fixed interceptor chain order."
 ---
 
 # Interceptors

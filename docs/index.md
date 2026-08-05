@@ -1,10 +1,14 @@
 ---
 layout: home
 title: Yii3 MCP
+description: MCP server for Yii3 — expose your application's tools, resources and prompts to AI agents like Claude Code and Claude Desktop over Streamable HTTP.
 hero:
   name: Yii3 MCP
   text: Expose your Yii3 application to AI agents, safely.
   tagline: MCP server integration for Yii3 over the official mcp/sdk — core + audit log, RBAC, and telemetry bridges.
+  image:
+    src: /logo-mark.svg
+    alt: Yii3 MCP logo
   actions:
     - theme: brand
       text: What is MCP?
@@ -65,7 +69,7 @@ special-cased in the core; each is an ordinary
 
 :::code-group
 
-```php [core: declare a tool]
+```php [core]
 use Mcp\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
@@ -80,7 +84,7 @@ final readonly class OrderTools
 }
 ```
 
-```php [rbac-bridge: require a permission]
+```php [rbac-bridge]
 use Rasuvaeff\Yii3McpRbacBridge\RequiredPermission;
 
 #[McpTool(name: 'order.status')]
@@ -88,7 +92,7 @@ use Rasuvaeff\Yii3McpRbacBridge\RequiredPermission;
 public function status(string $orderId): string { /* … */ }
 ```
 
-```php [audit-log-bridge: one params line]
+```php [audit-log-bridge]
 'rasuvaeff/yii3-mcp' => [
     'interceptors' => [AuditTrailInterceptor::class],
 ],
@@ -96,7 +100,7 @@ public function status(string $orderId): string { /* … */ }
 // outcome, duration — masked, rethrown on failure
 ```
 
-```php [telemetry-bridge: one params line]
+```php [telemetry-bridge]
 'rasuvaeff/yii3-mcp' => [
     'interceptors' => [
         TracingToolCallInterceptor::class,

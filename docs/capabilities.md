@@ -1,5 +1,6 @@
 ---
 title: "Capabilities"
+description: "Declaring MCP tools, resources, prompts and argument autocompletion in Yii3 with the mcp/sdk attributes — structured output, behavior hints, and Markdown prompts."
 ---
 
 # Capabilities

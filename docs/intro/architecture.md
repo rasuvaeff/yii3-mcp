@@ -1,5 +1,6 @@
 ---
 title: "Architecture"
+description: "How McpServerFactory assembles an mcp/sdk Server from Yii3 DI config: tool registration, interceptors, visibility, and the PSR services each entry point needs."
 ---
 
 # Architecture
