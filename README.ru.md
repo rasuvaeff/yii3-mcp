@@ -7,8 +7,11 @@
 [![Psalm level](https://img.shields.io/badge/psalm-level%201-141F48?logo=psalm&logoColor=white)](https://github.com/rasuvaeff/yii3-mcp/blob/master/psalm.xml)
 [![PHP](https://img.shields.io/packagist/dependency-v/rasuvaeff/yii3-mcp/php)](https://packagist.org/packages/rasuvaeff/yii3-mcp)
 [![License](https://img.shields.io/packagist/l/rasuvaeff/yii3-mcp)](LICENSE.md)
+[![Docs](https://img.shields.io/github/actions/workflow/status/rasuvaeff/yii3-mcp/docs.yml?branch=master&label=docs)](https://rasuvaeff.github.io/yii3-mcp/)
 
 [English version](README.md)
+
+**[Документация](https://rasuvaeff.github.io/yii3-mcp/)** — полное руководство, сгенерированный API-справочник по всем четырём пакетам и cookbook. Сайт документации англоязычный.
 
 Интеграция сервера [Model Context Protocol](https://modelcontextprotocol.io) с
 Yii3 поверх **официального** [`mcp/sdk`](https://packagist.org/packages/mcp/sdk)

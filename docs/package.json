@@ -1,0 +1,17 @@
+{
+    "name": "yii3-mcp-docs",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "docs:aggregate": "node scripts/aggregate.mjs",
+        "docs:api": "node scripts/generate-api.mjs",
+        "docs:check": "node scripts/check-integrity.mjs",
+        "docs:check:anchors": "node scripts/check-anchors.mjs",
+        "docs:dev": "npm run docs:aggregate && npm run docs:api && vitepress dev .",
+        "docs:build": "npm run docs:aggregate && npm run docs:api && npm run docs:check && vitepress build . && npm run docs:check:anchors",
+        "docs:preview": "vitepress preview ."
+    },
+    "devDependencies": {
+        "vitepress": "^1.6.4"
+    }
+}

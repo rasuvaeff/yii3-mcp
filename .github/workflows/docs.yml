@@ -1,0 +1,131 @@
+name: docs
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'llms.txt'
+      - 'ROADMAP.md'
+      - 'src/**'
+      - '.github/workflows/docs.yml'
+  # KNOWN GAP: this trigger only watches the CORE repo. A change to a
+  # bridge's src/ (audit-log/rbac/telemetry) does NOT rebuild the site on
+  # its own — the bridge API pages go stale until something next touches
+  # the core repo, or someone runs workflow_dispatch by hand. Closing this
+  # would need a repository_dispatch sent from each bridge's own build.yml,
+  # which is a cross-repo change out of scope here — deliberately left as a
+  # manual trigger for now rather than silently assumed solved.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout core (yii3-mcp)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      # The docs site aggregates the API reference across the core AND its
+      # three bridges (see docs/scripts/reflect-api.php sibling resolution:
+      # docs/siblings/<package> is the CI layout, a monorepo sibling
+      # directory is the local-dev layout) — checked out read-only, never
+      # built or tested here.
+      - name: Checkout audit-log-bridge
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/yii3-mcp-audit-log-bridge
+          path: docs/siblings/yii3-mcp-audit-log-bridge
+          persist-credentials: false
+
+      - name: Checkout rbac-bridge
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/yii3-mcp-rbac-bridge
+          path: docs/siblings/yii3-mcp-rbac-bridge
+          persist-credentials: false
+
+      - name: Checkout telemetry-bridge
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: rasuvaeff/yii3-mcp-telemetry-bridge
+          path: docs/siblings/yii3-mcp-telemetry-bridge
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          extensions: fileinfo
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install PHP dependencies (core)
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Install PHP dependencies (bridges)
+        run: |
+          for pkg in yii3-mcp-audit-log-bridge yii3-mcp-rbac-bridge yii3-mcp-telemetry-bridge; do
+            composer install --no-interaction --no-progress --prefer-dist --working-dir="docs/siblings/$pkg"
+          done
+
+      - name: Refresh the API reflection snapshot
+        run: php docs/scripts/reflect-api.php > docs/scripts/api-snapshot.json
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci
+
+      - name: Build docs (aggregate + API pages + integrity check + VitePress build)
+        working-directory: docs
+        run: npm run docs:build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write # publish the built site to GitHub Pages
+      id-token: write # required by actions/deploy-pages for OIDC Pages deployment
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
