@@ -1,5 +1,6 @@
 ---
 title: "RBAC bridge"
+description: "rasuvaeff/yii3-mcp-rbac-bridge: per-user RBAC authorization on MCP tool calls, permission-aware tools/list, and session-identity binding."
 ---
 
 # RBAC bridge

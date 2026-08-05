@@ -1,5 +1,6 @@
 ---
 title: "rasuvaeff/yii3-mcp"
+description: "rasuvaeff/yii3-mcp — MCP server integration for Yii3 over the official mcp/sdk. Requirements, key classes, and where to start."
 ---
 
 # rasuvaeff/yii3-mcp

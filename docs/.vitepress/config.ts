@@ -56,12 +56,16 @@ const sidebar = [
     { text: 'llms.txt reference', link: '/llms' },
 ]
 
+const SITE_URL = 'https://rasuvaeff.github.io/yii3-mcp/'
+
 export default defineConfig({
     title: 'Yii3 MCP',
-    description: 'MCP server integration for Yii3 — core + bridges (audit log, RBAC, telemetry)',
+    description:
+        'MCP (Model Context Protocol) server integration for Yii3: expose Yii3 application tools, resources and prompts to AI agents like Claude Code and Claude Desktop over Streamable HTTP — with an OpenAPI bridge, session security, and audit log, RBAC and telemetry bridges.',
     base: '/yii3-mcp/',
     cleanUrls: true,
     lastUpdated: true,
+    sitemap: { hostname: SITE_URL },
     // docs/siblings/ is where CI checks out the three bridge repos (read-only,
     // for the API reflection pass — see docs/scripts/reflect-api.php) and
     // where their OWN vendor/ trees land after `composer install`; without
@@ -69,7 +73,35 @@ export default defineConfig({
     // third-party CHANGELOGs inside vendor/, and a malformed one fails the
     // whole build (verified: justinrainbow/json-schema's did, in CI).
     srcExclude: ['siblings/**'],
+    head: [
+        ['link', { rel: 'icon', type: 'image/svg+xml', href: '/yii3-mcp/favicon.svg' }],
+        ['meta', { name: 'theme-color', content: '#4B45B2' }],
+        ['meta', { property: 'og:type', content: 'website' }],
+        ['meta', { property: 'og:site_name', content: 'Yii3 MCP' }],
+        ['meta', { name: 'twitter:card', content: 'summary' }],
+    ],
+    // Per-page canonical + Open Graph/Twitter title & description — VitePress's
+    // static `head` array above can't vary per page, and every page otherwise
+    // shares one generic <meta description>, which is worse for search than a
+    // page-specific one (set via each page's own `description` frontmatter).
+    transformHead: ({ pageData, title, description }) => {
+        // `pageData.relativePath` is e.g. 'security.md' or 'index.md' (cleanUrls
+        // strips the extension on the SERVED url, not here) — mirror cleanUrls
+        // by dropping '.md' and collapsing an 'index' segment to ''.
+        const clean = pageData.relativePath.replace(/\.md$/, '').replace(/(^|\/)index$/, '$1')
+        const url = SITE_URL + clean
+
+        return [
+            ['link', { rel: 'canonical', href: url }],
+            ['meta', { property: 'og:title', content: title }],
+            ['meta', { property: 'og:description', content: description }],
+            ['meta', { property: 'og:url', content: url }],
+            ['meta', { name: 'twitter:title', content: title }],
+            ['meta', { name: 'twitter:description', content: description }],
+        ]
+    },
     themeConfig: {
+        logo: '/logo-mark.svg',
         nav: [
             { text: 'Guide', link: '/intro/what-is-mcp' },
             { text: 'Bridges', link: '/bridges/overview' },

@@ -1,5 +1,6 @@
 ---
 title: "What is MCP"
+description: "What is the Model Context Protocol (MCP), and why expose a Yii3 application to AI agents through an MCP server instead of a plain REST API."
 ---
 
 # What is MCP

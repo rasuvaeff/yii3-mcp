@@ -1,5 +1,6 @@
 ---
 title: "MCP Apps"
+description: "MCP Apps in Yii3: serving interactive ui:// HTML resources in the conversation, with CSP/permissions sandboxing via yii3-mcp."
 ---
 
 # MCP Apps

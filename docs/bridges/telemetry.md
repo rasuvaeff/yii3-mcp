@@ -1,5 +1,6 @@
 ---
 title: "Telemetry bridge"
+description: "rasuvaeff/yii3-mcp-telemetry-bridge: OpenTelemetry tracing and RED metrics for every MCP tools/call, with Fiber-safe context propagation."
 ---
 
 # Telemetry bridge

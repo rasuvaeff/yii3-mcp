@@ -1,5 +1,6 @@
 ---
 title: "Audit log bridge"
+description: "rasuvaeff/yii3-mcp-audit-log-bridge: record every MCP tools/call as an audit event — actor resolution, argument masking, and what it can't see."
 ---
 
 # Audit log bridge

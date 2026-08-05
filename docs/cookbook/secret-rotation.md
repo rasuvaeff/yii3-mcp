@@ -1,5 +1,6 @@
 ---
 title: "Cookbook: rotating the shared secret"
+description: "How to rotate an MCP endpoint's shared secret without downtime using yii3-mcp's client_secrets — add, roll clients, then revoke the old secret."
 ---
 
 # Cookbook: rotating the shared secret

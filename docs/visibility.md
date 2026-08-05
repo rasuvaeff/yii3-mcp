@@ -1,5 +1,6 @@
 ---
 title: "Visibility"
+description: "Per-session and declarative MCP tool, prompt and resource visibility in Yii3 — fail-closed filtering for tools/list, tools/call and completions."
 ---
 
 # Visibility

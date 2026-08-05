@@ -1,5 +1,6 @@
 ---
 title: "OpenAPI bridge"
+description: "Bridge an existing OpenAPI/REST API into MCP tools with yii3-mcp: allow-lists, dry run, delegated authorization, and output schemas from responses."
 ---
 
 # OpenAPI bridge

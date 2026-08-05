@@ -1,5 +1,6 @@
 ---
 title: "Getting started"
+description: "Install rasuvaeff/yii3-mcp, declare your first MCP tool, and route the Streamable HTTP endpoint — a step-by-step guide to running an MCP server on Yii3."
 ---
 
 # Getting started

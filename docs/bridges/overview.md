@@ -1,5 +1,6 @@
 ---
 title: "Bridges: overview"
+description: "How the audit log, RBAC and telemetry bridges plug into yii3-mcp's interceptor chain, and the blind spots they share (session budget, session ownership)."
 ---
 
 # Bridges: overview

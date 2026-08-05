@@ -1,5 +1,6 @@
 ---
 title: "rasuvaeff/yii3-mcp-audit-log-bridge"
+description: "rasuvaeff/yii3-mcp-audit-log-bridge — audit trail interceptor and actor resolvers for yii3-mcp. Requirements and public API."
 ---
 
 # rasuvaeff/yii3-mcp-audit-log-bridge

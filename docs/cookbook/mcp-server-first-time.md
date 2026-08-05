@@ -1,5 +1,6 @@
 ---
 title: "Cookbook: your first MCP server"
+description: "A step-by-step walkthrough: write a tool, verify it with mcp:list and mcp:doctor, test it with McpTester, and pin the contract with a schema snapshot."
 ---
 
 # Cookbook: your first MCP server

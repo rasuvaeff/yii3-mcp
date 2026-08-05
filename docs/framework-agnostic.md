@@ -1,5 +1,6 @@
 ---
 title: "Framework-agnostic usage"
+description: "yii3-mcp has no yiisoft/* runtime dependency — wire McpServerFactory, McpAction and SharedSecretMiddleware into Laravel, Symfony, Mezzio or Slim."
 ---
 
 # Framework-agnostic usage

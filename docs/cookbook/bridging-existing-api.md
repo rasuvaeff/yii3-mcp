@@ -1,5 +1,6 @@
 ---
 title: "Cookbook: bridging an existing REST API"
+description: "A worked example: bridge a REST API into MCP tools with yii3-mcp, from a read-only local spec to renamed tools, dry run, and delegated identity."
 ---
 
 # Cookbook: bridging an existing REST API
