@@ -5,6 +5,7 @@
 /.php-cs-fixer.php export-ignore
 /AGENTS.md export-ignore
 /CLAUDE.md export-ignore
+/docs export-ignore
 /examples export-ignore
 /infection.json5 export-ignore
 /psalm.xml export-ignore
