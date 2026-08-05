@@ -1,0 +1,2847 @@
+[
+    {
+        "class": "Rasuvaeff\\Yii3McpAuditLogBridge\\AuditActorResolverInterface",
+        "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "sessionId",
+                        "type": "?string"
+                    },
+                    {
+                        "name": "clientName",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpAuditLogBridge\\AuditTrailInterceptor",
+        "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpAuditLogBridge\\ClientAuditActorResolver",
+        "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "sessionId",
+                        "type": "?string"
+                    },
+                    {
+                        "name": "clientName",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpAuditLogBridge\\IdentityAuditActorResolver",
+        "package": "Rasuvaeff\\Yii3McpAuditLogBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "sessionId",
+                        "type": "?string"
+                    },
+                    {
+                        "name": "clientName",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3AuditLog\\AuditActor"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\CurrentUserIdentitySource",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "getId",
+                "static": false,
+                "params": [],
+                "returnType": "?string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\Exception\\InvalidPermissionMapException",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": "InvalidArgumentException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\IdentitySourceInterface",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "getId",
+                "static": false,
+                "params": [],
+                "returnType": "?string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\PermissionMap",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "fromToolClasses",
+                "static": true,
+                "params": [
+                    {
+                        "name": "toolClasses",
+                        "type": "array"
+                    },
+                    {
+                        "name": "overrides",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3McpRbacBridge\\PermissionMap"
+            },
+            {
+                "name": "permissionFor",
+                "static": false,
+                "params": [
+                    {
+                        "name": "toolName",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "?string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\RbacToolCallInterceptor",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\RbacToolVisibility",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "isVisible",
+                "static": false,
+                "params": [
+                    {
+                        "name": "tool",
+                        "type": "Mcp\\Schema\\Tool"
+                    },
+                    {
+                        "name": "session",
+                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\RequiredPermission",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "permission",
+                "type": "string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\SessionIdentityInterceptor",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpRbacBridge\\StaticIdentitySource",
+        "package": "Rasuvaeff\\Yii3McpRbacBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "getId",
+                "static": false,
+                "params": [],
+                "returnType": "?string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpTelemetryBridge\\MetricsToolCallInterceptor",
+        "package": "Rasuvaeff\\Yii3McpTelemetryBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3McpTelemetryBridge\\TracingToolCallInterceptor",
+        "package": "Rasuvaeff\\Yii3McpTelemetryBridge",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "uri",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "name",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "html",
+                "type": "Closure|string",
+                "readonly": true
+            },
+            {
+                "name": "title",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "description",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "contentMeta",
+                "type": "?Mcp\\Schema\\Extension\\Apps\\UiResourceContentMeta",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "create",
+                "static": true,
+                "params": [
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    },
+                    {
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "name": "html",
+                        "type": "Closure|string"
+                    },
+                    {
+                        "name": "title",
+                        "type": "?string"
+                    },
+                    {
+                        "name": "description",
+                        "type": "?string"
+                    },
+                    {
+                        "name": "contentMeta",
+                        "type": "?Mcp\\Schema\\Extension\\Apps\\UiResourceContentMeta"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition"
+            },
+            {
+                "name": "renderHtml",
+                "static": false,
+                "params": [],
+                "returnType": "string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Apps\\AppParamParser",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "parse",
+                "static": true,
+                "params": [
+                    {
+                        "name": "app",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Apps\\AppDefinition"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Apps\\AppResourceHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "read",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    },
+                    {
+                        "name": "gateway",
+                        "type": "Mcp\\Server\\ClientGateway"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Apps\\McpAppsConfigurator",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "configure",
+                "static": false,
+                "params": [
+                    {
+                        "name": "builder",
+                        "type": "Mcp\\Server\\Builder"
+                    }
+                ],
+                "returnType": "void"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\ConditionalToolInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "shouldRegister",
+                "static": false,
+                "params": [],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Doctor\\CheckCategory",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "enum",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "name",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "value",
+                "type": "string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "exitCode",
+                "static": false,
+                "params": [],
+                "returnType": "int"
+            },
+            {
+                "name": "cases",
+                "static": true,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "from",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string|int"
+                    }
+                ],
+                "returnType": "static"
+            },
+            {
+                "name": "tryFrom",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string|int"
+                    }
+                ],
+                "returnType": "?static"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Doctor\\CheckResult",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "name",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "category",
+                "type": "Rasuvaeff\\Yii3Mcp\\Doctor\\CheckCategory",
+                "readonly": true
+            },
+            {
+                "name": "status",
+                "type": "Rasuvaeff\\Yii3Mcp\\Doctor\\CheckStatus",
+                "readonly": true
+            },
+            {
+                "name": "details",
+                "type": "string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "toArray",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Doctor\\CheckStatus",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "enum",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "name",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "value",
+                "type": "string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "cases",
+                "static": true,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "from",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string|int"
+                    }
+                ],
+                "returnType": "static"
+            },
+            {
+                "name": "tryFrom",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string|int"
+                    }
+                ],
+                "returnType": "?static"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Doctor\\DoctorReport",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "checks",
+                "type": "array",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "healthy",
+                "static": false,
+                "params": [],
+                "returnType": "bool"
+            },
+            {
+                "name": "exitCode",
+                "static": false,
+                "params": [],
+                "returnType": "int"
+            },
+            {
+                "name": "toArray",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Doctor\\McpDoctor",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "diagnose",
+                "static": false,
+                "params": [
+                    {
+                        "name": "probeUpstream",
+                        "type": "bool"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Doctor\\DoctorReport"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Exception\\DuplicateCapabilityException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "LogicException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Exception\\InvalidToolClassException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "LogicException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Exception\\SessionOwnershipException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "RuntimeException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\GuardedRegistry",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "registerTool",
+                "static": false,
+                "params": [
+                    {
+                        "name": "tool",
+                        "type": "Mcp\\Schema\\Tool"
+                    },
+                    {
+                        "name": "handler",
+                        "type": "callable|array|string"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\ToolReference"
+            },
+            {
+                "name": "registerResource",
+                "static": false,
+                "params": [
+                    {
+                        "name": "resource",
+                        "type": "Mcp\\Schema\\ResourceDefinition"
+                    },
+                    {
+                        "name": "handler",
+                        "type": "callable|array|string"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\ResourceReference"
+            },
+            {
+                "name": "registerResourceTemplate",
+                "static": false,
+                "params": [
+                    {
+                        "name": "template",
+                        "type": "Mcp\\Schema\\ResourceTemplate"
+                    },
+                    {
+                        "name": "handler",
+                        "type": "callable|array|string"
+                    },
+                    {
+                        "name": "completionProviders",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\ResourceTemplateReference"
+            },
+            {
+                "name": "registerPrompt",
+                "static": false,
+                "params": [
+                    {
+                        "name": "prompt",
+                        "type": "Mcp\\Schema\\Prompt"
+                    },
+                    {
+                        "name": "handler",
+                        "type": "callable|array|string"
+                    },
+                    {
+                        "name": "completionProviders",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\PromptReference"
+            },
+            {
+                "name": "unregisterTool",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "unregisterResource",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "unregisterResourceTemplate",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uriTemplate",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "unregisterPrompt",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "hasTool",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "hasResource",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "hasResourceTemplate",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uriTemplate",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "hasPrompt",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "hasTools",
+                "static": false,
+                "params": [],
+                "returnType": "bool"
+            },
+            {
+                "name": "getTools",
+                "static": false,
+                "params": [
+                    {
+                        "name": "limit",
+                        "type": "?int"
+                    },
+                    {
+                        "name": "cursor",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\Page"
+            },
+            {
+                "name": "getTool",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\ToolReference"
+            },
+            {
+                "name": "hasResources",
+                "static": false,
+                "params": [],
+                "returnType": "bool"
+            },
+            {
+                "name": "getResources",
+                "static": false,
+                "params": [
+                    {
+                        "name": "limit",
+                        "type": "?int"
+                    },
+                    {
+                        "name": "cursor",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\Page"
+            },
+            {
+                "name": "getResource",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    },
+                    {
+                        "name": "includeTemplates",
+                        "type": "bool"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\ResourceReference|Mcp\\Capability\\Registry\\ResourceTemplateReference"
+            },
+            {
+                "name": "hasResourceTemplates",
+                "static": false,
+                "params": [],
+                "returnType": "bool"
+            },
+            {
+                "name": "getResourceTemplates",
+                "static": false,
+                "params": [
+                    {
+                        "name": "limit",
+                        "type": "?int"
+                    },
+                    {
+                        "name": "cursor",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\Page"
+            },
+            {
+                "name": "getResourceTemplate",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uriTemplate",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\ResourceTemplateReference"
+            },
+            {
+                "name": "hasPrompts",
+                "static": false,
+                "params": [],
+                "returnType": "bool"
+            },
+            {
+                "name": "getPrompts",
+                "static": false,
+                "params": [
+                    {
+                        "name": "limit",
+                        "type": "?int"
+                    },
+                    {
+                        "name": "cursor",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\Page"
+            },
+            {
+                "name": "getPrompt",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Mcp\\Capability\\Registry\\PromptReference"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Identity\\ClientIdentityContext",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "arm",
+                "static": true,
+                "params": [
+                    {
+                        "name": "clientId",
+                        "type": "?string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "current",
+                "static": true,
+                "params": [],
+                "returnType": "?string"
+            },
+            {
+                "name": "disarm",
+                "static": true,
+                "params": [],
+                "returnType": "void"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Identity\\SecretResolverInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": false,
+                "params": [
+                    {
+                        "name": "presentedSecret",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "?string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Identity\\StaticSecretResolver",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": false,
+                "params": [
+                    {
+                        "name": "presentedSecret",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "?string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ArgumentMasker",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "mask",
+                "static": false,
+                "params": [
+                    {
+                        "name": "arguments",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\CachingToolCallInterceptor",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\CallOutcome",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "enum",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "name",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "value",
+                "type": "string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "fromThrowable",
+                "static": true,
+                "params": [
+                    {
+                        "name": "exception",
+                        "type": "Throwable"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Interceptor\\CallOutcome"
+            },
+            {
+                "name": "cases",
+                "static": true,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "from",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string|int"
+                    }
+                ],
+                "returnType": "static"
+            },
+            {
+                "name": "tryFrom",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string|int"
+                    }
+                ],
+                "returnType": "?static"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\InterceptingReferenceHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "reference",
+                        "type": "Mcp\\Capability\\Registry\\ElementReference"
+                    },
+                    {
+                        "name": "arguments",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\PromptGetContext",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "promptName",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "arguments",
+                "type": "array",
+                "readonly": true
+            },
+            {
+                "name": "session",
+                "type": "?Mcp\\Server\\Session\\SessionInterface",
+                "readonly": true
+            },
+            {
+                "name": "clientId",
+                "type": "?string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "getClientInfo",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\PromptGetInterceptorInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\PromptGetContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\RateLimitInterceptor",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ResourceReadContext",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "uri",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "variables",
+                "type": "array",
+                "readonly": true
+            },
+            {
+                "name": "uriTemplate",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "session",
+                "type": "?Mcp\\Server\\Session\\SessionInterface",
+                "readonly": true
+            },
+            {
+                "name": "clientId",
+                "type": "?string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "getClientInfo",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ResourceReadInterceptorInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ResourceReadContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ResponseSizeLimitInterceptor",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\SessionBudgetInterceptor",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "toolName",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "arguments",
+                "type": "array",
+                "readonly": true
+            },
+            {
+                "name": "session",
+                "type": "?Mcp\\Server\\Session\\SessionInterface",
+                "readonly": true
+            },
+            {
+                "name": "clientId",
+                "type": "?string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "getClientInfo",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallInterceptorInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "intercept",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallContext"
+                    },
+                    {
+                        "name": "next",
+                        "type": "callable"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolCallLimiterInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "allow",
+                "static": false,
+                "params": [
+                    {
+                        "name": "clientId",
+                        "type": "?string"
+                    },
+                    {
+                        "name": "toolName",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\McpAction",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Psr\\Http\\Message\\ServerRequestInterface"
+                    }
+                ],
+                "returnType": "Psr\\Http\\Message\\ResponseInterface"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\McpDoctorCommand",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "Symfony\\Component\\Console\\Command\\Command",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\McpListCommand",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "Symfony\\Component\\Console\\Command\\Command",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\McpServeCommand",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "Symfony\\Component\\Console\\Command\\Command",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\McpServerFactory",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "create",
+                "static": false,
+                "params": [
+                    {
+                        "name": "toolClasses",
+                        "type": "array"
+                    },
+                    {
+                        "name": "configurators",
+                        "type": "iterable"
+                    },
+                    {
+                        "name": "interceptors",
+                        "type": "iterable"
+                    },
+                    {
+                        "name": "toolVisibility",
+                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\ToolVisibilityInterface"
+                    },
+                    {
+                        "name": "promptInterceptors",
+                        "type": "iterable"
+                    },
+                    {
+                        "name": "resourceInterceptors",
+                        "type": "iterable"
+                    },
+                    {
+                        "name": "promptVisibility",
+                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\PromptVisibilityInterface"
+                    },
+                    {
+                        "name": "resourceVisibility",
+                        "type": "?Rasuvaeff\\Yii3Mcp\\Visibility\\ResourceVisibilityInterface"
+                    }
+                ],
+                "returnType": "Mcp\\Server"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\BridgedToolHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "execute",
+                "static": false,
+                "params": [
+                    {
+                        "name": "arguments",
+                        "type": "array"
+                    },
+                    {
+                        "name": "gateway",
+                        "type": "Mcp\\Server\\ClientGateway"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\DelegatedHeaderProviderInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "headers",
+                "static": false,
+                "params": [
+                    {
+                        "name": "operationId",
+                        "type": "string"
+                    },
+                    {
+                        "name": "method",
+                        "type": "string"
+                    },
+                    {
+                        "name": "path",
+                        "type": "string"
+                    },
+                    {
+                        "name": "identity",
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity"
+                    }
+                ],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Exception\\InvalidSpecException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "LogicException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Exception\\OperationFailedException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "RuntimeException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Exception\\UnknownOperationException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "LogicException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Exception\\UnsafeOperationException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "LogicException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "subjectId",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "tenantId",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "clientId",
+                "type": "?string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentityProviderInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "current",
+                "static": false,
+                "params": [],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ExecutionIdentity"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\HttpOperationExecutor",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "execute",
+                "static": false,
+                "params": [
+                    {
+                        "name": "operation",
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                    },
+                    {
+                        "name": "arguments",
+                        "type": "array"
+                    },
+                    {
+                        "name": "dryRunnable",
+                        "type": "bool"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\InputSchemaBuilder",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "build",
+                "static": false,
+                "params": [
+                    {
+                        "name": "operation",
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                    },
+                    {
+                        "name": "dryRunnable",
+                        "type": "bool"
+                    }
+                ],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\JsonPointerResolver",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": false,
+                "params": [
+                    {
+                        "name": "node",
+                        "type": "array"
+                    },
+                    {
+                        "name": "refDepth",
+                        "type": "int"
+                    }
+                ],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\OpenApiServerConfigurator",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "withReservedToolNames",
+                "static": false,
+                "params": [
+                    {
+                        "name": "names",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "static"
+            },
+            {
+                "name": "configure",
+                "static": false,
+                "params": [
+                    {
+                        "name": "builder",
+                        "type": "Mcp\\Server\\Builder"
+                    }
+                ],
+                "returnType": "void"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "operationId",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "method",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "path",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "description",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "parameters",
+                "type": "array",
+                "readonly": true
+            },
+            {
+                "name": "requestBodySchema",
+                "type": "?array",
+                "readonly": true
+            },
+            {
+                "name": "requestBodyRequired",
+                "type": "bool",
+                "readonly": true
+            },
+            {
+                "name": "outputSchema",
+                "type": "?array",
+                "readonly": true
+            },
+            {
+                "name": "tags",
+                "type": "array",
+                "readonly": true
+            }
+        ],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\OperationContractValidator",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "validate",
+                "static": false,
+                "params": [
+                    {
+                        "name": "operation",
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                    }
+                ],
+                "returnType": "void"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\OperationModifierInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "modify",
+                "static": false,
+                "params": [
+                    {
+                        "name": "operation",
+                        "type": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+                    },
+                    {
+                        "name": "tool",
+                        "type": "Mcp\\Schema\\Tool"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\Tool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\OutputSchemaProjector",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "project",
+                "static": false,
+                "params": [
+                    {
+                        "name": "responses",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "?array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "fromJson",
+                "static": true,
+                "params": [
+                    {
+                        "name": "json",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex"
+            },
+            {
+                "name": "fromFile",
+                "static": true,
+                "params": [
+                    {
+                        "name": "path",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex"
+            },
+            {
+                "name": "get",
+                "static": false,
+                "params": [
+                    {
+                        "name": "operationId",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\Operation"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecLoader",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "fromUrl",
+                "static": false,
+                "params": [
+                    {
+                        "name": "url",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\OpenApi\\SpecIndex"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\OpenApi\\ToolNameValidator",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "isValid",
+                "static": true,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Prompts\\Exception\\InvalidPromptFileException",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": "RuntimeException",
+        "publicProperties": [],
+        "publicMethods": []
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Prompts\\FilePromptHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "get",
+                "static": false,
+                "params": [
+                    {
+                        "name": "arguments",
+                        "type": "array"
+                    },
+                    {
+                        "name": "gateway",
+                        "type": "Mcp\\Server\\ClientGateway"
+                    }
+                ],
+                "returnType": "mixed"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Prompts\\MarkdownPromptsConfigurator",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "configure",
+                "static": false,
+                "params": [
+                    {
+                        "name": "builder",
+                        "type": "Mcp\\Server\\Builder"
+                    }
+                ],
+                "returnType": "void"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Prompts\\PromptFile",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [
+            {
+                "name": "name",
+                "type": "string",
+                "readonly": true
+            },
+            {
+                "name": "title",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "description",
+                "type": "?string",
+                "readonly": true
+            },
+            {
+                "name": "arguments",
+                "type": "array",
+                "readonly": true
+            },
+            {
+                "name": "content",
+                "type": "string",
+                "readonly": true
+            }
+        ],
+        "publicMethods": [
+            {
+                "name": "parse",
+                "static": true,
+                "params": [
+                    {
+                        "name": "path",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "Rasuvaeff\\Yii3Mcp\\Prompts\\PromptFile"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\ReservedToolNamesAwareInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "withReservedToolNames",
+                "static": false,
+                "params": [
+                    {
+                        "name": "names",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "static"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Resource\\ResourceUpdateNotifier",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "notify",
+                "static": false,
+                "params": [
+                    {
+                        "name": "context",
+                        "type": "Mcp\\Server\\RequestContext"
+                    },
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\ServerConfiguratorInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "configure",
+                "static": false,
+                "params": [
+                    {
+                        "name": "builder",
+                        "type": "Mcp\\Server\\Builder"
+                    }
+                ],
+                "returnType": "void"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Session\\PrivateFileSessionStore",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "exists",
+                "static": false,
+                "params": [
+                    {
+                        "name": "id",
+                        "type": "Symfony\\Component\\Uid\\Uuid"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "read",
+                "static": false,
+                "params": [
+                    {
+                        "name": "id",
+                        "type": "Symfony\\Component\\Uid\\Uuid"
+                    }
+                ],
+                "returnType": "string|false"
+            },
+            {
+                "name": "write",
+                "static": false,
+                "params": [
+                    {
+                        "name": "id",
+                        "type": "Symfony\\Component\\Uid\\Uuid"
+                    },
+                    {
+                        "name": "data",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "destroy",
+                "static": false,
+                "params": [
+                    {
+                        "name": "id",
+                        "type": "Symfony\\Component\\Uid\\Uuid"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "gc",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Session\\SessionDirectory",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "resolve",
+                "static": true,
+                "params": [
+                    {
+                        "name": "configured",
+                        "type": "string"
+                    },
+                    {
+                        "name": "serverName",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\SharedSecretMiddleware",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "process",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Psr\\Http\\Message\\ServerRequestInterface"
+                    },
+                    {
+                        "name": "handler",
+                        "type": "Psr\\Http\\Server\\RequestHandlerInterface"
+                    }
+                ],
+                "returnType": "Psr\\Http\\Message\\ResponseInterface"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "initialize",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "listTools",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "listResources",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "listResourceTemplates",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "listPrompts",
+                "static": false,
+                "params": [],
+                "returnType": "array"
+            },
+            {
+                "name": "callTool",
+                "static": false,
+                "params": [
+                    {
+                        "name": "name",
+                        "type": "string"
+                    },
+                    {
+                        "name": "arguments",
+                        "type": "array"
+                    }
+                ],
+                "returnType": "array"
+            },
+            {
+                "name": "readResource",
+                "static": false,
+                "params": [
+                    {
+                        "name": "uri",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "array"
+            },
+            {
+                "name": "request",
+                "static": false,
+                "params": [
+                    {
+                        "name": "method",
+                        "type": "string"
+                    },
+                    {
+                        "name": "params",
+                        "type": "?array"
+                    }
+                ],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Testing\\SchemaSnapshot",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "assert",
+                "static": true,
+                "params": [
+                    {
+                        "name": "tester",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                    },
+                    {
+                        "name": "path",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "verify",
+                "static": true,
+                "params": [
+                    {
+                        "name": "tester",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                    },
+                    {
+                        "name": "path",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "record",
+                "static": true,
+                "params": [
+                    {
+                        "name": "tester",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                    },
+                    {
+                        "name": "path",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "void"
+            },
+            {
+                "name": "capture",
+                "static": true,
+                "params": [
+                    {
+                        "name": "tester",
+                        "type": "Rasuvaeff\\Yii3Mcp\\Testing\\McpTester"
+                    }
+                ],
+                "returnType": "array"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Testing\\SseFrame",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "payload",
+                "static": true,
+                "params": [
+                    {
+                        "name": "raw",
+                        "type": "string"
+                    }
+                ],
+                "returnType": "string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Utf8",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "cut",
+                "static": true,
+                "params": [
+                    {
+                        "name": "value",
+                        "type": "string"
+                    },
+                    {
+                        "name": "maxBytes",
+                        "type": "int"
+                    }
+                ],
+                "returnType": "string"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\DeclarativeToolVisibility",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "isVisible",
+                "static": false,
+                "params": [
+                    {
+                        "name": "tool",
+                        "type": "Mcp\\Schema\\Tool"
+                    },
+                    {
+                        "name": "session",
+                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\FilteredCompletionCompleteHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "supports",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    },
+                    {
+                        "name": "session",
+                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response|Mcp\\Schema\\JsonRpc\\Error"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\FilteredListPromptsHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "supports",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    },
+                    {
+                        "name": "session",
+                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\FilteredListResourceTemplatesHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "supports",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    },
+                    {
+                        "name": "session",
+                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\FilteredListResourcesHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "supports",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    },
+                    {
+                        "name": "session",
+                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\FilteredListToolsHandler",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "class",
+        "isApi": false,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "supports",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "handle",
+                "static": false,
+                "params": [
+                    {
+                        "name": "request",
+                        "type": "Mcp\\Schema\\JsonRpc\\Request"
+                    },
+                    {
+                        "name": "session",
+                        "type": "Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "Mcp\\Schema\\JsonRpc\\Response"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\PromptVisibilityInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "isVisible",
+                "static": false,
+                "params": [
+                    {
+                        "name": "prompt",
+                        "type": "Mcp\\Schema\\Prompt"
+                    },
+                    {
+                        "name": "session",
+                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\ResourceVisibilityInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "isVisible",
+                "static": false,
+                "params": [
+                    {
+                        "name": "resource",
+                        "type": "Mcp\\Schema\\ResourceDefinition"
+                    },
+                    {
+                        "name": "session",
+                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "bool"
+            },
+            {
+                "name": "isTemplateVisible",
+                "static": false,
+                "params": [
+                    {
+                        "name": "template",
+                        "type": "Mcp\\Schema\\ResourceTemplate"
+                    },
+                    {
+                        "name": "session",
+                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    },
+    {
+        "class": "Rasuvaeff\\Yii3Mcp\\Visibility\\ToolVisibilityInterface",
+        "package": "Rasuvaeff\\Yii3Mcp",
+        "kind": "interface",
+        "isApi": true,
+        "extends": null,
+        "publicProperties": [],
+        "publicMethods": [
+            {
+                "name": "isVisible",
+                "static": false,
+                "params": [
+                    {
+                        "name": "tool",
+                        "type": "Mcp\\Schema\\Tool"
+                    },
+                    {
+                        "name": "session",
+                        "type": "?Mcp\\Server\\Session\\SessionInterface"
+                    }
+                ],
+                "returnType": "bool"
+            }
+        ]
+    }
+]
