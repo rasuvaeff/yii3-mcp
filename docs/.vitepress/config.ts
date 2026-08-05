@@ -62,6 +62,13 @@ export default defineConfig({
     base: '/yii3-mcp/',
     cleanUrls: true,
     lastUpdated: true,
+    // docs/siblings/ is where CI checks out the three bridge repos (read-only,
+    // for the API reflection pass — see docs/scripts/reflect-api.php) and
+    // where their OWN vendor/ trees land after `composer install`; without
+    // this, VitePress compiles every .md under docs/ as a page, including
+    // third-party CHANGELOGs inside vendor/, and a malformed one fails the
+    // whole build (verified: justinrainbow/json-schema's did, in CI).
+    srcExclude: ['siblings/**'],
     themeConfig: {
         nav: [
             { text: 'Guide', link: '/intro/what-is-mcp' },
