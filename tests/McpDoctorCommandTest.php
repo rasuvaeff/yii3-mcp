@@ -20,6 +20,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Symfony\Component\Console\Tester\CommandTester;
 use Testo\Assert;
+use Testo\Assert\Api\Json\JsonAbstract;
 use Testo\Codecov\Covers;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
@@ -95,9 +96,17 @@ final class McpDoctorCommandTest
         Assert::same($tester->execute(['--json' => true]), 0);
 
         $display = $tester->getDisplay();
-        $decoded = json_decode($display, associative: true, flags: JSON_THROW_ON_ERROR);
-        Assert::same($decoded['healthy'], true);
-        Assert::true(count($decoded['checks']) >= 5);
+        Assert::json($display)
+            ->isObject()
+            ->hasKeys(['healthy', 'checks'])
+            ->assertPath('$.healthy', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), true);
+            })
+            ->assertPath('$.checks', static function (JsonAbstract $json): void {
+                $json->isArray();
+
+                Assert::true(count((array) $json->decode()) >= 5);
+            });
         Assert::false(str_contains($display, 'super-secret-value'));
         // Pretty-printed with unescaped slashes: the session directory path
         // appears verbatim, ready for grep.
@@ -111,9 +120,15 @@ final class McpDoctorCommandTest
 
         Assert::same($tester->execute(['--json' => true]), 2);
 
-        $decoded = json_decode($tester->getDisplay(), associative: true, flags: JSON_THROW_ON_ERROR);
-        Assert::same($decoded['healthy'], false);
-        Assert::same($decoded['exitCode'], 2);
+        Assert::json($tester->getDisplay())
+            ->isObject()
+            ->hasKeys(['healthy', 'exitCode'])
+            ->assertPath('$.healthy', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), false);
+            })
+            ->assertPath('$.exitCode', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), 2);
+            });
     }
 
     private function command(string $secret = 'test-secret', string $specPath = ''): CommandTester
