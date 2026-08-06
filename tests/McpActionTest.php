@@ -179,6 +179,9 @@ final class McpActionTest
         Assert::json($this->raw($response))
             ->isObject()
             ->hasKeys(['jsonrpc', 'result'])
+            ->assertPath('$.jsonrpc', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '2.0');
+            })
             ->assertPath('$.result.serverInfo.name', static function (JsonAbstract $json): void {
                 Assert::same($json->decode(), 'test-server');
             })
@@ -221,6 +224,9 @@ final class McpActionTest
         Assert::json($this->raw($response))
             ->isObject()
             ->hasKeys(['jsonrpc', 'result'])
+            ->assertPath('$.jsonrpc', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '2.0');
+            })
             ->assertPath('$.result.content[0].text', static function (JsonAbstract $json): void {
                 Assert::same($json->decode(), 'Hello, Yii!');
             });
@@ -264,6 +270,9 @@ final class McpActionTest
         Assert::json($this->raw($response))
             ->isObject()
             ->hasKeys(['jsonrpc', 'result'])
+            ->assertPath('$.jsonrpc', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '2.0');
+            })
             ->assertPath('$.result.contents[0].text', static function (JsonAbstract $json): void {
                 Assert::same($json->decode(), 'ok');
             });
