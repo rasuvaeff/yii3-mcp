@@ -15,6 +15,7 @@ use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
+use Testo\Assert\Api\Json\JsonAbstract;
 use Testo\Codecov\Covers;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -175,9 +176,18 @@ final class McpActionTest
         Assert::same($response->getStatusCode(), 200);
         Assert::true($response->getHeaderLine('Mcp-Session-Id') !== '');
 
-        $body = $this->decode($response);
-        Assert::same($body['result']['serverInfo']['name'], 'test-server');
-        Assert::same($body['result']['serverInfo']['version'], '1.0.0');
+        Assert::json($this->raw($response))
+            ->isObject()
+            ->hasKeys(['jsonrpc', 'result'])
+            ->assertPath('$.jsonrpc', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '2.0');
+            })
+            ->assertPath('$.result.serverInfo.name', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), 'test-server');
+            })
+            ->assertPath('$.result.serverInfo.version', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '1.0.0');
+            });
     }
 
     public function toolsListExposesRegisteredTool(): void
@@ -209,10 +219,17 @@ final class McpActionTest
             sessionId: $sessionId,
         ));
 
-        $body = $this->decode($response);
+        Assert::false(isset($this->decode($response)['error']));
 
-        Assert::false(isset($body['error']));
-        Assert::same($body['result']['content'][0]['text'], 'Hello, Yii!');
+        Assert::json($this->raw($response))
+            ->isObject()
+            ->hasKeys(['jsonrpc', 'result'])
+            ->assertPath('$.jsonrpc', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '2.0');
+            })
+            ->assertPath('$.result.content[0].text', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), 'Hello, Yii!');
+            });
     }
 
     public function throwingToolProducesMcpErrorWithoutLeakingInternals(): void
@@ -250,7 +267,15 @@ final class McpActionTest
             sessionId: $sessionId,
         ));
 
-        Assert::same($this->decode($response)['result']['contents'][0]['text'], 'ok');
+        Assert::json($this->raw($response))
+            ->isObject()
+            ->hasKeys(['jsonrpc', 'result'])
+            ->assertPath('$.jsonrpc', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), '2.0');
+            })
+            ->assertPath('$.result.contents[0].text', static function (JsonAbstract $json): void {
+                Assert::same($json->decode(), 'ok');
+            });
     }
 
     public function clientIdAttributeFlowsToTheInterceptorContext(): void
@@ -338,6 +363,12 @@ final class McpActionTest
      */
     private function decode(ResponseInterface $response): array
     {
+        /** @var array<string, mixed> */
+        return json_decode($this->raw($response), associative: true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    private function raw(ResponseInterface $response): string
+    {
         $raw = (string) $response->getBody();
 
         // Streamable HTTP may frame the JSON-RPC message as an SSE event
@@ -346,7 +377,6 @@ final class McpActionTest
             $raw = $matches[1] ?? '';
         }
 
-        /** @var array<string, mixed> */
-        return json_decode($raw, associative: true, flags: JSON_THROW_ON_ERROR);
+        return $raw;
     }
 }
