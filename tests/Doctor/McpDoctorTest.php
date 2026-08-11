@@ -58,7 +58,7 @@ final class McpDoctorTest
 
         Assert::true($report->healthy());
         Assert::same($report->exitCode(), 0);
-        Assert::true(in_array('service_http_message_serverrequestfactoryinterface', array_column($report->toArray()['checks'], 'name'), true));
+        Assert::true(in_array('service_http_message_serverrequestfactoryinterface', array_column($report->toArray()['checks'], 'name'), strict: true));
         // Disabled OpenAPI bridge is a skip, not a pass.
         Assert::same($this->check($report, 'openapi_spec')->status, CheckStatus::Skip);
     }
@@ -192,8 +192,8 @@ final class McpDoctorTest
 
             $checks = array_column($doctor->diagnose()->toArray()['checks'], 'name');
 
-            Assert::false(in_array('service_psr_http_client_clientinterface', $checks, true));
-            Assert::false(in_array('service_http_message_requestfactoryinterface', $checks, true));
+            Assert::false(in_array('service_psr_http_client_clientinterface', $checks, strict: true));
+            Assert::false(in_array('service_http_message_requestfactoryinterface', $checks, strict: true));
         } finally {
             unlink($path);
         }
@@ -256,7 +256,7 @@ final class McpDoctorTest
 
     public function groupReadableSessionDirectoryFailsTheConfidentialityCheck(): void
     {
-        mkdir($this->sessionDir, 0o750, true);
+        mkdir($this->sessionDir, 0o750, recursive: true);
         chmod($this->sessionDir, 0o750);
 
         $report = $this->doctor()->diagnose();
@@ -272,7 +272,7 @@ final class McpDoctorTest
     {
         // 0o701: the LOWEST access bit others can hold — the check must
         // cover the full group+others mask, not just the readable bits
-        mkdir($this->sessionDir, 0o701, true);
+        mkdir($this->sessionDir, 0o701, recursive: true);
         chmod($this->sessionDir, 0o701);
 
         $report = $this->doctor()->diagnose();

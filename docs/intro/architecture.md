@@ -51,8 +51,11 @@ that turns application config into an `Mcp\Server\Builder`-built `Server`:
 ## Wiring: config/di.php + config/params.php
 
 Everything above is driven from one params namespace,
-`params['rasuvaeff/yii3-mcp']`, read once in `config/di.php` when the `Server`
-service is built:
+`params['rasuvaeff/yii3-mcp']`, read once when the `Server` service is built.
+The config file remains the composition root: its internal
+`McpServerComponentResolver` resolves class-string extension points through
+the application container, while `McpServerAssembler` receives only the
+resulting typed components and has no container dependency.
 
 - `SessionStoreInterface` is bound to `Session\PrivateFileSessionStore`
   (owner-only, FPM-safe) by default — see [Security](/security#sessions-on-disk).
@@ -60,14 +63,15 @@ service is built:
   `instructions`, `pagination_limit`, and a `protocol_version` resolved
   **at config-load time**: an unsupported value throws immediately, not on
   the first request.
-- The `Server` definition closure assembles, in order: the Markdown-prompts
+- `McpServerComponentResolver` assembles, in order: the Markdown-prompts
   configurator (if `prompts_path` is set), the OpenAPI bridge configurator
   (if `openapi.spec_path` and `openapi.operations` are both non-empty), the
   MCP Apps configurator (if `apps.enable` or `apps.definitions` is set), then
   every FQCN in `configurators`; the interceptor list (session budget →
   `interceptors` → caching → size limit, see [Interceptors](/interceptors));
   and the visibility bindings (`tool_visibility` or declarative
-  `visibility`, `prompt_visibility`, `resource_visibility`).
+  `visibility`, `prompt_visibility`, `resource_visibility`). The internal
+  assembler then passes those ready components to `McpServerFactory`.
 - `McpAction` receives the built `Server`, PSR-17 factories, `allowed_hosts`
   (for the transport's DNS-rebinding protection), and the same
   `SessionStoreInterface` — required for session-ownership enforcement (see

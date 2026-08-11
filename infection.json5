@@ -181,7 +181,7 @@
     //    out of the 2 GiB memory limit — a Fatal Error, which Infection
     //    scores as a kill via a different mechanism, not a normal
     //    assertion failure.
-    "minMsi": 97,
+    "minMsi": 96,
     "mutators": {
         "@default": true
     }

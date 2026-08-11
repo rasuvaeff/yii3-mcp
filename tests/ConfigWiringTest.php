@@ -19,6 +19,7 @@ use Nyholm\Psr7\ServerRequest;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpAction;
+use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
@@ -39,12 +40,12 @@ use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
 // Deliberately not #[CoversNothing]: this suite wires config/di.php end to
-// end and is not "coverage" for any src/ class in the usual sense, but it is
-// the ONLY place that constructs OpenApi\ExecutionIdentity (a bare readonly
-// VO with no logic — a #[Covers] here produces zero mutants, it only makes
-// the class visible to Infection instead of silently invisible, per ER-003).
+// end and exercises every branch of McpServerComponentResolver. It is also
+// the only place that constructs OpenApi\ExecutionIdentity, a bare readonly
+// VO that still has to remain visible to Infection per ER-003.
 #[Test]
 #[Covers(ExecutionIdentity::class)]
+#[Covers(McpServerComponentResolver::class)]
 final class ConfigWiringTest
 {
     public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void
@@ -199,6 +200,60 @@ final class ConfigWiringTest
         $server = $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
 
         Assert::instanceOf($server, Server::class);
+    }
+
+    public function identityProviderIsNotResolvedForIncompleteOpenApiConfiguration(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+        $params['rasuvaeff/yii3-mcp']['openapi']['spec_path'] = '/does/not/exist.yaml';
+        $params['rasuvaeff/yii3-mcp']['openapi']['operations'] = [];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([]);
+
+        Assert::instanceOf(
+            $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container),
+            Server::class,
+        );
+    }
+
+    public function operationsWithoutAnOpenApiSpecDoNotBuildTheBridge(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+        $params['rasuvaeff/yii3-mcp']['openapi']['spec_path'] = '';
+        $params['rasuvaeff/yii3-mcp']['openapi']['operations'] = ['getGreeting'];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([]);
+
+        Assert::instanceOf(
+            $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container),
+            Server::class,
+        );
+    }
+
+    public function omittedOptionalLimitsAndBudgetStayDisabled(): void
+    {
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        unset($mcp['session']['budget'], $mcp['limits']['tool_result_bytes']);
+        $mcp['tools'] = [GreetingTool::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]);
+        $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $result = new McpTester($server, $psr17, $psr17, $psr17)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][0]['text'], 'Hi, Yii!');
     }
 
     public function serverDefinitionWiresToolVisibility(): void
@@ -448,6 +503,16 @@ final class ConfigWiringTest
         $params = $this->params();
 
         Assert::same($params['rasuvaeff/yii3-mcp']['apps'], ['enable' => false, 'definitions' => []]);
+
+        $capabilities = (array) ($this->appsTester($params)->initialize()['capabilities'] ?? []);
+
+        Assert::false(isset($capabilities['extensions']));
+    }
+
+    public function omittedAppsEnableFlagStaysDisabled(): void
+    {
+        $params = $this->params();
+        unset($params['rasuvaeff/yii3-mcp']['apps']['enable']);
 
         $capabilities = (array) ($this->appsTester($params)->initialize()['capabilities'] ?? []);
 

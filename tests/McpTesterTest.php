@@ -85,7 +85,7 @@ final class McpTesterTest
     {
         $result = $this->tester()->readResource('app://users/42');
 
-        Assert::same(json_decode((string) $result['contents'][0]['text'], true), ['id' => '42']);
+        Assert::same(json_decode((string) $result['contents'][0]['text'], associative: true), ['id' => '42']);
     }
 
     public function listsPrompts(): void

@@ -31,7 +31,7 @@ final readonly class PrivateFileSessionStore implements SessionStoreInterface
         private string $directory,
         int $ttl = 3600,
     ) {
-        if (!is_dir($directory) && @mkdir($directory, 0o700, true)) {
+        if (!is_dir($directory) && @mkdir($directory, 0o700, recursive: true)) {
             // an explicit chmod beats the umask, which mkdir cannot
             @chmod($directory, 0o700);
         }
