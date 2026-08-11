@@ -251,7 +251,8 @@ final class ConfigWiringTest
         /** @var Server $server */
         $server = $definition($factory, $container);
         $psr17 = new Psr17Factory();
-        $result = new McpTester($server, $psr17, $psr17, $psr17)->callTool('greet', ['name' => 'Yii']);
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+        $result = $tester->callTool('greet', ['name' => 'Yii']);
 
         Assert::same($result['content'][0]['text'], 'Hi, Yii!');
     }
