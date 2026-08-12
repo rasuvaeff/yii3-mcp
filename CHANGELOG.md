@@ -5,8 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 2.2.1 — 2026-08-12
 
+- Internal only: the `Server` definition in `config/di.php` is no longer a
+  220-line closure. Component resolution moved to `McpServerComponentResolver`
+  and construction to `McpServerAssembler` (both `@internal`), passing a typed
+  `McpServerComponents` between them; `config/di.php` keeps the same service
+  and params contracts. Container lookups now assert the resolved instance
+  matches the requested class instead of trusting an unchecked cast — a
+  misconfigured application service fails with a `LogicException` naming it
+  rather than later, somewhere else. No public API and no runtime behaviour
+  changed. The extraction also exposed the former closure to Infection for the
+  first time (1584 → 1666 mutants), so the mutation gate rose to 97.
 - Development only: the codebase is `rector` clean again (7 files had drifted —
   a redundant null check, two test doubles that can be `readonly`, two
   locally-called static test helpers, and named arguments repeating a default),
