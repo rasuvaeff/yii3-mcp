@@ -255,6 +255,34 @@ final class ConfigWiringTest
         $result = $tester->callTool('greet', ['name' => 'Yii']);
 
         Assert::same($result['content'][0]['text'], 'Hi, Yii!');
+
+        // Second call on the same session: an omitted budget must stay
+        // disabled, not fall back to a budget of one.
+        $second = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($second['content'][0]['text'], 'Hi, Yii!');
+    }
+
+    public function promptsPathWiresTheMarkdownPromptsConfigurator(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['prompts_path'] = __DIR__ . '/Support/prompts';
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([]);
+
+        /** @var Server $server */
+        $server = $definition(
+            new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()),
+            $container,
+        );
+        $psr17 = new Psr17Factory();
+        $names = array_column((new McpTester($server, $psr17, $psr17, $psr17))->listPrompts(), 'name');
+
+        sort($names);
+
+        Assert::same($names, ['code-review', 'plain-note']);
     }
 
     public function serverDefinitionWiresToolVisibility(): void

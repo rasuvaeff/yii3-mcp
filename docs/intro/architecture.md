@@ -81,10 +81,10 @@ resulting typed components and has no container dependency.
 - `McpDoctor` (behind `mcp:doctor`) receives enough of the same config to
   diagnose it independently — see [Operations](/operations).
 
-Everything is resolved through the container **inside** these closures
-(`$container->get($interceptorClass)`), not eagerly at config-parse time —
-so an interceptor, visibility class, or identity provider is only
-instantiated when it is actually configured.
+Everything is resolved through the container **inside**
+`McpServerComponentResolver::resolve()` (`$container->get($interceptorClass)`),
+not eagerly at config-parse time — so an interceptor, visibility class, or
+identity provider is only instantiated when it is actually configured.
 
 ## What's a PSR service vs. what's package config
 

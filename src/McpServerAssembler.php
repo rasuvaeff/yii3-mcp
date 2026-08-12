@@ -19,14 +19,14 @@ final readonly class McpServerAssembler
     public function create(): Server
     {
         return $this->factory->create(
-            $this->components->tools,
-            $this->components->configurators,
-            $this->components->interceptors,
-            $this->components->visibility,
-            $this->components->promptInterceptors,
-            $this->components->resourceInterceptors,
-            $this->components->promptVisibility,
-            $this->components->resourceVisibility,
+            toolClasses: $this->components->tools,
+            configurators: $this->components->configurators,
+            interceptors: $this->components->interceptors,
+            toolVisibility: $this->components->visibility,
+            promptInterceptors: $this->components->promptInterceptors,
+            resourceInterceptors: $this->components->resourceInterceptors,
+            promptVisibility: $this->components->promptVisibility,
+            resourceVisibility: $this->components->resourceVisibility,
         );
     }
 }
