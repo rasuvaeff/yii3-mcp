@@ -33,6 +33,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -149,6 +150,60 @@ final class ConfigWiringTest
 
         // the second call is served from cache — the tool ran exactly once
         Assert::same($tool->calls, 1);
+    }
+
+    public function serverDefinitionIsolatesTheToolCacheByConfiguredNamespace(): void
+    {
+        $tool = new CountingTool();
+        $container = new SimpleContainer([
+            CountingTool::class => $tool,
+            CacheInterface::class => new FakeCache(),
+        ]);
+        $psr17 = new Psr17Factory();
+
+        foreach (['alpha', 'beta'] as $namespace) {
+            $params = $this->params();
+            $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
+            $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
+            $params['rasuvaeff/yii3-mcp']['cache']['namespace'] = $namespace;
+
+            /** @var Closure $definition */
+            $definition = $this->di($params)[Server::class]['definition'];
+            $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+            /** @var Server $server */
+            $server = $definition($factory, $container);
+            (new McpTester($server, $psr17, $psr17, $psr17))->callTool('count.up', []);
+        }
+
+        // two servers, one cache backend: the configured namespace reaches the
+        // interceptor, so "beta" never reads what "alpha" wrote
+        Assert::same($tool->calls, 2);
+    }
+
+    public function serverDefinitionWiresTheConfiguredPromptResultLimit(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['prompts_path'] = __DIR__ . '/Support/prompts-amplify';
+        $params['rasuvaeff/yii3-mcp']['limits']['prompt_result_bytes'] = 200;
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([]);
+
+        /** @var Server $server */
+        $server = $definition(
+            new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()),
+            $container,
+        );
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17);
+
+        // ten {{payload}} occurrences amplify 50 bytes to 510 — over the
+        // configured 200-byte budget, well under the 1 MiB default
+        Expect::exception(RuntimeException::class);
+
+        $tester->request('prompts/get', ['name' => 'amplify', 'arguments' => ['payload' => str_repeat('A', 50)]]);
     }
 
     public function serverDefinitionPartitionsTheToolCacheByExecutionIdentity(): void
