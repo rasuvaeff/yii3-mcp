@@ -6,12 +6,16 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
+use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerAssembler;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerComponents;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyPromptVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyResourceVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingPromptInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingResourceInterceptor;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -28,10 +32,10 @@ final class McpServerAssemblerTest
 {
     public function assemblerBuildsFromResolvedComponentsWithoutAContainerDependency(): void
     {
-        $container = new SimpleContainer([]);
+        $configurator = new RecordingConfigurator();
         $components = new McpServerComponents(
-            tools: [],
-            configurators: [],
+            tools: [GreetingTool::class],
+            configurators: [$configurator],
             interceptors: [],
             visibility: null,
             promptInterceptors: [],
@@ -41,13 +45,28 @@ final class McpServerAssemblerTest
         );
         $assembler = new McpServerAssembler(
             factory: new McpServerFactory(
-                container: $container,
+                container: new SimpleContainer([]),
                 sessionStore: new InMemorySessionStore(),
             ),
             components: $components,
         );
 
-        Assert::instanceOf($assembler->create(), Server::class);
+        $server = $assembler->create();
+
+        Assert::instanceOf($server, Server::class);
+        Assert::true($configurator->configured);
+
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester(
+            server: $server,
+            requestFactory: $psr17,
+            responseFactory: $psr17,
+            streamFactory: $psr17,
+        );
+        $names = array_column($tester->listTools(), 'name');
+        sort($names);
+
+        Assert::same($names, ['explode', 'greet']);
     }
 
     public function resolverPassesAUserConfiguredVisibilityAsAReadyComponent(): void
