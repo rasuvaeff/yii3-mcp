@@ -301,7 +301,7 @@ final class MarkdownPromptsConfiguratorTest
         try {
             $file = PromptFile::parse($path);
 
-            Assert::same($file->arguments[0]->required, false);
+            Assert::same($file->arguments[0]->required, expected: false);
         } finally {
             unlink($path);
         }

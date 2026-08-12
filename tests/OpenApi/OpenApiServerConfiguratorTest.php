@@ -87,7 +87,7 @@ final class OpenApiServerConfiguratorTest
 
         $body = $this->decode($response);
         Assert::false(isset($body['error']));
-        Assert::same(json_decode((string) $body['result']['content'][0]['text'], true), [['slug' => 'php']]);
+        Assert::same(json_decode((string) $body['result']['content'][0]['text'], associative: true), [['slug' => 'php']]);
     }
 
     public function objectResponseAdvertisesOutputSchemaInToolsList(): void
@@ -314,8 +314,8 @@ final class OpenApiServerConfiguratorTest
 
         $names = array_column($this->decode($response)['result']['tools'], 'name');
 
-        Assert::true(in_array('greet', $names, true));
-        Assert::true(in_array('getBlogTags', $names, true));
+        Assert::true(in_array('greet', $names, strict: true));
+        Assert::true(in_array('getBlogTags', $names, strict: true));
     }
 
     public function getOperationsAreMarkedReadOnly(): void

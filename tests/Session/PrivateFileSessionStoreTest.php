@@ -68,7 +68,7 @@ final class PrivateFileSessionStoreTest
         // the store must not re-chmod it behind their back (mcp:doctor
         // reports it instead)
         $directory = $this->freshDirectory();
-        mkdir($directory, 0o755, true);
+        mkdir($directory, 0o755, recursive: true);
         chmod($directory, 0o755);
 
         new PrivateFileSessionStore($directory);

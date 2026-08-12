@@ -89,7 +89,7 @@ final class CapabilityHooksTest
         try {
             $tester->request('prompts/get', ['name' => 'greeting-style']);
 
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (RuntimeException $exception) {
             Assert::string($exception->getMessage())->contains('prompts are closed');
         }
@@ -170,7 +170,7 @@ final class CapabilityHooksTest
         try {
             $tester->readResource('app://status');
 
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (RuntimeException $exception) {
             Assert::string($exception->getMessage())->contains('reads are closed');
         }
@@ -202,7 +202,7 @@ final class CapabilityHooksTest
         try {
             $tester->request('prompts/get', ['name' => 'greeting-style']);
 
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (RuntimeException $exception) {
             Assert::string($exception->getMessage())->contains('not found');
         }
@@ -239,7 +239,7 @@ final class CapabilityHooksTest
         try {
             $tester->readResource('app://status');
 
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (RuntimeException $exception) {
             Assert::string($exception->getMessage())->contains('not found');
         }
@@ -252,7 +252,7 @@ final class CapabilityHooksTest
         try {
             $tester->readResource('app://users/42');
 
-            Assert::true(false);
+            Assert::true(actual: false);
         } catch (RuntimeException $exception) {
             Assert::string($exception->getMessage())->contains('not found');
         }

@@ -111,7 +111,7 @@ final readonly class McpDoctor
         $host = strtolower($host);
         $allowedHosts = array_map(strtolower(...), [...self::LOCAL_HOSTS, ...$this->allowedHosts]);
 
-        if (!in_array($host, $allowedHosts, true)) {
+        if (!in_array($host, $allowedHosts, strict: true)) {
             return new CheckResult(
                 name: 'allowed_host',
                 category: CheckCategory::Config,
@@ -256,7 +256,7 @@ final readonly class McpDoctor
         $directory = $this->sessionDirectory;
 
         if (!is_dir($directory)) {
-            if (!@mkdir($directory, 0o700, true)) {
+            if (!@mkdir($directory, 0o700, recursive: true)) {
                 return new CheckResult(
                     name: 'session_directory',
                     category: CheckCategory::Storage,

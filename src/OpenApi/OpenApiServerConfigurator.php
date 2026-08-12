@@ -136,7 +136,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
                 ));
             }
 
-            $dryRunnable = in_array($operationId, $this->dryRunOperations, true);
+            $dryRunnable = in_array($operationId, $this->dryRunOperations, strict: true);
 
             $tool = new Tool(
                 name: $name,

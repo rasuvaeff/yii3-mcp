@@ -109,7 +109,7 @@ final readonly class SchemaSnapshot
      */
     private static function recordRequested(): bool
     {
-        return !in_array(getenv(self::RECORD_ENV), [false, '', '0'], true);
+        return !in_array(getenv(self::RECORD_ENV), [false, '', '0'], strict: true);
     }
 
     /**

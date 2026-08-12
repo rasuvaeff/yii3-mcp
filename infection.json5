@@ -10,7 +10,11 @@
     "testFramework": "testo",
     // Honest ceiling after closing the ER-003 #[Covers]-attribution gap on
     // 21 classes (Total: 1375 -> 1584 mutants) and killing every reachable
-    // survivor, old and new. 38 documented equivalents remain (no ignores —
+    // survivor, old and new. Extracting the former config/di.php closure into
+    // src/McpServerComponentResolver.php exposed it to Infection for the
+    // first time (1584 -> 1666 mutants): 12 of its mutants escaped, 10 were
+    // killed with wiring tests, 2 are equivalent and listed in G below.
+    // 40 documented equivalents remain (no ignores —
     // Infection still generates and runs them every time, this is a record,
     // not a suppression). Grouped by the reasoning that makes each one
     // unkillable; every entry names its own file:line+mutator.
@@ -181,6 +185,15 @@
     //    out of the 2 GiB memory limit — a Fatal Error, which Infection
     //    scores as a kill via a different mechanism, not a normal
     //    assertion failure.
+    //
+    // G. `?? 0` fallback read by a `> 0` guard, mutated to `?? -1`
+    //    (DecrementInteger). The fallback only fires when the params key is
+    //    absent, and the very next statement is `if ($value > 0)` — 0 and -1
+    //    take the same (disabled) branch, so no configuration can tell them
+    //    apart. Their `?? 1` siblings ARE killed, by wiring tests that make a
+    //    second call / assert an untruncated result:
+    //    - McpServerComponentResolver.php:143 DecrementInteger (session budget)
+    //    - McpServerComponentResolver.php:170 DecrementInteger (tool_result_bytes)
     "minMsi": 97,
     "mutators": {
         "@default": true

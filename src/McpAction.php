@@ -79,7 +79,7 @@ final readonly class McpAction implements RequestHandlerInterface
         if ($clientId !== null
             && $this->sessionStore instanceof SessionStoreInterface
             && $presentedSessionId instanceof Uuid
-            && in_array($request->getMethod(), ['POST', 'DELETE'], true)
+            && in_array($request->getMethod(), ['POST', 'DELETE'], strict: true)
             && !$this->ownedBy($this->sessionStore, $presentedSessionId, $clientId)
         ) {
             return $this->sessionNotFound();

@@ -117,7 +117,6 @@ final class McpListCommandTest
         // json_decode() would normalize slash/unicode escaping away and
         // collapse whitespace, hiding a flipped encode flag — assert the
         // RAW bytes instead of the decoded value
-        $factory = new Psr17Factory();
         $server = (new McpServerFactory(
             container: new SimpleContainer([UnicodeDescriptionTool::class => new UnicodeDescriptionTool()]),
             sessionStore: new InMemorySessionStore(),

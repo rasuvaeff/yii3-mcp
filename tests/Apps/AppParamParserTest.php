@@ -36,9 +36,9 @@ final class AppParamParserTest
         Assert::same($app->title, 'Dashboard');
         Assert::same($app->description, 'Sales overview');
         Assert::same($app->contentMeta?->domain, 'apps.example.com');
-        Assert::same($app->contentMeta?->prefersBorder, true);
+        Assert::same($app->contentMeta?->prefersBorder, expected: true);
         Assert::same($app->contentMeta?->csp?->connectDomains, ['api.example.com']);
-        Assert::same($app->contentMeta?->permissions?->geolocation, true);
+        Assert::same($app->contentMeta?->permissions?->geolocation, expected: true);
     }
 
     /**
@@ -55,8 +55,8 @@ final class AppParamParserTest
             'permissions' => ['camera' => false, 'geolocation' => true],
         ]);
 
-        Assert::same($app->contentMeta?->permissions?->camera, false);
-        Assert::same($app->contentMeta?->permissions?->geolocation, true);
+        Assert::same($app->contentMeta?->permissions?->camera, expected: false);
+        Assert::same($app->contentMeta?->permissions?->geolocation, expected: true);
     }
 
     public function permissionsSerializeAsPresenceMarkers(): void
@@ -85,9 +85,9 @@ final class AppParamParserTest
 
         $permissions = $app->contentMeta?->permissions;
 
-        Assert::same($permissions?->camera, false);
-        Assert::same($permissions?->microphone, false);
-        Assert::same($permissions?->clipboardWrite, false);
+        Assert::same($permissions?->camera, expected: false);
+        Assert::same($permissions?->microphone, expected: false);
+        Assert::same($permissions?->clipboardWrite, expected: false);
         Assert::same(json_encode($permissions, JSON_THROW_ON_ERROR), '{"geolocation":{}}');
     }
 
@@ -107,10 +107,10 @@ final class AppParamParserTest
 
         $permissions = $app->contentMeta?->permissions;
 
-        Assert::same($permissions?->camera, true);
-        Assert::same($permissions?->microphone, true);
-        Assert::same($permissions?->geolocation, true);
-        Assert::same($permissions?->clipboardWrite, true);
+        Assert::same($permissions?->camera, expected: true);
+        Assert::same($permissions?->microphone, expected: true);
+        Assert::same($permissions?->geolocation, expected: true);
+        Assert::same($permissions?->clipboardWrite, expected: true);
     }
 
     /**

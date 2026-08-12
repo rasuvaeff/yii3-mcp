@@ -100,7 +100,7 @@ final class McpDoctorCommandTest
             ->isObject()
             ->hasKeys(['healthy', 'checks'])
             ->assertPath('$.healthy', static function (JsonAbstract $json): void {
-                Assert::same($json->decode(), true);
+                Assert::same($json->decode(), expected: true);
             })
             ->assertPath('$.checks', static function (JsonAbstract $json): void {
                 $json->isArray();
@@ -124,7 +124,7 @@ final class McpDoctorCommandTest
             ->isObject()
             ->hasKeys(['healthy', 'exitCode'])
             ->assertPath('$.healthy', static function (JsonAbstract $json): void {
-                Assert::same($json->decode(), false);
+                Assert::same($json->decode(), expected: false);
             })
             ->assertPath('$.exitCode', static function (JsonAbstract $json): void {
                 Assert::same($json->decode(), 2);
