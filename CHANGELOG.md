@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and params contracts. Container lookups now assert the resolved instance
   matches the requested class instead of trusting an unchecked cast — a
   misconfigured application service fails with a `LogicException` naming it
-  rather than later, somewhere else. No public API and no runtime behaviour
-  changed. The extraction also exposed the former closure to Infection for the
+  rather than later, somewhere else — the one deliberate behaviour change, on
+  the invalid-configuration path only. No public API changed, and a valid
+  configuration builds the same `Server`. The extraction also exposed the former closure to Infection for the
   first time (1584 → 1666 mutants), so the mutation gate rose to 97.
 - Development only: the codebase is `rector` clean again (7 files had drifted —
   a redundant null check, two test doubles that can be `readonly`, two
