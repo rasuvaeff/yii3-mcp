@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Internal only: property-based tests via `rasuvaeff/property-testing-testo`
+  for the six classes whose contracts are invariants rather than fixed cases —
+  `Utf8::cut()`, `OpenApi\ToolNameValidator`, `OpenApi\JsonPointerResolver`,
+  `Interceptor\ArgumentMasker`, `Visibility\DeclarativeToolVisibility` and
+  `Interceptor\SessionBudgetInterceptor` (model-based, over generated
+  call/re-initialize sequences). `Utf8Test` already asserted these invariants
+  over five hardcoded strings; the generators supply the input space it was
+  missing. The tool-name property is stated as charset plus length rather than
+  by re-running the class's own pattern, so it fails if the `\z` anchor ever
+  becomes `$` and a trailing newline starts being accepted. CI gains
+  `ext-mbstring` (required by property-testing) and a cached property
+  regression corpus, so a falsified property replays its counterexample on the
+  next run. No production code and no public API changed.
+- Internal only: the `Coverage & Mutation` job now has its own narrow change
+  filter (`src tests composer.json testo.php infection.json5`) instead of
+  sharing the broad one — a docs, `examples/` or workflow edit no longer pays
+  a full mutation run. `infection/infection` moved from `^0.33` to `^0.35`
+  (single major, so `Prefer lowest` actually exercises the lower bound).
+- Internal only: `release.yml` caught up with the monorepo template. It now
+  refuses to publish a Release for a tag that is not an ancestor of `master`
+  or whose matrix build did not pass (`build.yml` never runs on a tag push, so
+  nothing checked this before), matches the changelog section as text rather
+  than as a regex, passes the notes through a file instead of a
+  `GITHUB_OUTPUT` heredoc that a matching line could truncate, and creates the
+  release with `--verify-tag` so `gh` cannot invent a missing tag from the
+  default branch.
+
 ## 2.2.1 — 2026-08-12
 
 - Internal only: the `Server` definition in `config/di.php` is no longer a

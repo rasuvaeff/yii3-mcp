@@ -28,34 +28,104 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      # Packagist publishes on the tag itself, so by the time this job runs the
+      # package is already out — blocking the GitHub Release cannot unpublish
+      # it, and re-running the whole test suite here would only look like a
+      # gate. What is still worth enforcing is the release rule the process
+      # actually depends on: the tag names a commit that reached master through
+      # a pull request, with its build green.
+      - name: Verify the tag points at validated master history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          if ! git merge-base --is-ancestor "$SHA" origin/master; then
+            echo "::error::$TAG points at $SHA, which is not an ancestor of master." \
+              "Tag a commit that was merged through a pull request."
+            exit 1
+          fi
+
+          # The tag is pushed seconds after the merge, while master's own build
+          # is still queued or running. A `conclusion` of null means "not
+          # settled yet" and an empty list means "not dispatched yet" — neither
+          # is a verdict, and judging them as one failed every release tagged
+          # promptly (`matrix conclusion: ` — an empty string, because
+          # `join(",")` over nulls yields nothing). Both are waited on instead.
+          deadline=$(( SECONDS + 900 ))
+
+          while :; do
+            states=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.name | startswith("PHP ")) | .conclusion // "pending"]')
+
+            found=$(printf '%s' "$states" | jq 'length')
+            pending=$(printf '%s' "$states" | jq '[.[] | select(. == "pending")] | length')
+
+            if [ "$found" -gt 0 ] && [ "$pending" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::$SHA has no settled matrix build after 15 minutes" \
+                "($found found, $pending still running). Re-run this workflow once the build" \
+                "on master has finished; the tag does not need to move."
+              exit 1
+            fi
+
+            echo "Waiting for the matrix build on $SHA ($found found, $pending still running)…"
+            sleep 20
+          done
+
+          verdicts=$(printf '%s' "$states" | jq -r '[.[] | select(. != "success")] | unique | join(",")')
+
+          if [ -n "$verdicts" ]; then
+            echo "::error::$SHA has no successful build (matrix conclusions: $verdicts)." \
+              "A release must not be published for a commit whose CI did not pass."
+            exit 1
+          fi
 
       - name: Extract the changelog section for this tag
-        id: notes
         env:
           TAG: ${{ github.ref_name }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
         run: |
           version="${TAG#v}"
-          # The section runs from its own heading to the next one; a tag with
-          # no section still releases, with a pointer to the changelog.
+          # Matched as text, never as a pattern: a tag is user input, and one
+          # carrying `.` or `*` would otherwise pick up a different section.
+          # The heading is compared with its optional Keep-a-Changelog brackets
+          # stripped, and the version must be followed by nothing, a space or a
+          # `]` — so `1.0.0` never matches the `1.0.0-rc1` section above it.
+          # The section runs to the next heading; a tag with no section still
+          # releases, with a pointer to the changelog.
           notes=$(awk -v v="$version" '
-            $0 ~ "^## +" v "( |$|—|-)" { found = 1; next }
-            found && /^## / { exit }
+            substr($0, 1, 3) == "## " {
+              if (found) { exit }
+              h = substr($0, 4)
+              sub(/^\[/, "", h)
+              sep = substr(h, length(v) + 1, 1)
+              if (substr(h, 1, length(v)) == v && (sep == "" || sep == " " || sep == "]")) {
+                found = 1
+              }
+              next
+            }
             found { print }
           ' CHANGELOG.md)
           if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
             notes="See [CHANGELOG.md](CHANGELOG.md)."
           fi
-          {
-            echo 'body<<RELEASE_NOTES_EOF'
-            printf '%s\n' "$notes"
-            echo 'RELEASE_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+          # Through a file rather than GITHUB_OUTPUT: a multiline output needs a
+          # delimiter, and any fixed one the notes happen to contain on a line
+          # of its own truncates the release body at that point.
+          printf '%s\n' "$notes" > "$NOTES_FILE"
 
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          BODY: ${{ steps.notes.outputs.body }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
         run: |
           # Idempotent: a re-run of the workflow must not fail on an existing
           # release, and a release is never re-created (Packagist blocks
@@ -64,4 +134,7 @@ jobs:
             echo "Release $TAG already exists"
             exit 0
           fi
-          printf '%s' "$BODY" | gh release create "$TAG" --title "$TAG" --notes-file -
+          # --verify-tag, because without it gh creates the missing tag itself
+          # from the default branch — a release pointing at a commit that is not
+          # the one the tag was pushed for.
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$NOTES_FILE"

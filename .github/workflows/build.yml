@@ -20,6 +20,7 @@ jobs:
 
     outputs:
       run: ${{ steps.filter.outputs.run }}
+      mutation: ${{ steps.filter.outputs.mutation }}
 
     steps:
       - name: Checkout
@@ -39,6 +40,7 @@ jobs:
             BASE="$BASE_SHA"
           elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "mutation=true" >> "$GITHUB_OUTPUT"
             exit 0
           else
             BASE="$BEFORE_SHA"
@@ -51,6 +53,18 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Narrower than `run` on purpose: only these files change which
+          # mutants exist or which tests kill them. Docs, examples, psalm.xml,
+          # rector.php and this workflow itself must not cost a full mutation
+          # run. Accepted trade-off: editing the mutation step below no longer
+          # re-runs mutations.
+          if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
+            src tests composer.json testo.php infection.json5; then
+            echo "mutation=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "mutation=true" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -76,7 +90,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: json, fileinfo
+          extensions: json, mbstring, fileinfo
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -109,7 +123,7 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
-          extensions: json, fileinfo
+          extensions: json, mbstring, fileinfo
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -128,7 +142,7 @@ jobs:
   coverage:
     name: Coverage & Mutation
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.mutation == 'true') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -142,7 +156,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: pcov
-          extensions: json, fileinfo
+          extensions: json, mbstring, fileinfo
           tools: composer:v2
 
       - name: Cache Composer dependencies
@@ -155,8 +169,29 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
+      # restore/save are split on purpose: the combined actions/cache declares
+      # post-if: success(), so it never saves on a red job — and a red job is
+      # exactly when a property was falsified and the counterexample is worth
+      # keeping. The run_attempt suffix keeps a re-run from hitting an
+      # already-taken key and silently saving nothing.
+      - name: Restore property regression corpus
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/property-db
+          key: property-db-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: property-db-
+
       - name: Test with coverage
         run: composer test:coverage:ci
+        env:
+          PROPERTY_DB: ${{ github.workspace }}/build/property-db
+
+      - name: Save property regression corpus
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/property-db
+          key: property-db-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Mutation testing
         run: composer mutation
@@ -179,7 +214,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
-          extensions: json, fileinfo, bcmath, intl
+          extensions: json, mbstring, fileinfo, bcmath, intl
           tools: composer:v2
 
       - name: Cache Composer dependencies

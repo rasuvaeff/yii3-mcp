@@ -70,7 +70,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
-          extensions: json, fileinfo
+          extensions: json, mbstring, fileinfo
           tools: composer:v2
 
       - name: Cache Composer dependencies

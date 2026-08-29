@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Classify;
+use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -14,6 +18,14 @@ use Testo\Test;
 #[Covers(ArgumentMasker::class)]
 final class ArgumentMaskerTest
 {
+    /**
+     * The sensitive keys the generated payloads draw from, lowercased. A
+     * subset of the class's own default list — the property needs a pool
+     * small enough that generated keys actually collide with it, not a copy
+     * of the list it is testing.
+     */
+    private const array SENSITIVE = ['password', 'token', 'api_key', 'authorization', 'secret'];
+
     #[DataProvider('defaultKeysProvider')]
     public function masksEveryDefaultKey(string $key): void
     {
@@ -150,5 +162,193 @@ final class ArgumentMaskerTest
     public function emptyArgumentsStayEmpty(): void
     {
         Assert::same((new ArgumentMasker())->mask([]), []);
+    }
+
+    /**
+     * The guarantee the audit and telemetry bridges rely on, over generated
+     * nesting instead of the three hand-written shapes above: after masking,
+     * no sensitive key anywhere in the structure still carries its value.
+     *
+     * @param array<array-key, mixed> $arguments
+     */
+    #[Property(runs: 400, timeoutMs: 500)]
+    public function noSensitiveValueSurvivesAtAnyDepth(array $arguments): void
+    {
+        $masked = (new ArgumentMasker())->mask($arguments);
+
+        Classify::cover($this->containsSensitiveKeyAtDepth($arguments, 1, 2), 'sensitive key at depth >= 2', 15.0);
+        Classify::cover($this->containsSensitiveKeyAtDepth($arguments, 1, 1), 'sensitive key anywhere', 40.0);
+
+        $this->assertFullyMasked($masked);
+    }
+
+    /**
+     * `mask()` is a projection: masking an already-masked structure must be a
+     * no-op, or a second consumer in the chain (telemetry after audit) would
+     * see a different payload than the first.
+     *
+     * @param array<array-key, mixed> $arguments
+     */
+    #[Property(runs: 400, timeoutMs: 500)]
+    public function maskingIsIdempotentOverAnyStructure(array $arguments): void
+    {
+        $masker = new ArgumentMasker();
+        $once = $masker->mask($arguments);
+
+        Assert::same($masker->mask($once), $once);
+    }
+
+    /**
+     * Masking must not reshape the payload: every key survives at every
+     * level, in order, and only the values behind sensitive keys change.
+     * Without this, "mask everything" would pass the property above.
+     *
+     * @param array<array-key, mixed> $arguments
+     */
+    #[Property(runs: 400, timeoutMs: 500)]
+    public function maskingPreservesTheKeyStructureAndEveryOtherValue(array $arguments): void
+    {
+        $masked = (new ArgumentMasker())->mask($arguments);
+
+        Assert::same(array_keys($masked), array_keys($arguments));
+
+        /** @var mixed $value */
+        foreach ($arguments as $key => $value) {
+            if (is_string($key) && in_array(strtolower($key), self::SENSITIVE, strict: true)) {
+                Assert::same($masked[$key], '***');
+
+                continue;
+            }
+
+            if (is_array($value)) {
+                Assert::same(array_keys($this->arrayAt($masked, $key)), array_keys($value));
+
+                continue;
+            }
+
+            Assert::same($masked[$key], $value);
+        }
+    }
+
+    /**
+     * @return array<string, ArbitraryInterface>
+     */
+    public static function noSensitiveValueSurvivesAtAnyDepthGenerators(): array
+    {
+        return ['arguments' => self::argumentsGenerator()];
+    }
+
+    /**
+     * @return array<string, ArbitraryInterface>
+     */
+    public static function maskingIsIdempotentOverAnyStructureGenerators(): array
+    {
+        return ['arguments' => self::argumentsGenerator()];
+    }
+
+    /**
+     * @return array<string, ArbitraryInterface>
+     */
+    public static function maskingPreservesTheKeyStructureAndEveryOtherValueGenerators(): array
+    {
+        return ['arguments' => self::argumentsGenerator()];
+    }
+
+    /**
+     * @return iterable<string, array{array<array-key, mixed>}>
+     */
+    public static function noSensitiveValueSurvivesAtAnyDepthExamples(): iterable
+    {
+        yield 'empty' => [[]];
+        yield 'flat secret' => [['password' => 'p@ss']];
+        yield 'sensitive key holding an array' => [['secret' => ['inner' => 'x']]];
+        yield 'sensitive key nested under a list' => [['accounts' => [['token' => 'a'], ['token' => 'b']]]];
+        yield 'case mismatch' => [['ToKeN' => 'x']];
+        yield 'partial match stays visible' => [['tokenizer' => 'utf8']];
+        yield 'integer keys around a secret' => [[0 => 'a', 'password' => 'p', 1 => 'b']];
+        yield 'deep nesting' => [['a' => ['b' => ['c' => ['api_key' => 'k']]]]];
+    }
+
+    /**
+     * Keys are drawn from a small pool on purpose: a random string almost
+     * never collides with the sensitive list, and a generator that never
+     * produces a secret tests nothing — which is what the `Classify::cover`
+     * gates above enforce.
+     */
+    private static function argumentsGenerator(): ArbitraryInterface
+    {
+        $key = Gen::frequency([
+            [2, Gen::elements(['password', 'token', 'ToKeN', 'api_key', 'Authorization', 'secret'])],
+            [3, Gen::elements(['name', 'age', 'tokenizer', 'passwords_enabled', 'user', 'items'])],
+        ]);
+        $leaf = Gen::oneOf('alice', 42, true, null, 0.5, '');
+
+        return Gen::dictOf(
+            $key,
+            Gen::recursive(
+                $leaf,
+                static fn(ArbitraryInterface $inner): ArbitraryInterface => Gen::frequency([
+                    [2, Gen::dictOf($key, $inner, 0, 3)],
+                    [1, Gen::arrayOf($inner, 0, 3)],
+                ]),
+                maxDepth: 3,
+            ),
+            0,
+            4,
+        );
+    }
+
+    /**
+     * @param array<array-key, mixed> $arguments
+     */
+    private function containsSensitiveKeyAtDepth(array $arguments, int $depth, int $minDepth): bool
+    {
+        /** @var mixed $value */
+        foreach ($arguments as $key => $value) {
+            if ($depth >= $minDepth && is_string($key) && in_array(strtolower($key), self::SENSITIVE, strict: true)) {
+                return true;
+            }
+
+            if (is_array($value) && $this->containsSensitiveKeyAtDepth($value, $depth + 1, $minDepth)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<array-key, mixed> $masked
+     */
+    private function assertFullyMasked(array $masked): void
+    {
+        /** @var mixed $value */
+        foreach ($masked as $key => $value) {
+            if (is_string($key) && in_array(strtolower($key), self::SENSITIVE, strict: true)) {
+                Assert::same($value, '***', sprintf('value behind sensitive key "%s" survived masking', $key));
+
+                continue;
+            }
+
+            if (is_array($value)) {
+                $this->assertFullyMasked($value);
+            }
+        }
+    }
+
+    /**
+     * @param array<array-key, mixed> $masked
+     *
+     * @return array<array-key, mixed>
+     */
+    private function arrayAt(array $masked, string|int $key): array
+    {
+        /** @var mixed $value */
+        $value = $masked[$key] ?? null;
+
+        Assert::true(is_array($value), sprintf('key "%s" stopped being an array', (string) $key));
+
+        /** @var array<array-key, mixed> $value */
+        return $value;
     }
 }
