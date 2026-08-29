@@ -127,8 +127,12 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   extension list for two call sites). `cut()` only avoids SPLITTING a
   character; it does not repair input that was never UTF-8, so a foreign body
   (a legacy-encoded upstream error page) is validated separately with
-  `preg_match('//u', …)` and replaced by a byte-count placeholder. Tests must
-  assert with PCRE, not `mb_check_encoding` — mbstring is absent from CI.
+  `preg_match('//u', …)` and replaced by a byte-count placeholder. Tests assert
+  with PCRE, not `mb_check_encoding`. `ext-mbstring` IS in the CI extension
+  lists now (property-testing requires it), so that no longer fails outright —
+  which is exactly why the rule has to be stated rather than enforced by
+  accident: production code and its tests must not imply a requirement this
+  package deliberately does not declare.
 - **A handler that emits a notification cannot be asserted through
   `Testing\McpTester`.** The moment anything suspends the Fiber to send
   (progress, client logging, `notifications/resources/updated`), the SDK's
@@ -368,6 +372,25 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   sessions with no recorded owner, and a holder/owner disagreement fails
   closed. Do not read it outside `InterceptingReferenceHandler`, and never
   store the raw secret in it.
+- **Six classes are covered by property tests, and the properties are the
+  contract — not the examples.** `Utf8::cut()` (budget, encodability, prefix
+  relation), `OpenApi\ToolNameValidator` (charset + length; stated
+  independently of the class's own regex, which is what makes it able to catch
+  a `\z` → `$` regression), `OpenApi\JsonPointerResolver` (depth/cycle
+  termination — `timeoutMs` is mandatory there, a hung guard must fail CI, not
+  hang it), `Interceptor\ArgumentMasker` (idempotence, no sensitive value at
+  any depth, structure preserved), `Visibility\DeclarativeToolVisibility`
+  (deny beats allow, monotonicity) and `Interceptor\SessionBudgetInterceptor`
+  (model-based, `tests/Support/SessionBudget/`, sequential only — see the
+  concurrency note above). Generators live in `<method>Generators()`, **public
+  static** (rector rewrites a private static helper called from a property
+  body, which silently unhooks the provider — it surfaces on `release-check`,
+  not `build`). Every property carries `Classify::cover` gates: a generator
+  that drifts and stops reaching a branch fails loudly instead of passing
+  vacuously. CI caches the regression corpus (`PROPERTY_DB`) with split
+  `actions/cache/restore` + `save`; do not collapse them back into the
+  combined action, whose `post-if: success()` never saves on the red run that
+  found the counterexample.
 - `#[McpTool]` on `GreetingTool::explode` in tests intentionally throws:
   the assertion is that tool failures surface as MCP error envelopes
   (`isError`/`error`), not HTTP 500 with a trace.
