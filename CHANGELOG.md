@@ -75,8 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PHP-FPM nothing outlives the request to push from. Known gap, now stated
   instead of implied.
 
-## Unreleased
-
 - **`Resource\ResourceUpdateNotifier`** — sends `notifications/resources/updated`
   to the calling session from inside the request that changed the resource
   (takes the SDK's `RequestContext`). The subscription is checked first, so an
