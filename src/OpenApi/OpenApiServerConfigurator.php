@@ -179,7 +179,12 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
 
             $builder->add(
                 definition: $tool,
-                handler: new BridgedToolHandler(operation: $operation, executor: $this->executor, dryRunnable: $dryRunnable),
+                handler: new BridgedToolHandler(
+                    operation: $operation,
+                    executor: $this->executor,
+                    dryRunnable: $dryRunnable,
+                    toolName: $tool->name,
+                ),
             );
         }
     }

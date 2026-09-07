@@ -1060,6 +1060,44 @@ final class HttpOperationExecutorTest
         yield 'leading dash segment' => ['a/-b'];
     }
 
+    /**
+     * The served name is what the client called; the operationId is what the
+     * rename hid from it. Asserted here rather than only through the
+     * configurator, because Infection maps mutants by `#[Covers]` — a test
+     * class not covering this one cannot kill a mutant in it.
+     */
+    public function messagesNameTheServedToolWhenOneIsPassed(): void
+    {
+        $client = new FakeHttpClient(statusCode: 404, body: 'nope');
+        $caught = null;
+
+        try {
+            $this->executor($client)->execute(
+                $this->operation('getBlogTags'),
+                [],
+                dryRunnable: false,
+                toolName: 'blog_tags_list',
+            );
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::string($caught?->getMessage() ?? '')->contains('"blog_tags_list"');
+        Assert::string($caught?->getMessage() ?? '')->notContains('getBlogTags');
+    }
+
+    public function messagesFallBackToTheOperationIdWithoutAServedName(): void
+    {
+        $client = new FakeHttpClient(statusCode: 404, body: 'nope');
+        $caught = null;
+
+        try {
+            $this->executor($client)->execute($this->operation('getBlogTags'), []);
+        } catch (OperationFailedException $caught) {
+        }
+
+        Assert::string($caught?->getMessage() ?? '')->contains('"getBlogTags"');
+    }
+
     private function executor(FakeHttpClient $client, array $headers = []): HttpOperationExecutor
     {
         $factory = new Psr17Factory();

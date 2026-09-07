@@ -1115,6 +1115,54 @@ parameter трактуется как отсутствующий (пропуск
 (`{"type": ["string", "null"]}`) для scalar parameter schemas, которую bridge
 принимает наравне с обычной 3.0 type-строкой.
 
+### Без Yii3-приложения
+
+Мост - фича пакета, а не приложения: `OpenApiBridgeFactory` собирает готовый
+configurator из того, что у потребителя уже есть, поэтому ни один
+`@internal`-класс трогать не нужно.
+
+```php
+use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
+
+$server = (new McpServerFactory($container, $sessionStore))->create([], [
+    OpenApiBridgeFactory::create(
+        spec: __DIR__ . '/openapi.json',   // путь, http(s) URL или уже разобранный документ
+        baseUrl: 'https://api.example.com',
+        httpClient: $httpClient,           // PSR-18
+        requestFactory: $psr17,            // PSR-17
+        streamFactory: $psr17,
+        operations: ['getBlogTags'],
+        headers: ['Authorization' => 'Bearer ' . $token],
+        safeMethodsOnly: true,
+        toolNames: ['getBlogTags' => 'blog_tags_list'],
+    ),
+]);
+```
+
+URL-спека загружается с `specHeaders` (свой скоуп credentials) и кешируется
+через `specCache`, когда `specCacheTtl` больше нуля. Все остальные опции из
+params `openapi` - `modifier`, `dryRunOperations`, `identityProvider`,
+`delegatedHeaderProvider`, `maxResponseBytes`, `opaqueErrors`,
+`multiSegmentPathParams` - здесь именованные аргументы. Config-plugin зовёт
+эту же фабрику, так что оба пути собирают мост одинаково.
+
+### Что видит клиент при неудачном bridged-вызове
+
+Рантайм-сообщения называют тот tool, который клиент действительно вызвал, а не
+upstream `operationId` - под `tool_names` это разные строки, и переименование
+как раз и скрыло operationId от агента:
+
+```json
+{"content":[{"type":"text","text":"Tool \"blog_tags_list\" failed with HTTP 404: {\"message\":\"Not Found\"}"}],"isError":true}
+```
+
+Выдержка из upstream-ответа подавляется через `opaque_errors`; проверки
+аргументов (не-скаляр, разделитель пути, некорректный `dryRun`)
+сформулированы так же. Единственное место, где по-прежнему сообщается
+`operationId`, - **payload dry-run preview**: он описывает upstream-запрос,
+который был бы отправлен, а operationId - способ найти операцию в
+OpenAPI-документе.
+
 ### Output schema из responses
 
 Bridged tool также рекламирует `outputSchema` в `tools/list`, если operation

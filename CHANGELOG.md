@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- `OpenApi\OpenApiBridgeFactory::create()` builds a configured
+  `OpenApiServerConfigurator` from a spec (file path, http(s) URL or decoded
+  document), a base URL, PSR-18/PSR-17 services and the operation allow-list —
+  so the bridge is usable without a Yii3 application. `SpecIndex` and
+  `HttpOperationExecutor` stay `@internal`: Psalm's `@internal` is
+  namespace-scoped, so the factory constructs them while a consumer never
+  references one. `McpServerComponentResolver` now calls the same factory, so
+  the config-plugin path and a standalone server assemble the bridge
+  identically.
+- Bridged tool failures now name the tool the client actually called instead
+  of the upstream `operationId` — under `tool_names` those differ, and the
+  rename is precisely what hid the operationId from the agent. Applies to HTTP
+  failures, the response-cap refusal and every argument guard. The dry-run
+  preview payload still reports `operationId`: it documents the upstream
+  request rather than the call the client made.
+- Those messages now reach the client at all. `BridgedToolHandler` rethrows
+  `OperationFailedException` and the argument `InvalidArgumentException`s as
+  the SDK's `ToolCallException`, which is the only exception type
+  `CallToolHandler` turns into a tool-error envelope carrying the message;
+  everything else became a generic `Error while executing tool` with the text
+  dropped — which also made `opaque_errors` indistinguishable from its own
+  opposite.
+
 - `openapi.multi_segment_path_params` opts a named path parameter into
   values carrying that many `"/"`-separated segments, for upstreams that
   identify a resource by a nested path and accept it percent-encoded

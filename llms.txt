@@ -365,6 +365,21 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `delegated_header_provider` / `dry_run` (list of operationIds) /
   `multi_segment_path_params` (path parameter name => segment budget; empty
   default keeps every path argument single-segment).
+- `OpenApi\OpenApiBridgeFactory::create(spec:, baseUrl:, httpClient:,
+  requestFactory:, streamFactory:, operations:, …)` returns a configured
+  `OpenApiServerConfigurator` WITHOUT a Yii3 application: `spec` takes a file
+  path, an http(s) URL or a decoded document; every `openapi` params option is
+  a named argument (`headers`, `specHeaders`, `specCache`, `specCacheTtl`,
+  `safeMethodsOnly`, `toolNames`, `modifier`, `dryRunOperations`,
+  `identityProvider`, `delegatedHeaderProvider`, `maxResponseBytes`,
+  `opaqueErrors`, `multiSegmentPathParams`). `SpecIndex` and
+  `HttpOperationExecutor` stay `@internal`; the config-plugin path calls this
+  same factory.
+- Bridged failures reach the client as a tool-error envelope naming the SERVED
+  tool name (after `tool_names` and the modifier), not the upstream
+  operationId: `Tool "blog_tags_list" failed with HTTP 404: …`. The dry-run
+  preview payload still reports `operationId` — it documents the upstream
+  request, not the call the client made.
 - Dry-run: an operationId in `dry_run` (or `dryRunOperations`) gets an extra
   `dryRun: boolean` inputSchema argument. Calling with `dryRun: true` returns
   the planned request (`operationId`, `method`, `url`, `body`) as plain text —

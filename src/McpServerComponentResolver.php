@@ -20,11 +20,8 @@ use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
-use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
-use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
 use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
@@ -77,17 +74,6 @@ final readonly class McpServerComponentResolver
         if ($openapi['spec_path'] !== '' && $openapi['operations'] !== []) {
             $cacheTtl = $openapi['cache_ttl'] ?? 0;
 
-            // Spec credentials and operation credentials deliberately have separate scopes.
-            $spec = str_starts_with($openapi['spec_path'], 'http://') || str_starts_with($openapi['spec_path'], 'https://')
-                ? (new SpecLoader(
-                    httpClient: $this->getService(ClientInterface::class),
-                    requestFactory: $this->getService(RequestFactoryInterface::class),
-                    headers: $openapi['spec_headers'] ?? [],
-                    cache: $cacheTtl > 0 ? $this->getService(CacheInterface::class) : null,
-                    cacheTtl: $cacheTtl,
-                ))->fromUrl($openapi['spec_path'])
-                : SpecIndex::fromFile($openapi['spec_path']);
-
             $delegatedHeaderProviderClass = $openapi['delegated_header_provider'] ?? '';
 
             /** @var ?DelegatedHeaderProviderInterface $delegatedHeaderProvider */
@@ -97,25 +83,29 @@ final readonly class McpServerComponentResolver
             /** @var ?OperationModifierInterface $operationModifier */
             $operationModifier = $operationModifierClass === '' ? null : $this->getService($operationModifierClass);
 
-            $configurators[] = new OpenApiServerConfigurator(
-                spec: $spec,
-                executor: new HttpOperationExecutor(
-                    httpClient: $this->getService(ClientInterface::class),
-                    requestFactory: $this->getService(RequestFactoryInterface::class),
-                    streamFactory: $this->getService(StreamFactoryInterface::class),
-                    baseUrl: $openapi['base_url'],
-                    defaultHeaders: $openapi['headers'],
-                    identityProvider: $identityProvider,
-                    delegatedHeaderProvider: $delegatedHeaderProvider,
-                    maxResponseBytes: $openapi['max_response_bytes'] ?? HttpOperationExecutor::DEFAULT_MAX_RESPONSE_BYTES,
-                    opaqueErrors: $openapi['opaque_errors'] ?? false,
-                    multiSegmentPathParams: $openapi['multi_segment_path_params'] ?? [],
-                ),
+            // Same construction path as a standalone consumer: spec
+            // credentials and operation credentials keep separate scopes
+            // inside the factory.
+            $configurators[] = OpenApiBridgeFactory::create(
+                spec: $openapi['spec_path'],
+                baseUrl: $openapi['base_url'],
+                httpClient: $this->getService(ClientInterface::class),
+                requestFactory: $this->getService(RequestFactoryInterface::class),
+                streamFactory: $this->getService(StreamFactoryInterface::class),
                 operations: $openapi['operations'],
+                headers: $openapi['headers'],
+                specHeaders: $openapi['spec_headers'] ?? [],
+                specCache: $cacheTtl > 0 ? $this->getService(CacheInterface::class) : null,
+                specCacheTtl: $cacheTtl,
                 safeMethodsOnly: $openapi['safe_methods_only'] ?? false,
                 toolNames: $openapi['tool_names'] ?? [],
                 modifier: $operationModifier,
                 dryRunOperations: $openapi['dry_run'] ?? [],
+                identityProvider: $identityProvider,
+                delegatedHeaderProvider: $delegatedHeaderProvider,
+                maxResponseBytes: $openapi['max_response_bytes'] ?? null,
+                opaqueErrors: $openapi['opaque_errors'] ?? false,
+                multiSegmentPathParams: $openapi['multi_segment_path_params'] ?? [],
             );
         }
 
