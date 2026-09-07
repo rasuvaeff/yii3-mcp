@@ -117,6 +117,47 @@ expose an operation the safety gate would otherwise reject, and a client
 cannot smuggle `dryRun: true` into a non-`dry_run`-enabled operation to get
 a preview instead of a real call.
 
+## Building the bridge without a Yii3 application
+
+`OpenApi\OpenApiBridgeFactory::create()` returns a configured
+`OpenApiServerConfigurator` from what any consumer already has:
+
+```php
+OpenApiBridgeFactory::create(
+    spec: __DIR__ . '/openapi.json',   // path, http(s) URL, or a decoded document
+    baseUrl: 'https://api.example.com',
+    httpClient: $httpClient,
+    requestFactory: $psr17,
+    streamFactory: $psr17,
+    operations: ['getBlogTags'],
+    headers: ['Authorization' => 'Bearer ' . $token],
+);
+```
+
+`SpecIndex` and `HttpOperationExecutor` remain `@internal` — the factory
+constructs them itself, so a consumer outside `Rasuvaeff\` never references an
+internal class and their constructors stay free to change.
+`McpServerComponentResolver` calls the same factory, so the config-plugin path
+and a standalone server assemble the bridge through one code path.
+
+## A failing bridged call names the tool, not the operationId
+
+Everything a caller reads — HTTP failures, the response-cap refusal and the
+argument guards — names the tool as served (after `tool_names` and the
+operation modifier). Under a rename those two strings differ, and quoting the
+operationId back at an agent hands it an identifier that appears in no tool
+list it has.
+
+The messages reach the client because `BridgedToolHandler` rethrows
+`OperationFailedException` and the argument `InvalidArgumentException`s as the
+SDK's `ToolCallException`: `CallToolHandler` turns only that type into a
+tool-error envelope carrying the message, and replaces every other exception
+with a generic internal error.
+
+The **dry-run preview payload** still reports `operationId`. It documents the
+upstream request that would be sent, and the operationId is how a caller looks
+the operation up in the OpenAPI document.
+
 ## Path arguments are validated, not just encoded
 
 A path argument is rejected at call time when it is empty, `.`, or contains

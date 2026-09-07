@@ -10,11 +10,9 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
-use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
-use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
@@ -25,7 +23,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 // real HTTP requests against the API (its middleware stack applies). Here the
 // PSR-18 client is a stub so the example runs offline; in an application it
 // comes from the container (params 'openapi' => [...] wires everything).
-$spec = SpecIndex::fromJson(json_encode([
+$spec = [
     'openapi' => '3.0.0',
     'info' => ['title' => 'Blog API', 'version' => '1.0.0'],
     'paths' => [
@@ -58,7 +56,7 @@ $spec = SpecIndex::fromJson(json_encode([
             ],
         ],
     ],
-], JSON_THROW_ON_ERROR));
+];
 
 $httpClient = new class implements ClientInterface {
     public ?RequestInterface $lastRequest = null;
@@ -101,16 +99,17 @@ $server = (new McpServerFactory(
     name: 'openapi-example',
     version: '1.0.0',
 ))->create([], [
-    new OpenApiServerConfigurator(
+    // One entry point for the whole bridge: no Yii3, no config plugin, and
+    // nothing @internal to reach for. `spec` also takes a file path or an
+    // http(s) URL (fetched with `specHeaders`, cached with `specCache`).
+    OpenApiBridgeFactory::create(
         spec: $spec,
-        executor: new HttpOperationExecutor(
-            httpClient: $httpClient,
-            requestFactory: $factory,
-            streamFactory: $factory,
-            baseUrl: 'https://api.example.com',
-            defaultHeaders: ['Authorization' => 'Bearer demo-token'],
-        ),
+        baseUrl: 'https://api.example.com',
+        httpClient: $httpClient,
+        requestFactory: $factory,
+        streamFactory: $factory,
         operations: ['getBlogTags', 'getBlogTagBySlug'],   // allow-list: everything else stays hidden
+        headers: ['Authorization' => 'Bearer demo-token'],
         safeMethodsOnly: true,         // non-GET in the list would fail the build
         toolNames: ['getBlogTags' => 'blog_tags_list'],   // LLM-friendlier than the raw operationId
         modifier: $modifier,

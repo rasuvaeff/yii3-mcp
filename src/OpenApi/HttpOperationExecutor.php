@@ -154,9 +154,19 @@ final readonly class HttpOperationExecutor
 
     /**
      * @param array<string, mixed> $arguments tool arguments keyed by parameter name
+     * @param ?string $toolName the name this operation is SERVED under (after
+     *                          `tool_names` and the operation modifier); null
+     *                          falls back to the operationId, which is correct
+     *                          only when the operation was never renamed
      */
-    public function execute(Operation $operation, array $arguments, bool $dryRunnable = false): mixed
+    public function execute(Operation $operation, array $arguments, bool $dryRunnable = false, ?string $toolName = null): mixed
     {
+        // everything the CALLER reads names the tool it actually called: a
+        // renamed operation's operationId is exactly what the rename hid
+        // from the client, so quoting it back gives an agent a
+        // plausible-looking identifier that is in no tool list it has
+        $served = $toolName ?? $operation->operationId;
+
         // a malformed flag must not silently fall through to a REAL call —
         // that is the dangerous direction for a write operation the caller
         // intended to preview. The SDK's schema validation rejects
@@ -167,13 +177,13 @@ final readonly class HttpOperationExecutor
             && !is_bool($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT])
         ) {
             throw new InvalidArgumentException(sprintf(
-                'Argument "%s" of operation "%s" must be a boolean',
+                'Argument "%s" of tool "%s" must be a boolean',
                 InputSchemaBuilder::DRY_RUN_ARGUMENT,
-                $operation->operationId,
+                $served,
             ));
         }
 
-        $path = $this->buildPath($operation, $arguments);
+        $path = $this->buildPath($operation, $arguments, $served);
 
         if ($dryRunnable && ($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false) === true) {
             // mirror the real-send condition below EXACTLY, including key
@@ -233,8 +243,8 @@ final readonly class HttpOperationExecutor
         if ($response->getStatusCode() >= 300) {
             if ($this->opaqueErrors) {
                 throw new OperationFailedException(sprintf(
-                    'Operation "%s" failed with HTTP %d',
-                    $operation->operationId,
+                    'Tool "%s" failed with HTTP %d',
+                    $served,
                     $response->getStatusCode(),
                 ));
             }
@@ -247,8 +257,8 @@ final readonly class HttpOperationExecutor
             [$body, $truncated] = $this->readUpTo($response->getBody(), self::MAX_ERROR_BODY_LENGTH + 1, keepPrefix: true);
 
             throw new OperationFailedException(sprintf(
-                'Operation "%s" failed with HTTP %d: %s',
-                $operation->operationId,
+                'Tool "%s" failed with HTTP %d: %s',
+                $served,
                 $response->getStatusCode(),
                 $this->errorExcerpt($body, $truncated),
             ));
@@ -258,8 +268,8 @@ final readonly class HttpOperationExecutor
 
         if ($truncated) {
             throw new OperationFailedException(sprintf(
-                'Operation "%s" response exceeds the %d-byte limit; refusing to buffer it',
-                $operation->operationId,
+                'Tool "%s" response exceeds the %d-byte limit; refusing to buffer it',
+                $served,
                 $this->maxResponseBytes,
             ));
         }
@@ -341,7 +351,7 @@ final readonly class HttpOperationExecutor
     /**
      * @param array<string, mixed> $arguments
      */
-    private function buildPath(Operation $operation, array $arguments): string
+    private function buildPath(Operation $operation, array $arguments, string $served): string
     {
         $path = $operation->path;
         $query = [];
@@ -356,7 +366,7 @@ final readonly class HttpOperationExecutor
                 continue;
             }
 
-            $value = $this->stringifyArgument($operation, $name, $arguments[$name]);
+            $value = $this->stringifyArgument($served, $name, $arguments[$name]);
 
             if ($parameter['in'] === 'path') {
                 // one segment unless the operator opted this parameter in
@@ -380,9 +390,9 @@ final readonly class HttpOperationExecutor
                     || ($maxSegments === 1 && str_contains($value, '/'))
                 ) {
                     throw new InvalidArgumentException(sprintf(
-                        'Argument "%s" of operation "%s" must not be empty, a dot segment, or contain ".." or a path separator',
+                        'Argument "%s" of tool "%s" must not be empty, a dot segment, or contain ".." or a path separator',
                         $name,
-                        $operation->operationId,
+                        $served,
                     ));
                 }
 
@@ -398,12 +408,12 @@ final readonly class HttpOperationExecutor
                     $segments = explode('/', $value);
 
                     if (count($segments) > $maxSegments) {
-                        throw new InvalidArgumentException($this->segmentRuleViolation($operation, $name, $maxSegments));
+                        throw new InvalidArgumentException($this->segmentRuleViolation($served, $name, $maxSegments));
                     }
 
                     foreach ($segments as $segment) {
                         if (preg_match(self::PATH_SEGMENT_PATTERN, $segment) !== 1) {
-                            throw new InvalidArgumentException($this->segmentRuleViolation($operation, $name, $maxSegments));
+                            throw new InvalidArgumentException($this->segmentRuleViolation($served, $name, $maxSegments));
                         }
                     }
                 }
@@ -416,8 +426,8 @@ final readonly class HttpOperationExecutor
 
         if (preg_match('/\{[^}]+\}/', $path) === 1) {
             throw new InvalidArgumentException(sprintf(
-                'Operation "%s" is missing a required path parameter (path template: %s)',
-                $operation->operationId,
+                'Tool "%s" is missing a required path parameter (path template: %s)',
+                $served,
                 $operation->path,
             ));
         }
@@ -425,26 +435,26 @@ final readonly class HttpOperationExecutor
         return $path . ($query === [] ? '' : '?' . http_build_query($query));
     }
 
-    private function segmentRuleViolation(Operation $operation, string $name, int $maxSegments): string
+    private function segmentRuleViolation(string $served, string $name, int $maxSegments): string
     {
         return sprintf(
-            'Argument "%s" of operation "%s" must be 1 to %d "/"-separated segments, each starting with a letter, digit or "_" and containing only letters, digits, "_", "-" and "."',
+            'Argument "%s" of tool "%s" must be 1 to %d "/"-separated segments, each starting with a letter, digit or "_" and containing only letters, digits, "_", "-" and "."',
             $name,
-            $operation->operationId,
+            $served,
             $maxSegments,
         );
     }
 
-    private function stringifyArgument(Operation $operation, string $name, mixed $value): string
+    private function stringifyArgument(string $served, string $name, mixed $value): string
     {
         return match (true) {
             is_string($value) => $value,
             is_int($value), is_float($value) => (string) $value,
             is_bool($value) => $value ? 'true' : 'false',
             default => throw new InvalidArgumentException(sprintf(
-                'Argument "%s" of operation "%s" must be a scalar',
+                'Argument "%s" of tool "%s" must be a scalar',
                 $name,
-                $operation->operationId,
+                $served,
             )),
         };
     }

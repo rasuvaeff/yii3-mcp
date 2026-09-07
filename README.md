@@ -1118,6 +1118,53 @@ empty value) — matching OpenAPI 3.1's nullable union notation
 (`{"type": ["string", "null"]}`) on scalar parameter schemas, which the
 bridge accepts alongside the plain 3.0 type string.
 
+### Without a Yii3 application
+
+The bridge is a package feature, not an application one: `OpenApiBridgeFactory`
+builds a ready configurator from what any consumer already has, so nothing
+`@internal` has to be reached for.
+
+```php
+use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
+
+$server = (new McpServerFactory($container, $sessionStore))->create([], [
+    OpenApiBridgeFactory::create(
+        spec: __DIR__ . '/openapi.json',   // path, http(s) URL, or a decoded document
+        baseUrl: 'https://api.example.com',
+        httpClient: $httpClient,           // PSR-18
+        requestFactory: $psr17,            // PSR-17
+        streamFactory: $psr17,
+        operations: ['getBlogTags'],
+        headers: ['Authorization' => 'Bearer ' . $token],
+        safeMethodsOnly: true,
+        toolNames: ['getBlogTags' => 'blog_tags_list'],
+    ),
+]);
+```
+
+A URL spec is fetched with `specHeaders` (its own credential scope) and cached
+through `specCache` when `specCacheTtl` is above zero. Every other option the
+`openapi` params carry — `modifier`, `dryRunOperations`, `identityProvider`,
+`delegatedHeaderProvider`, `maxResponseBytes`, `opaqueErrors`,
+`multiSegmentPathParams` — is a named argument here. The config-plugin path
+calls this same factory, so both assemble the bridge identically.
+
+### What a failing bridged call tells the client
+
+Runtime messages name the tool the client actually called, not the upstream
+`operationId` — under `tool_names` those differ, and the rename is exactly
+what hid the operationId from the agent:
+
+```json
+{"content":[{"type":"text","text":"Tool \"blog_tags_list\" failed with HTTP 404: {\"message\":\"Not Found\"}"}],"isError":true}
+```
+
+The upstream excerpt is suppressed by `opaque_errors`; argument guards
+(non-scalar, path-separator, malformed `dryRun`) are phrased the same way. The
+one place that still reports the `operationId` is the **dry-run preview
+payload** — it documents the upstream request that would be sent, and the
+operationId is how a caller looks it up in the OpenAPI document.
+
 ### Output schema from responses
 
 A bridged tool also advertises `outputSchema` in `tools/list` when the

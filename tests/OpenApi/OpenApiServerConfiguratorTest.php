@@ -588,6 +588,121 @@ final class OpenApiServerConfiguratorTest
     /**
      * @param list<class-string> $toolClasses attribute tools registered alongside the bridge
      */
+    /**
+     * The rename is exactly what hid the operationId from the client, so a
+     * runtime message quoting it back hands the agent a plausible-looking
+     * identifier that appears in no tool list it has.
+     */
+    public function bridgedFailuresNameTheServedToolNotTheOperationId(): void
+    {
+        $action = $this->action(
+            new FakeHttpClient(statusCode: 404, body: '{"message":"404 Not Found"}'),
+            ['getBlogTags'],
+            toolNames: ['getBlogTags' => 'blog_tags_list'],
+        );
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 20,
+            'method' => 'tools/call',
+            'params' => ['name' => 'blog_tags_list', 'arguments' => []],
+        ], $sessionId);
+
+        $text = json_encode($this->decode($response), JSON_THROW_ON_ERROR);
+
+        Assert::string($text)->contains('blog_tags_list');
+        Assert::string($text)->notContains('getBlogTags');
+    }
+
+    public function bridgedArgumentGuardsNameTheServedTool(): void
+    {
+        $action = $this->action(
+            new FakeHttpClient(),
+            ['getBlogTagBySlug'],
+            toolNames: ['getBlogTagBySlug' => 'blog_tag_get'],
+        );
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 21,
+            'method' => 'tools/call',
+            'params' => ['name' => 'blog_tag_get', 'arguments' => ['slug' => 'a/b']],
+        ], $sessionId);
+
+        $text = json_encode($this->decode($response), JSON_THROW_ON_ERROR);
+
+        Assert::string($text)->contains('blog_tag_get');
+        Assert::string($text)->notContains('getBlogTagBySlug');
+    }
+
+    /**
+     * A modifier renaming the tool AFTER the tool_names pass is the served
+     * name — the executor must be told that one, not the intermediate.
+     */
+    public function modifierRenameIsWhatFailuresName(): void
+    {
+        $modifier = new CallbackOperationModifier(
+            static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                name: 'final_name',
+                title: $tool->title,
+                inputSchema: $tool->inputSchema,
+                description: $tool->description,
+                annotations: $tool->annotations,
+                outputSchema: $tool->outputSchema,
+            ),
+        );
+        $action = $this->action(
+            new FakeHttpClient(statusCode: 500, body: 'boom'),
+            ['getBlogTags'],
+            toolNames: ['getBlogTags' => 'intermediate_name'],
+            modifier: $modifier,
+        );
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 22,
+            'method' => 'tools/call',
+            'params' => ['name' => 'final_name', 'arguments' => []],
+        ], $sessionId);
+
+        $text = json_encode($this->decode($response), JSON_THROW_ON_ERROR);
+
+        Assert::string($text)->contains('final_name');
+        Assert::string($text)->notContains('intermediate_name');
+    }
+
+    /**
+     * The dry-run preview reports the UPSTREAM operation, not the tool: it is
+     * documentation of the request that would be sent, and the operationId is
+     * the only way a caller can look it up in the OpenAPI document.
+     */
+    public function dryRunPreviewKeepsReportingTheOperationId(): void
+    {
+        $action = $this->action(
+            new FakeHttpClient(),
+            ['getBlogTags'],
+            toolNames: ['getBlogTags' => 'blog_tags_list'],
+            dryRunOperations: ['getBlogTags'],
+        );
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 23,
+            'method' => 'tools/call',
+            'params' => ['name' => 'blog_tags_list', 'arguments' => ['dryRun' => true]],
+        ], $sessionId);
+
+        $preview = $this->decode($response)['result']['content'][0]['text'];
+
+        Assert::json($preview)->isObject()->assertPath('$.operationId', static function ($json): void {
+            Assert::same($json->decode(), 'getBlogTags');
+        });
+    }
+
     private function action(
         FakeHttpClient $client,
         array $operations,

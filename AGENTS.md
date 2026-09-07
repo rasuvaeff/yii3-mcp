@@ -35,7 +35,7 @@ FilteredListResourcesHandler, FilteredListResourceTemplatesHandler,
 FilteredCompletionCompleteHandler are @internal}`,
 `OpenApi\{SpecIndex, ToolNameValidator, JsonPointerResolver,
 OutputSchemaProjector, OperationContractValidator are @internal;
-OpenApiServerConfigurator,
+OpenApiBridgeFactory, OpenApiServerConfigurator,
 SpecLoader, Operation, OperationModifierInterface, ExecutionIdentity,
 ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface}`,
 `Apps\{McpAppsConfigurator, AppDefinition; AppParamParser and
@@ -279,6 +279,32 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   the single-segment rule above is what every deployment gets until someone
   opts a parameter in — `routeEscapingPathArgumentIsRejected` runs against a
   non-opted parameter and is the regression guard for that.
+- **`OpenApi\OpenApiBridgeFactory` is the ONE construction path for the
+  bridge, and the reason `SpecIndex`/`HttpOperationExecutor` can stay
+  `@internal`.** Psalm's `@internal` is namespace-scoped, so a factory living
+  in `Rasuvaeff\Yii3Mcp\OpenApi` may construct both while a consumer outside
+  `Rasuvaeff\` touches only the factory — which is what makes the bridge a
+  package feature rather than a Yii3-application one (a consumer has no legal
+  way to silence `InternalClass`: no baseline, no suppressions). Do NOT
+  promote either class to `@api` to "fix" a consumer; add a named argument to
+  the factory instead. `McpServerComponentResolver` calls it too — keep it
+  that way, or the config path and a standalone server drift apart. New
+  arguments go LAST and optional: the factory is `@api` and BC-checked.
+- **Everything a bridged call's caller reads names the SERVED tool, and it
+  only reaches the caller because `BridgedToolHandler` rethrows.** The served
+  name (post-`tool_names`, post-modifier) is passed into
+  `HttpOperationExecutor::execute()` as the last optional argument and used in
+  every message; the operationId is what the rename hid from the agent, so
+  quoting it back gives it an identifier in no tool list. Two things are
+  deliberate and must not be "simplified": (1) `BridgedToolHandler` catches
+  `OperationFailedException` and the argument `InvalidArgumentException`s and
+  rethrows them as the SDK's `ToolCallException` — `CallToolHandler` turns
+  ONLY that type into a tool-error envelope carrying the message and replaces
+  every other Throwable with `Error::forInternalError('Error while executing
+  tool')`, dropping the text entirely (which also made `opaque_errors`
+  meaningless, since nothing reached the caller either way); (2) the dry-run
+  preview payload still reports `operationId` — it documents the upstream
+  request, and that is the id a caller looks up in the OpenAPI document.
 - **An operation's static path (the OpenAPI Path Item Object key) must start
   with `/`; `SpecIndex` silently drops any operation whose path doesn't.**
   `HttpOperationExecutor` builds the request URL as `$baseUrl . $path` with no
