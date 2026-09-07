@@ -1002,6 +1002,10 @@ output schemas - из success response (см. ниже).
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
         'max_response_bytes' => 4_194_304, // потолок upstream body, читается инкрементально
         'opaque_errors' => false,      // true = скрывать upstream error bodies
+        // разрешить path-параметру значения из нескольких сегментов через "/"
+        // (GitLab "group/project"); пустой список по умолчанию = каждый path
+        // argument односегментный, ровно как раньше
+        'multi_segment_path_params' => ['id' => 3],
     ],
 ],
 ```
@@ -1055,7 +1059,21 @@ schemas, custom serialization, non-default `explode` и `allowReserved=true`
 allow-listed route - с credentials бриджа; пустое значение - тот же escape на
 уровень выше (`/users/` - обычно collection route, а не allow-listed item
 route). Одиночные точки допустимы (`v1.2` - валидный slug); значение, которому
-нужен слеш или `..` внутри, через path argument не пробросить. Base URL не должен содержать credentials (userinfo),
+нужен `..` внутри, через path argument не пробросить.
+
+Параметр, перечисленный в `multi_segment_path_params`, может нести указанное
+число сегментов через `"/"` - для upstream, который идентифицирует ресурс
+вложенным путём и принимает его percent-encoded (GitLab понимает
+`group/project` как `group%2Fproject`). Opt-in даёт разделитель и ничего
+больше: `..`, обратный слеш, пустое значение и одиночная `.` по-прежнему
+отклоняются, каждый сегмент обязан матчить `[A-Za-z0-9_][A-Za-z0-9_.-]*`, а
+сам лимит обязан быть целым числом от 1 до 20 - строка, float или значение вне
+диапазона роняют сборку сервера. Включать параметр нужно осознанно:
+значение приходит от MCP client, а многосегментное значение больше не
+удерживает запрос на allow-listed route (`1/repository/archive` под
+`/projects/{id}` попадает в operation, которой в allow-list нет). Границей
+служит именно лимит сегментов - держите его равным реальной глубине
+вложенности upstream. Base URL не должен содержать credentials (userinfo),
 query string или fragment - dry-run preview возвращает полный URL
 вызывающему, поэтому base URL никогда не может быть носителем credentials.
 Фиксированные upstream

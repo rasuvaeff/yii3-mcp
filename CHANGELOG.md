@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- `openapi.multi_segment_path_params` opts a named path parameter into
+  values carrying that many `"/"`-separated segments, for upstreams that
+  identify a resource by a nested path and accept it percent-encoded
+  (GitLab's `group/project` → `group%2Fproject`, which the bridge previously
+  could not call at all). Empty by default: with no parameter opted in,
+  path-argument validation is unchanged. The opt-in allows the separator and
+  nothing else — `..`, a backslash, an empty value and a bare `.` stay
+  rejected, every segment must match `[A-Za-z0-9_][A-Za-z0-9_.-]*`, and the
+  limit must be an integer from 1 to 20 — a string, float or out-of-range
+  value fails at server build time rather than being coerced. Neither the charset nor that ceiling is
+  configurable: a multi-segment value no longer pins the request to the
+  allow-listed route, and the segment cap is what bounds it.
+
 - Internal only: property-based tests via `rasuvaeff/property-testing-testo`
   for the six classes whose contracts are invariants rather than fixed cases —
   `Utf8::cut()`, `OpenApi\ToolNameValidator`, `OpenApi\JsonPointerResolver`,

@@ -127,8 +127,45 @@ real separator — so a value like `../..` could climb out of the
 allow-listed route using the bridge's credentials; an empty value is the
 same escape one level up (`/users/` is typically the collection route, not
 the allow-listed item route). Single dots are fine (`v1.2` is a valid
-slug) — a value that genuinely needs a slash or `..` cannot be bridged as a
-path argument.
+slug) — a value that genuinely needs `..` cannot be bridged as a path
+argument.
+
+### Multi-segment path arguments are opt-in, per parameter
+
+Some upstreams identify a resource by a nested path and accept it
+percent-encoded — GitLab takes `group/project` as `group%2Fproject`. Listing
+the parameter in `openapi.multi_segment_path_params` allows that many
+`"/"`-separated segments for that parameter only:
+
+```php
+'openapi' => [
+    'multi_segment_path_params' => ['id' => 3],
+],
+```
+
+Empty by default, so every path argument stays single-segment unless an
+operator says otherwise. The opt-in buys the separator and nothing else:
+
+| Value | `['id' => 3]` | Why |
+|---|---|---|
+| `dev/keppio` | accepted | two well-formed segments |
+| `122` | accepted | single segment, unchanged |
+| `a..b`, `x/..`, `..` | rejected | `..` anywhere |
+| `a\b` | rejected | backslash anywhere |
+| `dev//keppio`, `/x`, `x/` | rejected | empty segment |
+| `dev/./x` | rejected | `.` segment |
+| `dev/kep pio`, `dev/-x` | rejected | segment charset |
+| `1/repository/archive/x` | rejected | over the segment limit |
+
+The limit must be an integer from 1 to 20 — a string (`'3'`), a float or an
+out-of-range value fails at server build time rather than being coerced.
+Two things are deliberately NOT configurable: the per-segment charset
+(`[A-Za-z0-9_][A-Za-z0-9_.-]*`) and that ceiling. **A multi-segment value no longer pins the request to the
+allow-listed route** — under `GET /projects/{id}`, a value of
+`1/repository/archive` reaches an operation `operations` never exposed, with
+the bridge's credentials. The segment cap is the only thing that bounds that,
+and the value comes from the MCP client, so set the limit to the upstream's
+real nesting depth and no higher.
 
 The **base URL** must not embed credentials (userinfo) or carry a query
 string/fragment — dry-run previews return the full URL to the caller, so

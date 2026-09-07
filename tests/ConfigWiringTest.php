@@ -9,6 +9,7 @@ use LogicException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Schema\JsonRpc\MessageInterface;
+use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
@@ -16,21 +17,29 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
+use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
+use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use RuntimeException;
@@ -289,6 +298,170 @@ final class ConfigWiringTest
             $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container),
             Server::class,
         );
+    }
+
+    /**
+     * The unit tests construct the executor directly, so they cannot see a
+     * typo in the params key or in the resolver's argument name — `?? []`
+     * would swallow either silently and every path argument would quietly
+     * stay single-segment.
+     */
+    public function multiSegmentPathParamsReachTheBridgedExecutor(): void
+    {
+        $client = new FakeHttpClient();
+        $psr17 = new Psr17Factory();
+        $path = sys_get_temp_dir() . '/yii3-mcp-wiring-spec-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTagBySlug'];
+        $mcp['openapi']['multi_segment_path_params'] = ['slug' => 3];
+
+        try {
+            /** @var Closure $definition */
+            $definition = $this->di($params)[Server::class]['definition'];
+            $container = new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]);
+            $factory = new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore());
+
+            /** @var Server $server */
+            $server = $definition($factory, $container);
+
+            (new McpTester($server, $psr17, $psr17, $psr17))
+                ->callTool('getBlogTagBySlug', ['slug' => 'dev/keppio']);
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/dev%2Fkeppio');
+    }
+
+    /**
+     * Every optional `openapi` key the resolver reads with `??` is set here
+     * to a NON-default value and observed: a `??` whose left side is never
+     * present is indistinguishable from its own fallback.
+     */
+    public function optionalOpenApiKeysReachTheBridge(): void
+    {
+        $client = new FakeHttpClient();
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['tool_names'] = ['getBlogTags' => 'blog_tags'];
+        $mcp['openapi']['operation_modifier'] = CallbackOperationModifier::class;
+        $mcp['openapi']['dry_run'] = ['getBlogTags'];
+
+        try {
+            $tester = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+                CallbackOperationModifier::class => new CallbackOperationModifier(
+                    static fn(Operation $operation, Tool $tool): Tool => new Tool(
+                        name: $tool->name . '_v2',
+                        title: $tool->title,
+                        inputSchema: $tool->inputSchema,
+                        description: $tool->description,
+                        annotations: $tool->annotations,
+                        outputSchema: $tool->outputSchema,
+                    ),
+                ),
+            ]), $psr17);
+
+            $result = $tester->callTool('blog_tags_v2', ['dryRun' => true]);
+        } finally {
+            @unlink($path);
+        }
+
+        // the modifier ran on top of the tool_names rename…
+        Assert::json($result['content'][0]['text'])
+            ->isObject()
+            ->hasKeys('dryRun', 'operationId', 'method', 'url');
+
+        // …and dry_run kept the call off the wire
+        Assert::same($client->requestCount, 0);
+    }
+
+    public function safeMethodsOnlyReachesTheBridge(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['createSubscriber'];
+        $mcp['openapi']['safe_methods_only'] = true;
+
+        $container = new SimpleContainer([
+            ClientInterface::class => new FakeHttpClient(),
+            RequestFactoryInterface::class => $psr17,
+            StreamFactoryInterface::class => $psr17,
+        ]);
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $caught = null;
+
+        try {
+            $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+        } catch (UnsafeOperationException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+    }
+
+    /**
+     * The URL branch of the spec source, with the two keys only it reads:
+     * `spec_headers` (its own credential scope) and `cache_ttl`.
+     */
+    public function urlSpecIsFetchedWithItsOwnHeadersAndCacheTtl(): void
+    {
+        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $cache = new FakeCache();
+        $psr17 = new Psr17Factory();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = 'https://spec.test/openapi.json';
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['spec_headers'] = ['X-Spec-Token' => 'spec-only'];
+        $mcp['openapi']['headers'] = ['X-Api-Token' => 'api-only'];
+        $mcp['openapi']['cache_ttl'] = 60;
+
+        $this->bridgeTester($params, new SimpleContainer([
+            ClientInterface::class => $client,
+            RequestFactoryInterface::class => $psr17,
+            StreamFactoryInterface::class => $psr17,
+            CacheInterface::class => $cache,
+        ]), $psr17)->callTool('getBlogTags');
+
+        // the operation call carries the operation scope only…
+        Assert::same($client->lastRequest?->getHeaderLine('X-Api-Token'), 'api-only');
+        Assert::same($client->lastRequest?->getHeaderLine('X-Spec-Token'), '');
+
+        // …and the URL document went through the PSR-16 cache with its TTL
+        Assert::same($cache->lastTtl, 60);
+        Assert::same(count($cache->values), 1);
     }
 
     public function omittedOptionalLimitsAndBudgetStayDisabled(): void
@@ -814,6 +987,31 @@ final class ConfigWiringTest
     /**
      * @return array<string, mixed>
      */
+    private function writeSpecFile(): string
+    {
+        $path = sys_get_temp_dir() . '/yii3-mcp-wiring-spec-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+
+        return $path;
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function bridgeTester(array $params, SimpleContainer $container, Psr17Factory $psr17): McpTester
+    {
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        /** @var Server $server */
+        $server = $definition(
+            new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()),
+            $container,
+        );
+
+        return new McpTester($server, $psr17, $psr17, $psr17);
+    }
+
     private function params(): array
     {
         return require dirname(__DIR__) . '/config/params.php';

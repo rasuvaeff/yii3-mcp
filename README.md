@@ -1002,6 +1002,10 @@ handlers directly.
         'safe_methods_only' => true,   // read-only bridge: non-GET in the list => build error
         'max_response_bytes' => 4_194_304, // upstream body cap, read incrementally
         'opaque_errors' => false,      // true = suppress upstream error bodies
+        // opt a path parameter into "/"-separated values (GitLab's
+        // "group/project"); empty default = every path argument is
+        // single-segment, exactly as before
+        'multi_segment_path_params' => ['id' => 3],
     ],
 ],
 ```
@@ -1057,8 +1061,20 @@ servlet containers) hand back as a real separator, so a value like `../..`
 could climb out of the allow-listed route with the bridge's credentials; an
 empty value is the same escape one level up (`/users/` is typically the
 collection route, not the allow-listed item route). Single dots are fine
-(`v1.2` is a valid slug); a value that needs a slash or `..` inside it cannot
-be bridged as a path argument. The base URL must not
+(`v1.2` is a valid slug); a value that needs `..` inside it cannot be bridged
+as a path argument.
+
+A parameter listed in `multi_segment_path_params` may carry that many
+`"/"`-separated segments — for an upstream that identifies a resource by a
+nested path and accepts it percent-encoded (GitLab takes `group/project` as
+`group%2Fproject`). The opt-in buys the separator and nothing else: `..`, a
+backslash, an empty value and a bare `.` stay rejected, every segment must
+match `[A-Za-z0-9_][A-Za-z0-9_.-]*`, and the limit must be an integer from 1
+to 20 — a string, float or out-of-range value fails at server build time. Opt a parameter in deliberately — the value comes from the MCP client,
+and a multi-segment value no longer keeps the request on the allow-listed
+route (`1/repository/archive` under `/projects/{id}` reaches an operation the
+allow-list never exposed). The segment cap is what bounds that, so keep it as
+low as the upstream's real nesting depth. The base URL must not
 embed credentials (userinfo) or carry a query string/fragment — dry-run
 previews return the full URL to the caller, so the base URL is never allowed
 to be a credential carrier. Fixed upstream headers belong in `headers`/

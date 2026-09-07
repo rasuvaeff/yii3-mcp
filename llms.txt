@@ -362,7 +362,9 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `cache_ttl` (PSR-16, raw document, 0 disables) / `max_response_bytes`
   (upstream body cap, incremental read, default 4 MiB) / `opaque_errors`
   (suppress upstream error bodies) / `identity_provider` /
-  `delegated_header_provider` / `dry_run` (list of operationIds).
+  `delegated_header_provider` / `dry_run` (list of operationIds) /
+  `multi_segment_path_params` (path parameter name => segment budget; empty
+  default keeps every path argument single-segment).
 - Dry-run: an operationId in `dry_run` (or `dryRunOperations`) gets an extra
   `dryRun: boolean` inputSchema argument. Calling with `dryRun: true` returns
   the planned request (`operationId`, `method`, `url`, `body`) as plain text —
@@ -694,6 +696,7 @@ client ids is rejected), `secret_header`,
 `openapi.spec_headers`, `openapi.max_response_bytes`, `openapi.opaque_errors`,
 `openapi.cache_ttl`, `openapi.identity_provider`,
 `openapi.delegated_header_provider`, `openapi.safe_methods_only`,
+`openapi.multi_segment_path_params`,
 `expected_http_host`.
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,

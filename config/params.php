@@ -142,6 +142,20 @@ return [
             'spec_headers' => [],
             // PSR-16 TTL for URL specs. 0 preserves fetch-on-every-build.
             'cache_ttl' => 0,
+            // path parameter name => how many "/"-separated segments its
+            // values may carry. Empty (the default) means every path
+            // argument stays single-segment: a slash is rejected, as are
+            // "..", a backslash, an empty value and a bare ".". Opt a
+            // parameter in only for an upstream that genuinely identifies a
+            // resource by a nested path AND accepts it percent-encoded
+            // (GitLab: "group/project" as %2F) — the value comes from the
+            // MCP client, so this widens what the agent may put into the
+            // URL. ".." and backslashes stay rejected; every segment must
+            // match [A-Za-z0-9_][A-Za-z0-9_.-]*; the limit itself is capped
+            // at 20. The limit must be an int in that range — a string,
+            // float or out-of-range value fails at server build time.
+            // Example: ['id' => 3].
+            'multi_segment_path_params' => [],
             // upper bound on an upstream response body the executor will
             // buffer; the read stops (and the call fails) before a byte over
             // the cap is materialized
