@@ -6,6 +6,10 @@ namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use InvalidArgumentException;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Classify;
+use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
@@ -29,6 +33,9 @@ use Testo\Test;
 #[Covers(OperationFailedException::class)]
 final class HttpOperationExecutorTest
 {
+    private const string SEGMENT_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.';
+    private const string SEGMENT_LEAD_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
+
     public function buildsUrlWithQueryParameters(): void
     {
         $client = new FakeHttpClient();
@@ -830,6 +837,229 @@ final class HttpOperationExecutorTest
         Assert::same($result, $body);
     }
 
+    public function optedInPathArgumentCarriesSeparatorsPercentEncoded(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->multiSegmentExecutor($client, ['slug' => 3])
+            ->execute($this->operation('getBlogTagBySlug'), ['slug' => 'dev/keppio']);
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/dev%2Fkeppio');
+    }
+
+    public function optedInPathArgumentStillAcceptsASingleSegment(): void
+    {
+        $client = new FakeHttpClient();
+
+        $this->multiSegmentExecutor($client, ['slug' => 3])
+            ->execute($this->operation('getBlogTagBySlug'), ['slug' => '122']);
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/122');
+    }
+
+    /**
+     * The opt-in buys the separator and nothing else: everything
+     * {@see self::routeEscapingPathArgumentProvider()} rejects for a plain
+     * parameter — except the bare separator — stays rejected here too.
+     */
+    #[DataProvider('optedInRejectedPathArgumentProvider')]
+    public function optedInPathArgumentIsStillValidated(string $value): void
+    {
+        $client = new FakeHttpClient();
+        $caught = null;
+
+        try {
+            $this->multiSegmentExecutor($client, ['slug' => 3])
+                ->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($client->requestCount, 0);
+    }
+
+    public static function optedInRejectedPathArgumentProvider(): iterable
+    {
+        yield 'dot segment' => ['..'];
+        yield 'current directory' => ['.'];
+        yield 'empty' => [''];
+        yield 'compound traversal' => ['../..'];
+        yield 'traversal after a segment' => ['x/..'];
+        yield 'traversal inside a segment' => ['a..b'];
+        yield 'backslash' => ['a\\b'];
+        yield 'empty segment' => ['dev//keppio'];
+        yield 'leading separator' => ['/keppio'];
+        yield 'trailing separator' => ['dev/'];
+        yield 'current directory segment' => ['dev/./keppio'];
+        yield 'over the segment limit' => ['1/repository/archive/x'];
+        yield 'out-of-charset segment' => ['dev/kep pio'];
+        yield 'segment starting with a dot' => ['dev/.keppio'];
+        yield 'segment starting with a dash' => ['dev/-keppio'];
+    }
+
+    public function segmentLimitOfOneKeepsSingleSegmentBehaviour(): void
+    {
+        $client = new FakeHttpClient();
+        $executor = $this->multiSegmentExecutor($client, ['slug' => 1]);
+        $caught = null;
+
+        try {
+            $executor->execute($this->operation('getBlogTagBySlug'), ['slug' => 'dev/keppio']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+
+        $executor->execute($this->operation('getBlogTagBySlug'), ['slug' => 'v1.2']);
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/v1.2');
+    }
+
+    public function segmentLimitAtTheCeilingIsAccepted(): void
+    {
+        $client = new FakeHttpClient();
+        $value = implode('/', array_fill(0, 20, 'a'));
+
+        $this->multiSegmentExecutor($client, ['slug' => 20])
+            ->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
+
+        Assert::same(
+            (string) $client->lastRequest?->getUri(),
+            'https://api.test/rest/blog-tag/' . str_repeat('a%2F', 19) . 'a',
+        );
+    }
+
+    /**
+     * The limits arrive from application params, where nothing enforces the
+     * shape. A numeric string is the dangerous one: it passes every ordering
+     * comparison, then fails `=== 1` in buildPath() — silently switching the
+     * multi-segment path on for a parameter configured as single-segment.
+     */
+    #[DataProvider('invalidSegmentLimitProvider')]
+    public function invalidSegmentLimitThrows(mixed $limit): void
+    {
+        Expect::exception(InvalidArgumentException::class);
+
+        $this->multiSegmentExecutor(new FakeHttpClient(), ['slug' => $limit]);
+    }
+
+    public function invalidSegmentLimitNamesTheOffendingValue(): void
+    {
+        $caught = null;
+
+        try {
+            $this->multiSegmentExecutor(new FakeHttpClient(), ['slug' => 21]);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::same(
+            $caught?->getMessage(),
+            'Segment limit for path parameter "slug" must be an integer between 1 and 20, 21 given',
+        );
+    }
+
+    public function invalidSegmentLimitNamesTheOffendingType(): void
+    {
+        $caught = null;
+
+        try {
+            $this->multiSegmentExecutor(new FakeHttpClient(), ['slug' => '3']);
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::same(
+            $caught?->getMessage(),
+            'Segment limit for path parameter "slug" must be an integer between 1 and 20, string given',
+        );
+    }
+
+    public static function invalidSegmentLimitProvider(): iterable
+    {
+        yield 'below one' => [0];
+        yield 'negative' => [-1];
+        yield 'above the ceiling' => [21];
+        yield 'numeric string within range' => ['3'];
+        yield 'numeric string of one' => ['1'];
+        yield 'numeric string out of range' => ['21'];
+        yield 'non-numeric string' => ['three'];
+        yield 'float' => [3.0];
+        yield 'bool' => [true];
+        yield 'null' => [null];
+        yield 'array' => [[3]];
+    }
+
+    /**
+     * The rule is stated here independently of the executor's own regex —
+     * a charset/anchor regression in {@see HttpOperationExecutor} fails this
+     * property instead of moving in lockstep with it.
+     */
+    #[Property(runs: 400, timeoutMs: 250)]
+    public function optedInPathArgumentAcceptsExactlyWellFormedSegmentPaths(string $value): void
+    {
+        $segments = explode('/', $value);
+        $wellFormed = $value !== ''
+            && !str_contains($value, '..')
+            && !str_contains($value, '\\')
+            && count($segments) <= 3
+            && array_reduce(
+                $segments,
+                static fn(bool $carry, string $segment): bool => $carry
+                    && $segment !== ''
+                    && strspn($segment, self::SEGMENT_CHARSET) === strlen($segment)
+                    && strspn($segment[0], self::SEGMENT_LEAD_CHARSET) === 1,
+                true,
+            );
+
+        Classify::cover($wellFormed, 'accepted path', 15.0);
+        Classify::cover(!$wellFormed, 'rejected path', 15.0);
+        Classify::when(count($segments) > 1, 'multi-segment');
+        Classify::when(count($segments) > 3, 'over the segment limit');
+
+        $client = new FakeHttpClient();
+        $accepted = true;
+
+        try {
+            $this->multiSegmentExecutor($client, ['slug' => 3])
+                ->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
+        } catch (InvalidArgumentException) {
+            $accepted = false;
+        }
+
+        Assert::same($accepted, $wellFormed);
+        Assert::same($client->requestCount, $wellFormed ? 1 : 0);
+    }
+
+    /**
+     * @return array<string, ArbitraryInterface>
+     */
+    public static function optedInPathArgumentAcceptsExactlyWellFormedSegmentPathsGenerators(): array
+    {
+        return [
+            'value' => Gen::frequency([
+                [3, Gen::stringFrom('abz09_/', 0, 18)],
+                [2, Gen::stringFrom('abz09_-./\\ ', 0, 18)],
+                [1, Gen::stringAscii()],
+            ]),
+        ];
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function optedInPathArgumentAcceptsExactlyWellFormedSegmentPathsExamples(): iterable
+    {
+        yield 'gitlab namespace path' => ['dev/keppio'];
+        yield 'nested subgroup' => ['a/b/c'];
+        yield 'numeric id' => ['122'];
+        yield 'dotted single segment' => ['v1.2'];
+        yield 'traversal inside a segment' => ['a..b'];
+        yield 'traversal segment' => ['x/..'];
+        yield 'empty segment' => ['a//b'];
+        yield 'over the limit' => ['a/b/c/d'];
+        yield 'backslash' => ['a\\b'];
+        yield 'leading dash segment' => ['a/-b'];
+    }
+
     private function executor(FakeHttpClient $client, array $headers = []): HttpOperationExecutor
     {
         $factory = new Psr17Factory();
@@ -846,5 +1076,21 @@ final class HttpOperationExecutorTest
     private function operation(string $operationId): Operation
     {
         return (new SpecIndex(OpenApiFixture::spec()))->get($operationId);
+    }
+
+    /**
+     * @param array<array-key, mixed> $multiSegmentPathParams
+     */
+    private function multiSegmentExecutor(FakeHttpClient $client, array $multiSegmentPathParams): HttpOperationExecutor
+    {
+        $factory = new Psr17Factory();
+
+        return new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            multiSegmentPathParams: $multiSegmentPathParams,
+        );
     }
 }

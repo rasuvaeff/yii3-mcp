@@ -42,7 +42,31 @@ final readonly class HttpOperationExecutor
      */
     private const int JSON_MAX_DEPTH = 128;
 
+    /**
+     * Hard ceiling on an opted-in path argument's segment count. Deep enough
+     * for the deepest nesting a real upstream expresses in one identifier
+     * (GitLab caps subgroup nesting at 20), shallow enough that an operator
+     * cannot turn the opt-in into "any depth" by writing a large number.
+     */
+    private const int MAX_PATH_SEGMENTS = 20;
+
+    /**
+     * Charset every segment of an opted-in multi-segment path argument must
+     * match — anchored with \A/\z, never $, which matches before a trailing
+     * newline. Deliberately narrower than the single-segment rule: opting a
+     * parameter in trades an unrestricted charset for the extra separator.
+     */
+    private const string PATH_SEGMENT_PATTERN = '/\A[A-Za-z0-9_][A-Za-z0-9_.-]*\z/';
+
     private string $baseUrl;
+
+    /**
+     * Narrowed from the raw constructor argument: the value comes from
+     * application params, where nothing enforces the shape.
+     *
+     * @var array<array-key, int<1, 20>>
+     */
+    private array $multiSegmentPathParams;
 
     /**
      * @param array<string, string> $defaultHeaders e.g. ['Authorization' => 'Bearer …']
@@ -50,6 +74,13 @@ final readonly class HttpOperationExecutor
      * @param bool $opaqueErrors suppress the upstream error-body excerpt in failures — for
      *                           service-token deployments where the upstream's error details
      *                           are not the MCP caller's to see
+     * @param array<array-key, mixed> $multiSegmentPathParams path parameter name => how many
+     *                           "/"-separated segments its values may carry. Absent (the
+     *                           default for every parameter) means one segment, i.e. no
+     *                           separator at all — see {@see self::buildPath()}. Values are
+     *                           validated here rather than typed: this arrives from params,
+     *                           so a string "1" must fail loudly instead of enabling the
+     *                           multi-segment path with a limit no comparison treats as one
      */
     public function __construct(
         private ClientInterface $httpClient,
@@ -61,10 +92,31 @@ final readonly class HttpOperationExecutor
         private ?DelegatedHeaderProviderInterface $delegatedHeaderProvider = null,
         private int $maxResponseBytes = self::DEFAULT_MAX_RESPONSE_BYTES,
         private bool $opaqueErrors = false,
+        array $multiSegmentPathParams = [],
     ) {
         if ($maxResponseBytes < 1) {
             throw new InvalidArgumentException(sprintf('Max response bytes must be at least 1, %d given', $maxResponseBytes));
         }
+
+        $segmentLimits = [];
+
+        foreach ($multiSegmentPathParams as $parameterName => $maxSegments) {
+            // is_int first and strictly: a numeric string passes every
+            // comparison below, then fails === 1 in buildPath() — silently
+            // turning the multi-segment path on with a limit that is not one
+            if (!is_int($maxSegments) || $maxSegments < 1 || $maxSegments > self::MAX_PATH_SEGMENTS) {
+                throw new InvalidArgumentException(sprintf(
+                    'Segment limit for path parameter "%s" must be an integer between 1 and %d, %s given',
+                    $parameterName,
+                    self::MAX_PATH_SEGMENTS,
+                    is_int($maxSegments) ? $maxSegments : get_debug_type($maxSegments),
+                ));
+            }
+
+            $segmentLimits[$parameterName] = $maxSegments;
+        }
+
+        $this->multiSegmentPathParams = $segmentLimits;
 
         $normalized = rtrim(trim($baseUrl), '/');
 
@@ -307,26 +359,53 @@ final readonly class HttpOperationExecutor
             $value = $this->stringifyArgument($operation, $name, $arguments[$name]);
 
             if ($parameter['in'] === 'path') {
+                // one segment unless the operator opted this parameter in
+                $maxSegments = $this->multiSegmentPathParams[$name] ?? 1;
+
                 // rawurlencode keeps "." verbatim and turns "/" into "%2F",
                 // which upstreams that decode before normalizing the path
                 // (Apache with AllowEncodedSlashes, some proxies and servlet
                 // containers) hand back as a real separator — so a value
-                // merely CONTAINING ".." or a separator can climb out of the
-                // allow-listed route with the bridge's credentials, not only
-                // a value equal to a dot segment. An empty value is the same
-                // escape one level up: "/users/" is typically the collection
-                // route, not the allow-listed item route
+                // merely CONTAINING ".." can climb out of the allow-listed
+                // route with the bridge's credentials, not only a value equal
+                // to a dot segment. An empty value is the same escape one
+                // level up: "/users/" is typically the collection route, not
+                // the allow-listed item route. ".." and a backslash stay
+                // rejected whatever the limit is — the opt-in below buys the
+                // separator and nothing else
                 if ($value === ''
                     || $value === '.'
                     || str_contains($value, '..')
-                    || str_contains($value, '/')
                     || str_contains($value, '\\')
+                    || ($maxSegments === 1 && str_contains($value, '/'))
                 ) {
                     throw new InvalidArgumentException(sprintf(
                         'Argument "%s" of operation "%s" must not be empty, a dot segment, or contain ".." or a path separator',
                         $name,
                         $operation->operationId,
                     ));
+                }
+
+                // An opted-in value may cross segment boundaries, so the
+                // allow-listed route no longer pins the URL's shape: a value
+                // like "1/repository/archive" reaches an operation the
+                // allow-list never exposed. The segment CAP is what bounds
+                // that, and the charset keeps every segment a plain
+                // identifier — neither is derivable from the value itself,
+                // which is why both are fixed here and only the depth is
+                // configurable
+                if ($maxSegments > 1) {
+                    $segments = explode('/', $value);
+
+                    if (count($segments) > $maxSegments) {
+                        throw new InvalidArgumentException($this->segmentRuleViolation($operation, $name, $maxSegments));
+                    }
+
+                    foreach ($segments as $segment) {
+                        if (preg_match(self::PATH_SEGMENT_PATTERN, $segment) !== 1) {
+                            throw new InvalidArgumentException($this->segmentRuleViolation($operation, $name, $maxSegments));
+                        }
+                    }
                 }
 
                 $path = str_replace('{' . $name . '}', rawurlencode($value), $path);
@@ -344,6 +423,16 @@ final readonly class HttpOperationExecutor
         }
 
         return $path . ($query === [] ? '' : '?' . http_build_query($query));
+    }
+
+    private function segmentRuleViolation(Operation $operation, string $name, int $maxSegments): string
+    {
+        return sprintf(
+            'Argument "%s" of operation "%s" must be 1 to %d "/"-separated segments, each starting with a letter, digit or "_" and containing only letters, digits, "_", "-" and "."',
+            $name,
+            $operation->operationId,
+            $maxSegments,
+        );
     }
 
     private function stringifyArgument(Operation $operation, string $name, mixed $value): string

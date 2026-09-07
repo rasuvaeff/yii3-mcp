@@ -48,7 +48,7 @@ final readonly class McpServerComponentResolver
     {
         /** @var list<class-string> $tools */
         $tools = $this->params['tools'];
-        /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, spec_headers?: array<string, string>, cache_ttl?: int, max_response_bytes?: int, opaque_errors?: bool, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>} $openapi */
+        /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, spec_headers?: array<string, string>, cache_ttl?: int, max_response_bytes?: int, opaque_errors?: bool, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>, multi_segment_path_params?: array<array-key, mixed>} $openapi */
         $openapi = $this->params['openapi'];
 
         /** @var list<ServerConfiguratorInterface> $configurators */
@@ -109,6 +109,7 @@ final readonly class McpServerComponentResolver
                     delegatedHeaderProvider: $delegatedHeaderProvider,
                     maxResponseBytes: $openapi['max_response_bytes'] ?? HttpOperationExecutor::DEFAULT_MAX_RESPONSE_BYTES,
                     opaqueErrors: $openapi['opaque_errors'] ?? false,
+                    multiSegmentPathParams: $openapi['multi_segment_path_params'] ?? [],
                 ),
                 operations: $openapi['operations'],
                 safeMethodsOnly: $openapi['safe_methods_only'] ?? false,

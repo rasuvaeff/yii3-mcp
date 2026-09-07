@@ -262,6 +262,23 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   argument; single dots still pass (`v1.2`). The check lives in
   `HttpOperationExecutor::buildPath()`; do not "simplify" it back to equality
   comparisons.
+- **`/` is the ONLY thing `multi_segment_path_params` buys, and only for the
+  parameters named in it.** Some upstreams identify a resource by a nested
+  path and accept it percent-encoded (GitLab: `group/project` →
+  `group%2Fproject`), so a parameter can be opted into N `"/"`-separated
+  segments. Everything else in the rule above still applies to an opted-in
+  value — `..` anywhere, a backslash anywhere, an empty value, a bare `.` —
+  and each segment must additionally match
+  `[A-Za-z0-9_][A-Za-z0-9_.-]*`. Two knobs are deliberately absent: the
+  charset and the ceiling of 20 on the limit. The reason is the residual risk
+  the opt-in accepts and the cap alone bounds: a multi-segment value no
+  longer pins the request to the allow-listed route (`1/repository/archive`
+  under `GET /projects/{id}` reaches an operation `operations` never
+  exposed). An operator writing a regex would drop the cap without noticing;
+  an integer cannot be written without it. The default is an empty list, so
+  the single-segment rule above is what every deployment gets until someone
+  opts a parameter in — `routeEscapingPathArgumentIsRejected` runs against a
+  non-opted parameter and is the regression guard for that.
 - **An operation's static path (the OpenAPI Path Item Object key) must start
   with `/`; `SpecIndex` silently drops any operation whose path doesn't.**
   `HttpOperationExecutor` builds the request URL as `$baseUrl . $path` with no
