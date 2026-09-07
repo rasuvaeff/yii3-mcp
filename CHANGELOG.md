@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- `OpenApi\Exception\InvalidToolArgumentException` is thrown by every guard on
+  a bridged call's arguments, and `BridgedToolHandler` now converts only it and
+  `OperationFailedException` into a caller-visible tool error. The previous
+  `InvalidArgumentException` catch was wide enough to include the PSR-17/PSR-18
+  stack's own failures — an unparseable request URI, a delegated header name
+  that is not RFC 7230 compatible — whose messages quote the base URL or the
+  offending header; those reached the MCP client as if the agent's own
+  arguments were at fault. They now stay behind the SDK's generic internal
+  error.
+
 - `OpenApi\OpenApiBridgeFactory::create()` builds a configured
   `OpenApiServerConfigurator` from a spec (file path, http(s) URL or decoded
   document), a base URL, PSR-18/PSR-17 services and the operation allow-list —

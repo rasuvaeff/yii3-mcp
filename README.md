@@ -1160,7 +1160,12 @@ what hid the operationId from the agent:
 ```
 
 The upstream excerpt is suppressed by `opaque_errors`; argument guards
-(non-scalar, path-separator, malformed `dryRun`) are phrased the same way. The
+(non-scalar, path-separator, missing path parameter, malformed `dryRun`) throw
+`InvalidToolArgumentException` and are phrased the same way. Only those two
+types reach the caller — a plain `InvalidArgumentException` from the
+PSR-17/PSR-18 stack underneath (an unparseable request URI, a delegated header
+name that is not RFC 7230 compatible) describes the deployment, not the call,
+and stays behind the SDK's generic internal error. The
 one place that still reports the `operationId` is the **dry-run preview
 payload** — it documents the upstream request that would be sent, and the
 operationId is how a caller looks it up in the OpenAPI document.

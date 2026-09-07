@@ -297,12 +297,22 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   every message; the operationId is what the rename hid from the agent, so
   quoting it back gives it an identifier in no tool list. Two things are
   deliberate and must not be "simplified": (1) `BridgedToolHandler` catches
-  `OperationFailedException` and the argument `InvalidArgumentException`s and
+  `OperationFailedException` and `Exception\InvalidToolArgumentException` and
   rethrows them as the SDK's `ToolCallException` — `CallToolHandler` turns
   ONLY that type into a tool-error envelope carrying the message and replaces
   every other Throwable with `Error::forInternalError('Error while executing
   tool')`, dropping the text entirely (which also made `opaque_errors`
-  meaningless, since nothing reached the caller either way); (2) the dry-run
+  meaningless, since nothing reached the caller either way). **Those two types
+  are the entire allow-list — never widen it back to the bare
+  `InvalidArgumentException`.** The PSR-17/PSR-18 stack raises its own:
+  an unparseable request URI, a delegated header name that is not RFC 7230
+  compatible. Their messages quote the base URL or the offending header, so
+  catching the parent forwards deployment detail to the agent AND mislabels an
+  infrastructure fault as a problem with the arguments it sent. That is why
+  every caller-argument guard in `HttpOperationExecutor::execute()` throws the
+  dedicated type while the CONSTRUCTOR's config guards keep the bare one —
+  they run at build time and never reach this catch;
+  `infrastructureFailuresDoNotReachTheClient` is the regression guard; (2) the dry-run
   preview payload still reports `operationId` — it documents the upstream
   request, and that is the id a caller looks up in the OpenAPI document.
 - **An operation's static path (the OpenAPI Path Item Object key) must start

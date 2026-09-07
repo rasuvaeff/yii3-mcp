@@ -375,6 +375,12 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   `opaqueErrors`, `multiSegmentPathParams`). `SpecIndex` and
   `HttpOperationExecutor` stay `@internal`; the config-plugin path calls this
   same factory.
+- Only `OperationFailedException` and `Exception\InvalidToolArgumentException`
+  (non-scalar URL parameter, route-escaping or missing path argument,
+  malformed `dryRun`) reach the caller. A bare `InvalidArgumentException` from
+  the PSR-17/PSR-18 stack — unparseable request URI, non-RFC-7230 delegated
+  header name — describes the deployment and stays behind the SDK's generic
+  internal error.
 - Bridged failures reach the client as a tool-error envelope naming the SERVED
   tool name (after `tool_names` and the modifier), not the upstream
   operationId: `Tool "blog_tags_list" failed with HTTP 404: …`. The dry-run

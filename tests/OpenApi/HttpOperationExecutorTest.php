@@ -10,6 +10,7 @@ use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidToolArgumentException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
@@ -31,6 +32,7 @@ use Testo\Test;
 #[Test]
 #[Covers(HttpOperationExecutor::class)]
 #[Covers(OperationFailedException::class)]
+#[Covers(InvalidToolArgumentException::class)]
 final class HttpOperationExecutorTest
 {
     private const string SEGMENT_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.';
@@ -485,6 +487,33 @@ final class HttpOperationExecutorTest
         $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => 1], dryRunnable: false);
 
         Assert::same($client->requestCount, 1);
+    }
+
+    /**
+     * Every guard on the caller's own arguments throws the dedicated type —
+     * that is what {@see \Rasuvaeff\Yii3Mcp\OpenApi\BridgedToolHandler}
+     * catches, and catching the bare parent instead would forward the PSR-17
+     * stack's own failures to the client.
+     */
+    #[DataProvider('callerArgumentViolationProvider')]
+    public function callerArgumentViolationsUseTheDedicatedException(string $operationId, array $arguments): void
+    {
+        $caught = null;
+
+        try {
+            $this->executor(new FakeHttpClient())->execute($this->operation($operationId), $arguments, dryRunnable: true);
+        } catch (InvalidToolArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+    }
+
+    public static function callerArgumentViolationProvider(): iterable
+    {
+        yield 'non-boolean dry run' => ['getBlogTags', ['dryRun' => 1]];
+        yield 'route-escaping path argument' => ['getBlogTagBySlug', ['slug' => 'a/b']];
+        yield 'missing path parameter' => ['getBlogTagBySlug', []];
+        yield 'non-scalar argument' => ['getBlogTagBySlug', ['slug' => ['a']]];
     }
 
     #[DataProvider('routeEscapingPathArgumentProvider')]

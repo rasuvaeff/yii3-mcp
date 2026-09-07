@@ -10,6 +10,7 @@ use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -26,6 +27,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ThrowingRequestFactory;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -703,6 +705,37 @@ final class OpenApiServerConfiguratorTest
         });
     }
 
+    /**
+     * The envelope carries the caller's OWN failures. An InvalidArgumentException
+     * from the PSR-17/PSR-18 stack underneath describes the deployment — its
+     * message quotes the request URI or the offending header — so it must
+     * stay behind the SDK's generic internal error, not be relabelled to the
+     * agent as a problem with the arguments it sent.
+     */
+    public function infrastructureFailuresDoNotReachTheClient(): void
+    {
+        $action = $this->action(
+            new FakeHttpClient(),
+            ['getBlogTags'],
+            requestFactory: new ThrowingRequestFactory(),
+        );
+        $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
+
+        $response = $this->post($action, [
+            'jsonrpc' => '2.0',
+            'id' => 24,
+            'method' => 'tools/call',
+            'params' => ['name' => 'getBlogTags', 'arguments' => []],
+        ], $sessionId);
+
+        $body = $this->decode($response);
+        $text = json_encode($body, JSON_THROW_ON_ERROR);
+
+        Assert::string($text)->notContains('internal.svc.cluster.local');
+        Assert::true(isset($body['error']));
+        Assert::false($body['result']['isError'] ?? false);
+    }
+
     private function action(
         FakeHttpClient $client,
         array $operations,
@@ -711,6 +744,7 @@ final class OpenApiServerConfiguratorTest
         ?OperationModifierInterface $modifier = null,
         array $dryRunOperations = [],
         array $toolClasses = [],
+        ?RequestFactoryInterface $requestFactory = null,
     ): McpAction {
         $factory = new Psr17Factory();
 
@@ -718,7 +752,7 @@ final class OpenApiServerConfiguratorTest
             spec: new SpecIndex(OpenApiFixture::spec()),
             executor: new HttpOperationExecutor(
                 httpClient: $client,
-                requestFactory: $factory,
+                requestFactory: $requestFactory ?? $factory,
                 streamFactory: $factory,
                 baseUrl: 'https://api.test',
             ),
