@@ -9,6 +9,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
+use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidToolArgumentException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 use Rasuvaeff\Yii3Mcp\Utf8;
 
@@ -176,7 +177,7 @@ final readonly class HttpOperationExecutor
             && array_key_exists(InputSchemaBuilder::DRY_RUN_ARGUMENT, $arguments)
             && !is_bool($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT])
         ) {
-            throw new InvalidArgumentException(sprintf(
+            throw new InvalidToolArgumentException(sprintf(
                 'Argument "%s" of tool "%s" must be a boolean',
                 InputSchemaBuilder::DRY_RUN_ARGUMENT,
                 $served,
@@ -389,7 +390,7 @@ final readonly class HttpOperationExecutor
                     || str_contains($value, '\\')
                     || ($maxSegments === 1 && str_contains($value, '/'))
                 ) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new InvalidToolArgumentException(sprintf(
                         'Argument "%s" of tool "%s" must not be empty, a dot segment, or contain ".." or a path separator',
                         $name,
                         $served,
@@ -408,12 +409,12 @@ final readonly class HttpOperationExecutor
                     $segments = explode('/', $value);
 
                     if (count($segments) > $maxSegments) {
-                        throw new InvalidArgumentException($this->segmentRuleViolation($served, $name, $maxSegments));
+                        throw new InvalidToolArgumentException($this->segmentRuleViolation($served, $name, $maxSegments));
                     }
 
                     foreach ($segments as $segment) {
                         if (preg_match(self::PATH_SEGMENT_PATTERN, $segment) !== 1) {
-                            throw new InvalidArgumentException($this->segmentRuleViolation($served, $name, $maxSegments));
+                            throw new InvalidToolArgumentException($this->segmentRuleViolation($served, $name, $maxSegments));
                         }
                     }
                 }
@@ -425,7 +426,7 @@ final readonly class HttpOperationExecutor
         }
 
         if (preg_match('/\{[^}]+\}/', $path) === 1) {
-            throw new InvalidArgumentException(sprintf(
+            throw new InvalidToolArgumentException(sprintf(
                 'Tool "%s" is missing a required path parameter (path template: %s)',
                 $served,
                 $operation->path,
@@ -451,7 +452,7 @@ final readonly class HttpOperationExecutor
             is_string($value) => $value,
             is_int($value), is_float($value) => (string) $value,
             is_bool($value) => $value ? 'true' : 'false',
-            default => throw new InvalidArgumentException(sprintf(
+            default => throw new InvalidToolArgumentException(sprintf(
                 'Argument "%s" of tool "%s" must be a scalar',
                 $name,
                 $served,

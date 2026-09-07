@@ -122,6 +122,7 @@ the bytes are materialized, not truncated after the fact:
 | Substituted Markdown prompts | `limits.prompt_result_bytes`, checked arithmetically before the substituted string is built. |
 | OpenAPI spec documents | 10 MiB cap plus an explicit `$ref` depth/node budget during inlining, for URL and file sources alike. |
 | Tool results | `limits.tool_result_bytes` — see [Interceptors: result size limit](/interceptors#result-size-limit-and-caching). |
+| Internal failure detail in bridged calls | Only `OperationFailedException` and `OpenApi\Exception\InvalidToolArgumentException` become a caller-visible tool error. A PSR-17/PSR-18 `InvalidArgumentException` — unparseable request URI, non-RFC-7230 delegated header name — quotes the base URL or the header and stays behind the SDK's generic internal error. |
 | Upstream error detail in bridged failures | A failing bridged call reaches the caller as a tool-error envelope naming the served tool; the upstream body excerpt inside it is capped at 2 000 bytes and suppressed entirely by `openapi.opaque_errors`, for service-token deployments where the upstream's error details are not the MCP caller's to see. |
 
 ## What this package does not do

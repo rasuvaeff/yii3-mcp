@@ -149,10 +149,18 @@ operationId back at an agent hands it an identifier that appears in no tool
 list it has.
 
 The messages reach the client because `BridgedToolHandler` rethrows
-`OperationFailedException` and the argument `InvalidArgumentException`s as the
+`OperationFailedException` and `Exception\InvalidToolArgumentException` as the
 SDK's `ToolCallException`: `CallToolHandler` turns only that type into a
 tool-error envelope carrying the message, and replaces every other exception
 with a generic internal error.
+
+Those two types are the whole allow-list, and the narrowness is the point. The
+PSR-17/PSR-18 stack underneath raises plain `InvalidArgumentException`s of its
+own — an unparseable request URI, a delegated header name that is not RFC 7230
+compatible — whose messages quote the base URL or the offending header. Those
+describe the deployment rather than the call, so they stay behind the generic
+internal error instead of being relabelled to the agent as a problem with the
+arguments it sent.
 
 The **dry-run preview payload** still reports `operationId`. It documents the
 upstream request that would be sent, and the operationId is how a caller looks
