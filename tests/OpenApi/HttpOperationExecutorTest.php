@@ -1036,7 +1036,7 @@ final class HttpOperationExecutorTest
                     && $segment !== ''
                     && strspn($segment, self::SEGMENT_CHARSET) === strlen($segment)
                     && strspn($segment[0], self::SEGMENT_LEAD_CHARSET) === 1,
-                true,
+                initial: true,
             );
 
         Classify::cover($wellFormed, 'accepted path', 15.0);

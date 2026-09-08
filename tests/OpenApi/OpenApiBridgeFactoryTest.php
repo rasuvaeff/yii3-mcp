@@ -159,7 +159,6 @@ final class OpenApiBridgeFactoryTest
             requestFactory: new Psr17Factory(),
             streamFactory: new Psr17Factory(),
             operations: ['getBlogTags'],
-            maxResponseBytes: null,
         ))->callTool('getBlogTags');
 
         Assert::false($passed['isError'] ?? false);

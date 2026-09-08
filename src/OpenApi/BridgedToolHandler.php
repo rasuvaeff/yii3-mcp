@@ -43,7 +43,7 @@ final readonly class BridgedToolHandler implements ToolHandlerInterface
             // RFC 7230 compatible, and those messages quote the base URL or
             // the offending header — deployment detail, mislabelled to the
             // agent as a problem with its own arguments.
-            throw new ToolCallException($e->getMessage(), previous: $e);
+            throw new ToolCallException($e->getMessage(), $e->getCode(), previous: $e);
         }
     }
 }

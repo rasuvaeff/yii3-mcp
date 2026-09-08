@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 2.3.0 — 2026-09-08
 
 - `OpenApi\Exception\InvalidToolArgumentException` is thrown by every guard on
   a bridged call's arguments, and `BridgedToolHandler` now converts only it and
@@ -79,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GITHUB_OUTPUT` heredoc that a matching line could truncate, and creates the
   release with `--verify-tag` so `gh` cannot invent a missing tag from the
   default branch.
+- Internal only: the codebase is `rector` clean again — `ToolCallException`
+  now carries the original exception's code, and two test call sites lost a
+  redundant null named argument and gained a named literal.
 
 ## 2.2.1 — 2026-08-12
 
