@@ -7,15 +7,17 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -26,6 +28,8 @@ use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(McpDoctorCommand::class)]
@@ -139,10 +143,14 @@ final class McpDoctorCommandTest
             sessionStore: new InMemorySessionStore(),
         ))->create([GreetingTool::class]);
 
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))
+            ->returns(new Response(200, ['Content-Type' => 'application/json'], json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)));
+
         $doctor = new McpDoctor(
             container: new SimpleContainer([
                 Server::class => $server,
-                ClientInterface::class => new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)),
+                ClientInterface::class => $client,
                 RequestFactoryInterface::class => $factory,
                 ServerRequestFactoryInterface::class => $factory,
                 ResponseFactoryInterface::class => $factory,

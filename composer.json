@@ -45,6 +45,7 @@
         "nyholm/psr7": "^1.8",
         "rasuvaeff/property-testing-testo": "^1.0",
         "rasuvaeff/rector-named-literals": "^1.0",
+        "rasuvaeff/understudy-testo": "^1.0",
         "rector/rector": "^2.4",
         "roave/backward-compatibility-check": "^8.0",
         "testo/bridge-infection": "^0.1.6",

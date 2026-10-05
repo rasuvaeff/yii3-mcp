@@ -16,11 +16,15 @@ use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
@@ -35,7 +39,6 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
@@ -48,6 +51,9 @@ use Testo\Codecov\Covers;
 use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\verify;
+use function Rasuvaeff\Understudy\when;
 
 // Deliberately not #[CoversNothing]: this suite wires config/di.php end to
 // end and exercises every branch of McpServerComponentResolver. It is also
@@ -723,12 +729,16 @@ final class ConfigWiringTest
         /** @var SharedSecretMiddleware $middleware */
         $middleware = $definition(new Psr17Factory());
 
+        $handler = Understudy::for(RequestHandlerInterface::class);
+        when(fn() => $handler->handle(Arg::any()))->returns(new Response(200));
+
         // Both secret forms empty by default: the middleware must reject
         // every request with the explanatory 503 — fail-closed is the
         // shipped default.
-        $response = $middleware->process(new ServerRequest('POST', '/mcp', ['X-Mcp-Secret' => 'anything']), new FakeHandler());
+        $response = $middleware->process(new ServerRequest('POST', '/mcp', ['X-Mcp-Secret' => 'anything']), $handler);
 
         Assert::same($response->getStatusCode(), 503);
+        verify(fn() => $handler->handle(Arg::any()), never: true);
     }
 
     public function middlewareDefinitionBuildsAResolverFromClientSecrets(): void

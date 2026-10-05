@@ -5,18 +5,26 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestInterface;
+use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Captor;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
-use Rasuvaeff\Yii3Mcp\Tests\Support\StreamBodyHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StubStream;
+use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
 use Testo\Test;
+
+use function Rasuvaeff\Understudy\verify;
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(SpecLoader::class)]
@@ -24,32 +32,32 @@ final class SpecLoaderTest
 {
     public function fetchesAndIndexesSpecFromUrl(): void
     {
-        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        [$client, $requests] = $this->trackingClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
 
         $index = $this->loader($client)->fromUrl('https://api.test/rest/json-url');
 
         Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/json-url');
-        Assert::same($client->lastRequest?->getMethod(), 'GET');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/json-url');
+        Assert::same($requests->last()->getMethod(), 'GET');
     }
 
     public function sendsConfiguredHeadersWithSpecRequest(): void
     {
-        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        [$client, $requests] = $this->trackingClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
 
         $this->loader($client, headers: [
             'Authorization' => 'Bearer token-1',
             'Host' => 'app.local',
         ])->fromUrl('https://api.test/rest/json-url');
 
-        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer token-1');
-        Assert::same($client->lastRequest?->getHeaderLine('Host'), 'app.local');
-        Assert::same($client->lastRequest?->getHeaderLine('Accept'), 'application/json');
+        Assert::same($requests->last()->getHeaderLine('Authorization'), 'Bearer token-1');
+        Assert::same($requests->last()->getHeaderLine('Host'), 'app.local');
+        Assert::same($requests->last()->getHeaderLine('Accept'), 'application/json');
     }
 
     public function nonSuccessResponseThrowsWithStatusInMessage(): void
     {
-        $loader = $this->loader(new FakeHttpClient(statusCode: 401, body: 'unauthorized'));
+        $loader = $this->loader($this->client(statusCode: 401, body: 'unauthorized'));
 
         $caught = null;
 
@@ -64,7 +72,7 @@ final class SpecLoaderTest
 
     public function malformedDocumentThrows(): void
     {
-        $loader = $this->loader(new FakeHttpClient(body: '{broken'));
+        $loader = $this->loader($this->client(body: '{broken'));
 
         Expect::exception(InvalidSpecException::class);
 
@@ -73,79 +81,92 @@ final class SpecLoaderTest
 
     public function malformedHttpDocumentIsNotCached(): void
     {
-        $cache = new FakeCache();
+        $cache = Understudy::for(CacheInterface::class);
 
         try {
-            $this->loader(new FakeHttpClient(body: '{broken'), cache: $cache, cacheTtl: 60)
+            $this->loader($this->client(body: '{broken'), cache: $cache, cacheTtl: 60)
                 ->fromUrl('https://api.test/openapi.json');
         } catch (InvalidSpecException) {
         }
 
-        Assert::same($cache->values, []);
+        verify(fn() => $cache->set(Arg::any(), Arg::any(), Arg::any()), never: true);
     }
 
     public function cachesRawDocumentWithConfiguredTtl(): void
     {
-        $cache = new FakeCache();
-        $firstClient = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
-        $secondClient = new FakeHttpClient(statusCode: 500);
+        $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+        $firstClient = $this->client(body: $body);
+        $secondClient = $this->client(statusCode: 500, body: 'upstream is down');
+        $cache = Understudy::for(CacheInterface::class);
+        // the first load misses and stores; the second serves the stored document
+        when(fn() => $cache->get(Arg::any()))->returns(null, $body);
 
         $this->loader($firstClient, cache: $cache, cacheTtl: 60)->fromUrl('https://api.test/openapi.json');
         $index = $this->loader($secondClient, cache: $cache, cacheTtl: 60)->fromUrl('https://api.test/openapi.json');
 
         Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
-        Assert::same($firstClient->requestCount, 1);
-        Assert::same($secondClient->requestCount, 0);
-        Assert::same($cache->lastTtl, 60);
+        verify(fn() => $firstClient->sendRequest(Arg::any()));
+        verify(fn() => $secondClient->sendRequest(Arg::any()), never: true);
+        verify(fn() => $cache->set(Arg::any(), Arg::any(), 60));
     }
 
     public function zeroTtlPreservesFetchOnEveryLoad(): void
     {
-        $cache = new FakeCache();
-        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $cache = Understudy::for(CacheInterface::class);
+        $client = $this->client(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
         $loader = $this->loader($client, cache: $cache);
 
         $loader->fromUrl('https://api.test/openapi.json');
         $loader->fromUrl('https://api.test/openapi.json');
 
-        Assert::same($client->requestCount, 2);
-        Assert::same($cache->values, []);
+        verify(fn() => $client->sendRequest(Arg::any()), times: 2);
+        verify(fn() => $cache->set(Arg::any(), Arg::any(), Arg::any()), never: true);
     }
 
     public function zeroTtlIgnoresAPreviouslyCachedDocument(): void
     {
-        $cache = new FakeCache();
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+        $cache = Understudy::for(CacheInterface::class);
+        // the first read (the cached loader) misses; a SECOND read of the
+        // same key would answer the stored document — the ttl-0 loader must
+        // refuse to even ask, or it would be served from the cache
+        when(fn() => $cache->get(Arg::any()))->returns(null, $body);
 
         // seed the cache via a normal, cached load
-        $this->loader(new FakeHttpClient(body: $body), cache: $cache, cacheTtl: 60)
+        $this->loader($this->client(body: $body), cache: $cache, cacheTtl: 60)
             ->fromUrl('https://api.test/openapi.json');
-        Assert::true($cache->values !== []);
+        verify(fn() => $cache->set(Arg::any(), Arg::any(), 60));
 
         // a SECOND loader configured with cacheTtl: 0 must still hit HTTP,
         // ignoring the value the first loader just cached under the same key
-        $freshClient = new FakeHttpClient(body: $body);
+        $freshClient = $this->client(body: $body);
         $this->loader($freshClient, cache: $cache, cacheTtl: 0)
             ->fromUrl('https://api.test/openapi.json');
 
-        Assert::same($freshClient->requestCount, 1);
+        verify(fn() => $freshClient->sendRequest(Arg::any()));
     }
 
     public function urlAndHeaderScopeProduceDifferentCacheKeys(): void
     {
-        $cache = new FakeCache();
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+        $cache = Understudy::for(CacheInterface::class);
+        $keys = Arg::captor();
 
-        $this->loader(new FakeHttpClient(body: $body), ['Authorization' => 'Bearer A'], $cache, 60)
+        $this->loader($this->client(body: $body), ['Authorization' => 'Bearer A'], $cache, 60)
             ->fromUrl('https://api.test/a');
-        $this->loader(new FakeHttpClient(body: $body), ['authorization' => 'Bearer B'], $cache, 60)
+        $this->loader($this->client(body: $body), ['authorization' => 'Bearer B'], $cache, 60)
             ->fromUrl('https://api.test/a');
-        $this->loader(new FakeHttpClient(body: $body), ['Authorization' => 'Bearer A'], $cache, 60)
+        $this->loader($this->client(body: $body), ['Authorization' => 'Bearer A'], $cache, 60)
             ->fromUrl('https://api.test/b');
 
-        Assert::same(count($cache->values), 3);
+        verify(fn() => $cache->set($keys->capture(), Arg::any(), 60), times: 3);
 
-        foreach (array_keys($cache->values) as $key) {
+        /** @var list<string> $storedKeys */
+        $storedKeys = array_map(strval(...), $keys->all());
+
+        Assert::same(count(array_unique($storedKeys)), 3);
+
+        foreach ($storedKeys as $key) {
             Assert::false(str_contains($key, 'Bearer'));
             Assert::false(str_contains($key, 'api.test'));
         }
@@ -153,26 +174,32 @@ final class SpecLoaderTest
 
     public function headerNameCasingAndInsertionOrderDoNotAffectTheCacheKey(): void
     {
-        $cache1 = new FakeCache();
-        $cache2 = new FakeCache();
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+        $firstKeys = Arg::captor();
+        $secondKeys = Arg::captor();
+        $cache1 = Understudy::for(CacheInterface::class);
+        $cache2 = Understudy::for(CacheInterface::class);
 
-        $this->loader(new FakeHttpClient(body: $body), ['X-Api-Key' => 'k', 'Accept' => 'json'], $cache1, 60)
+        $this->loader($this->client(body: $body), ['X-Api-Key' => 'k', 'Accept' => 'json'], $cache1, 60)
             ->fromUrl('https://api.test/a');
-        $this->loader(new FakeHttpClient(body: $body), ['accept' => 'json', 'x-api-key' => 'k'], $cache2, 60)
+        $this->loader($this->client(body: $body), ['accept' => 'json', 'x-api-key' => 'k'], $cache2, 60)
             ->fromUrl('https://api.test/a');
 
-        Assert::same(array_key_first($cache1->values), array_key_first($cache2->values));
+        verify(fn() => $cache1->set($firstKeys->capture(), Arg::any(), 60));
+        verify(fn() => $cache2->set($secondKeys->capture(), Arg::any(), 60));
+        Assert::same($firstKeys->last(), $secondKeys->last());
     }
 
     public function cacheKeyIsPsr16SafeAndFormatStable(): void
     {
-        $cache = new FakeCache();
+        $cache = Understudy::for(CacheInterface::class);
+        $keys = Arg::captor();
 
-        $this->loader(new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)), cache: $cache, cacheTtl: 60)
+        $this->loader($this->client(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)), cache: $cache, cacheTtl: 60)
             ->fromUrl('https://api.test/openapi.json');
 
-        $key = (string) array_key_first($cache->values);
+        verify(fn() => $cache->set($keys->capture(), Arg::any(), 60));
+        $key = (string) $keys->last();
 
         // PSR-16 only guarantees keys up to 64 characters — a longer key
         // makes a strict cache throw on every call, silently disabling
@@ -188,54 +215,57 @@ final class SpecLoaderTest
     public function cacheReadAndWriteFailuresFallBackToHttp(): void
     {
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
-        $readClient = new FakeHttpClient(body: $body);
-        $writeClient = new FakeHttpClient(body: $body);
+        $readClient = $this->client(body: $body);
+        $writeClient = $this->client(body: $body);
+        $readCache = Understudy::for(CacheInterface::class);
+        $writeCache = Understudy::for(CacheInterface::class);
+        when(fn() => $readCache->get(Arg::any()))->throws(new RuntimeException('cache read failed'));
+        when(fn() => $writeCache->set(Arg::any(), Arg::any(), Arg::any()))->throws(new RuntimeException('cache write failed'));
 
-        $this->loader($readClient, cache: new FakeCache(throwOnRead: true), cacheTtl: 60)
+        $this->loader($readClient, cache: $readCache, cacheTtl: 60)
             ->fromUrl('https://api.test/openapi.json');
-        $this->loader($writeClient, cache: new FakeCache(throwOnWrite: true), cacheTtl: 60)
+        $this->loader($writeClient, cache: $writeCache, cacheTtl: 60)
             ->fromUrl('https://api.test/openapi.json');
 
-        Assert::same($readClient->requestCount, 1);
-        Assert::same($writeClient->requestCount, 1);
+        verify(fn() => $readClient->sendRequest(Arg::any()));
+        verify(fn() => $writeClient->sendRequest(Arg::any()));
     }
 
     public function malformedCachedDocumentFallsBackToHttp(): void
     {
-        $cache = new FakeCache();
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
-        $client = new FakeHttpClient(body: $body);
+        $client = $this->client(body: $body);
+        $cache = Understudy::for(CacheInterface::class);
+        // the first load stores a valid document; the second reads a broken one
+        when(fn() => $cache->get(Arg::any()))->returns(null, '{broken');
         $loader = $this->loader($client, cache: $cache, cacheTtl: 60);
-        $loader->fromUrl('https://api.test/openapi.json');
-        $key = array_key_first($cache->values);
-        Assert::true(is_string($key));
-        $cache->values[$key] = '{broken';
 
+        $loader->fromUrl('https://api.test/openapi.json');
         $index = $loader->fromUrl('https://api.test/openapi.json');
 
-        Assert::same($client->requestCount, 2);
+        verify(fn() => $client->sendRequest(Arg::any()), times: 2);
         Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
     }
 
     public function expiredEntryIsFetchedAgain(): void
     {
-        $cache = new FakeCache();
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
-        $firstClient = new FakeHttpClient(body: $body);
-        $secondClient = new FakeHttpClient(body: $body);
+        $firstClient = $this->client(body: $body);
+        $secondClient = $this->client(body: $body);
+        // an empty backend: every read misses, the seeded entry included
+        $cache = Understudy::for(CacheInterface::class);
 
         $this->loader($firstClient, cache: $cache, cacheTtl: 1)->fromUrl('https://api.test/openapi.json');
-        $cache->clear();
         $this->loader($secondClient, cache: $cache, cacheTtl: 1)->fromUrl('https://api.test/openapi.json');
 
-        Assert::same($secondClient->requestCount, 1);
+        verify(fn() => $secondClient->sendRequest(Arg::any()));
     }
 
     public function negativeTtlIsRejected(): void
     {
         Expect::exception(\InvalidArgumentException::class);
 
-        $this->loader(new FakeHttpClient(), cacheTtl: -1);
+        $this->loader($this->client(), cacheTtl: -1);
     }
 
     /**
@@ -243,7 +273,7 @@ final class SpecLoaderTest
      */
     public function specUrlWithEmbeddedCredentialsIsRejected(): void
     {
-        $client = new FakeHttpClient();
+        $client = $this->client();
         $caught = null;
 
         try {
@@ -254,7 +284,7 @@ final class SpecLoaderTest
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('must not embed credentials');
         // the credential-bearing URL is never fetched and never echoed back
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
         Assert::false(str_contains($caught->getMessage(), 'hunter2'));
     }
 
@@ -264,7 +294,7 @@ final class SpecLoaderTest
         $caught = null;
 
         try {
-            $this->loader(new FakeHttpClient(body: $body))->fromUrl('https://api.test/openapi.json');
+            $this->loader($this->client(body: $body))->fromUrl('https://api.test/openapi.json');
         } catch (InvalidSpecException $caught) {
         }
 
@@ -276,7 +306,7 @@ final class SpecLoaderTest
 
     public function specExactlyAtTheDocumentLimitParses(): void
     {
-        $index = $this->loader(new FakeHttpClient(body: $this->specPaddedTo(SpecIndex::MAX_DOCUMENT_BYTES)))
+        $index = $this->loader($this->client(body: $this->specPaddedTo(SpecIndex::MAX_DOCUMENT_BYTES)))
             ->fromUrl('https://api.test/openapi.json');
 
         Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
@@ -287,8 +317,10 @@ final class SpecLoaderTest
         // chunked transfer: no advertised size, body larger than one read
         // chunk — the loader must accumulate the chunks, not keep the last
         $body = $this->specPaddedTo(20_000);
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->returns(new Response(200, [], new StubStream(content: $body)));
         $loader = new SpecLoader(
-            httpClient: new StreamBodyHttpClient(new StubStream(content: $body)),
+            httpClient: $client,
             requestFactory: new Psr17Factory(),
         );
 
@@ -297,16 +329,18 @@ final class SpecLoaderTest
 
     public function consumedSeekableSpecBodyIsRewoundBeforeReading(): void
     {
-        $client = new class implements \Psr\Http\Client\ClientInterface {
-            #[\Override]
-            public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
-            {
-                $response = new \Nyholm\Psr7\Response(200, [], json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+        $client = Understudy::for(ClientInterface::class);
+        // the body arrives already consumed (a middleware logged it) — unlike
+        // a (string) cast, read() does not rewind by itself
+        when(fn() => $client->sendRequest(Arg::any()))->answers(
+            static function () use ($body): Response {
+                $response = new Response(200, [], $body);
                 $response->getBody()->getContents(); // drain to EOF
 
                 return $response;
-            }
-        };
+            },
+        );
 
         $loader = new SpecLoader(httpClient: $client, requestFactory: new Psr17Factory());
 
@@ -330,10 +364,38 @@ final class SpecLoaderTest
         return $json;
     }
 
+    /**
+     * A PSR-18 double answering every request with the same canned response.
+     */
+    private function client(int $statusCode = 200, string $body = '{"ok":true}'): ClientInterface
+    {
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return $client;
+    }
+
+    /**
+     * The same canned-response double, with the outgoing request captured for
+     * URI/header assertions.
+     *
+     * @return array{ClientInterface, Captor<RequestInterface>}
+     */
+    private function trackingClient(int $statusCode = 200, string $body = '{"ok":true}'): array
+    {
+        $client = Understudy::for(ClientInterface::class);
+        $requests = Arg::captor(RequestInterface::class);
+        when(fn() => $client->sendRequest($requests->capture()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return [$client, $requests];
+    }
+
     private function loader(
-        FakeHttpClient $client,
+        ClientInterface $client,
         array $headers = [],
-        ?FakeCache $cache = null,
+        ?CacheInterface $cache = null,
         int $cacheTtl = 0,
     ): SpecLoader {
         return new SpecLoader(

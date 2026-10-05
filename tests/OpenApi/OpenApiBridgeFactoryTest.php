@@ -6,17 +6,25 @@ namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestInterface;
+use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Captor;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\verify;
+use function Rasuvaeff\Understudy\when;
 
 /**
  * The factory exists so a consumer outside `Rasuvaeff\` can assemble the
@@ -30,7 +38,7 @@ final class OpenApiBridgeFactoryTest
 {
     public function buildsABridgeFromADecodedDocument(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->trackingClient();
 
         $tester = $this->tester(OpenApiBridgeFactory::create(
             spec: OpenApiFixture::spec(),
@@ -43,12 +51,12 @@ final class OpenApiBridgeFactoryTest
 
         $tester->callTool('getBlogTags');
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tags');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tags');
     }
 
     public function buildsABridgeFromASpecFile(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->trackingClient();
         $path = sys_get_temp_dir() . '/yii3-mcp-factory-spec-' . bin2hex(random_bytes(8)) . '.json';
         file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
 
@@ -67,13 +75,14 @@ final class OpenApiBridgeFactoryTest
             @unlink($path);
         }
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tags');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tags');
     }
 
     public function urlSpecKeepsItsOwnCredentialScopeAndUsesTheCache(): void
     {
-        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
-        $cache = new FakeCache();
+        [$client, $requests] = $this->trackingClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $cache = Understudy::for(CacheInterface::class);
+        $keys = Arg::captor();
 
         $this->tester(OpenApiBridgeFactory::create(
             spec: 'https://spec.test/openapi.json',
@@ -88,10 +97,12 @@ final class OpenApiBridgeFactoryTest
             specCacheTtl: 60,
         ))->callTool('getBlogTags');
 
-        Assert::same($client->lastRequest?->getHeaderLine('X-Api-Token'), 'api-only');
-        Assert::same($client->lastRequest?->getHeaderLine('X-Spec-Token'), '');
-        Assert::same($cache->lastTtl, 60);
-        Assert::same(count($cache->values), 1);
+        // the operation call carries the operation scope only…
+        Assert::same($requests->last()->getHeaderLine('X-Api-Token'), 'api-only');
+        Assert::same($requests->last()->getHeaderLine('X-Spec-Token'), '');
+
+        // …and the URL document went through the PSR-16 cache with its TTL
+        verify(fn() => $cache->set($keys->capture(), Arg::any(), 60));
     }
 
     /**
@@ -101,12 +112,13 @@ final class OpenApiBridgeFactoryTest
      */
     public function urlSpecWithoutATtlNeverTouchesTheCache(): void
     {
-        $cache = new FakeCache();
+        $cache = Understudy::for(CacheInterface::class);
+        $client = $this->client(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
 
         $this->tester(OpenApiBridgeFactory::create(
             spec: 'https://spec.test/openapi.json',
             baseUrl: 'https://api.test/',
-            httpClient: new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR)),
+            httpClient: $client,
             requestFactory: new Psr17Factory(),
             streamFactory: new Psr17Factory(),
             operations: ['getBlogTags'],
@@ -114,12 +126,12 @@ final class OpenApiBridgeFactoryTest
             specCacheTtl: 0,
         ))->callTool('getBlogTags');
 
-        Assert::same($cache->values, []);
+        verify(fn() => $cache->set(Arg::any(), Arg::any(), Arg::any()), never: true);
     }
 
     public function multiSegmentPathParamsReachTheExecutor(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->trackingClient();
 
         $this->tester(OpenApiBridgeFactory::create(
             spec: OpenApiFixture::spec(),
@@ -131,17 +143,19 @@ final class OpenApiBridgeFactoryTest
             multiSegmentPathParams: ['slug' => 3],
         ))->callTool('getBlogTagBySlug', ['slug' => 'dev/keppio']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/dev%2Fkeppio');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tag/dev%2Fkeppio');
     }
 
     public function responseCapIsForwardedAndDefaultsToThePackageLimit(): void
     {
         $body = json_encode(['pad' => str_repeat('a', 512)], JSON_THROW_ON_ERROR);
+        $cappedClient = $this->client(body: $body);
+        $uncappedClient = $this->client(body: $body);
 
         $capped = $this->tester(OpenApiBridgeFactory::create(
             spec: OpenApiFixture::spec(),
             baseUrl: 'https://api.test/',
-            httpClient: new FakeHttpClient(body: $body),
+            httpClient: $cappedClient,
             requestFactory: new Psr17Factory(),
             streamFactory: new Psr17Factory(),
             operations: ['getBlogTags'],
@@ -155,7 +169,7 @@ final class OpenApiBridgeFactoryTest
         $passed = $this->tester(OpenApiBridgeFactory::create(
             spec: OpenApiFixture::spec(),
             baseUrl: 'https://api.test/',
-            httpClient: new FakeHttpClient(body: $body),
+            httpClient: $uncappedClient,
             requestFactory: new Psr17Factory(),
             streamFactory: new Psr17Factory(),
             operations: ['getBlogTags'],
@@ -169,7 +183,7 @@ final class OpenApiBridgeFactoryTest
         $result = $this->tester(OpenApiBridgeFactory::create(
             spec: OpenApiFixture::spec(),
             baseUrl: 'https://api.test/',
-            httpClient: new FakeHttpClient(statusCode: 500, body: '{"secret":"upstream detail"}'),
+            httpClient: $this->client(statusCode: 500, body: '{"secret":"upstream detail"}'),
             requestFactory: new Psr17Factory(),
             streamFactory: new Psr17Factory(),
             operations: ['getBlogTags'],
@@ -178,6 +192,34 @@ final class OpenApiBridgeFactoryTest
 
         Assert::true($result['isError']);
         Assert::string($result['content'][0]['text'])->notContains('upstream detail');
+    }
+
+    /**
+     * A PSR-18 double answering every request with the same canned response.
+     */
+    private function client(int $statusCode = 200, string $body = '{"ok":true}'): ClientInterface
+    {
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return $client;
+    }
+
+    /**
+     * The same canned-response double, with the outgoing request captured for
+     * URI/header assertions.
+     *
+     * @return array{ClientInterface, Captor<RequestInterface>}
+     */
+    private function trackingClient(int $statusCode = 200, string $body = '{"ok":true}'): array
+    {
+        $client = Understudy::for(ClientInterface::class);
+        $requests = Arg::captor(RequestInterface::class);
+        when(fn() => $client->sendRequest($requests->capture()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return [$client, $requests];
     }
 
     private function tester(OpenApiServerConfigurator $configurator): McpTester
