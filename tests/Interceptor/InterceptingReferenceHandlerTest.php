@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
+use Mcp\Exception\ToolCallException;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
@@ -16,12 +19,13 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
-use Rasuvaeff\Yii3Mcp\Tests\Support\ShortCircuitInterceptor;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(InterceptingReferenceHandler::class)]
@@ -158,8 +162,10 @@ final class InterceptingReferenceHandlerTest
 
     public function shortCircuitReturnsWithoutExecutingTheTool(): void
     {
-        $result = $this->tester([new ShortCircuitInterceptor(result: 'from-interceptor')])
-            ->callTool('explode');
+        $interceptor = Understudy::for(ToolCallInterceptorInterface::class);
+        when(fn() => $interceptor->intercept(Arg::any(), Arg::any()))->returns('from-interceptor');
+
+        $result = $this->tester([$interceptor])->callTool('explode');
 
         Assert::same($result['content'][0]['text'], 'from-interceptor');
         Assert::false($result['isError'] ?? false);
@@ -167,8 +173,10 @@ final class InterceptingReferenceHandlerTest
 
     public function toolCallExceptionBecomesErrorEnvelope(): void
     {
-        $result = $this->tester([new ShortCircuitInterceptor(rejectWith: 'rejected by policy')])
-            ->callTool('greet', ['name' => 'Yii']);
+        $interceptor = Understudy::for(ToolCallInterceptorInterface::class);
+        when(fn() => $interceptor->intercept(Arg::any(), Arg::any()))->throws(new ToolCallException('rejected by policy'));
+
+        $result = $this->tester([$interceptor])->callTool('greet', ['name' => 'Yii']);
 
         Assert::true($result['isError']);
         Assert::same($result['content'][0]['text'], 'rejected by policy');

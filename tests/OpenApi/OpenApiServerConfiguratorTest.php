@@ -9,9 +9,14 @@ use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
+use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\BridgedToolHandler;
@@ -24,15 +29,16 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
-use Rasuvaeff\Yii3Mcp\Tests\Support\ThrowingRequestFactory;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\verify;
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(OpenApiServerConfigurator::class)]
@@ -42,7 +48,7 @@ final class OpenApiServerConfiguratorTest
 {
     public function bridgedOperationsAppearInToolsList(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags', 'getBlogTagBySlug']);
+        $action = $this->action($this->client(), ['getBlogTags', 'getBlogTagBySlug']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], $sessionId);
@@ -57,7 +63,7 @@ final class OpenApiServerConfiguratorTest
 
     public function argumentLessOperationServesPropertiesAsJsonObject(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getSitemap']);
+        $action = $this->action($this->client(), ['getSitemap']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 9, 'method' => 'tools/list'], $sessionId);
@@ -74,7 +80,10 @@ final class OpenApiServerConfiguratorTest
 
     public function toolsCallExecutesHttpRequestAgainstUpstream(): void
     {
-        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $client = Understudy::for(ClientInterface::class);
+        $requests = Arg::captor(RequestInterface::class);
+        when(fn() => $client->sendRequest($requests->capture()))
+            ->returns(new Response(200, ['Content-Type' => 'application/json'], '[{"slug":"php"}]'));
         $action = $this->action($client, ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
@@ -85,7 +94,7 @@ final class OpenApiServerConfiguratorTest
             'params' => ['name' => 'getBlogTags', 'arguments' => ['locale' => 'ru']],
         ], $sessionId);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tags?locale=ru');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tags?locale=ru');
 
         $body = $this->decode($response);
         Assert::false(isset($body['error']));
@@ -94,7 +103,7 @@ final class OpenApiServerConfiguratorTest
 
     public function objectResponseAdvertisesOutputSchemaInToolsList(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags', 'getBlogTagBySlug']);
+        $action = $this->action($this->client(), ['getBlogTags', 'getBlogTagBySlug']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/list'], $sessionId);
@@ -109,7 +118,7 @@ final class OpenApiServerConfiguratorTest
 
     public function objectResponsePayloadArrivesAsStructuredContent(): void
     {
-        $client = new FakeHttpClient(body: '{"slug":"php","title":"PHP"}');
+        $client = $this->client(body: '{"slug":"php","title":"PHP"}');
         $action = $this->action($client, ['getBlogTagBySlug']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
@@ -128,7 +137,7 @@ final class OpenApiServerConfiguratorTest
 
     public function upstreamFailureSurfacesAsToolError(): void
     {
-        $action = $this->action(new FakeHttpClient(statusCode: 500, body: 'boom'), ['getBlogTags']);
+        $action = $this->action($this->client(statusCode: 500, body: 'boom'), ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, [
@@ -147,7 +156,7 @@ final class OpenApiServerConfiguratorTest
     {
         Expect::exception(UnknownOperationException::class);
 
-        $this->action(new FakeHttpClient(), ['nonExistentOperation']);
+        $this->action($this->client(), ['nonExistentOperation']);
     }
 
     public function safeMethodsOnlyRejectsNonGetOperationsAtBuildTime(): void
@@ -155,7 +164,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['createSubscriber'], safeMethodsOnly: true);
+            $this->action($this->client(), ['createSubscriber'], safeMethodsOnly: true);
         } catch (UnsafeOperationException $caught) {
         }
 
@@ -167,7 +176,7 @@ final class OpenApiServerConfiguratorTest
 
     public function safeMethodsOnlyStillExposesGetOperations(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], safeMethodsOnly: true);
+        $action = $this->action($this->client(), ['getBlogTags'], safeMethodsOnly: true);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 6, 'method' => 'tools/list'], $sessionId);
@@ -177,7 +186,7 @@ final class OpenApiServerConfiguratorTest
 
     public function renamedToolIsServedUnderTheNewNameOnly(): void
     {
-        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $client = $this->client(body: '[{"slug":"php"}]');
         $action = $this->action($client, ['getBlogTags'], toolNames: ['getBlogTags' => 'blog_tags_list']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
@@ -207,7 +216,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
+            $this->action($this->client(), ['getBlogTags'], toolNames: ['nonExistentOperation' => 'x']);
         } catch (InvalidArgumentException $caught) {
         }
 
@@ -221,7 +230,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['a' => 'x', 'b' => 'y']);
+            $this->action($this->client(), ['getBlogTags'], toolNames: ['a' => 'x', 'b' => 'y']);
         } catch (InvalidArgumentException $caught) {
         }
 
@@ -234,7 +243,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], toolNames: ['getBlogTags' => 'get blog tags']);
+            $this->action($this->client(), ['getBlogTags'], toolNames: ['getBlogTags' => 'get blog tags']);
         } catch (InvalidSpecException $caught) {
         }
 
@@ -248,7 +257,7 @@ final class OpenApiServerConfiguratorTest
 
         try {
             $this->action(
-                new FakeHttpClient(),
+                $this->client(),
                 ['getBlogTags', 'getBlogTagBySlug'],
                 toolNames: ['getBlogTagBySlug' => 'getBlogTags'],
             );
@@ -270,7 +279,7 @@ final class OpenApiServerConfiguratorTest
 
         try {
             $this->action(
-                new FakeHttpClient(),
+                $this->client(),
                 ['getBlogTags'],
                 toolNames: ['getBlogTags' => 'greet'],
                 toolClasses: [GreetingTool::class],
@@ -299,7 +308,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier, toolClasses: [GreetingTool::class]);
+            $this->action($this->client(), ['getBlogTags'], modifier: $modifier, toolClasses: [GreetingTool::class]);
         } catch (InvalidSpecException $caught) {
         }
 
@@ -309,7 +318,7 @@ final class OpenApiServerConfiguratorTest
 
     public function attributeToolsAndBridgedToolsCoexistWhenNamesDiffer(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], toolClasses: [GreetingTool::class]);
+        $action = $this->action($this->client(), ['getBlogTags'], toolClasses: [GreetingTool::class]);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 30, 'method' => 'tools/list'], $sessionId);
@@ -322,7 +331,7 @@ final class OpenApiServerConfiguratorTest
 
     public function getOperationsAreMarkedReadOnly(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags']);
+        $action = $this->action($this->client(), ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 15, 'method' => 'tools/list'], $sessionId);
@@ -332,7 +341,7 @@ final class OpenApiServerConfiguratorTest
 
     public function nonGetOperationsAreNotMarkedReadOnly(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['createSubscriber']);
+        $action = $this->action($this->client(), ['createSubscriber']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 16, 'method' => 'tools/list'], $sessionId);
@@ -348,7 +357,7 @@ final class OpenApiServerConfiguratorTest
                 'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['catalog', 'read-only']]]],
             ]),
             executor: new HttpOperationExecutor(
-                httpClient: new FakeHttpClient(),
+                httpClient: $this->client(),
                 requestFactory: $factory,
                 streamFactory: $factory,
                 baseUrl: 'https://api.test',
@@ -374,7 +383,7 @@ final class OpenApiServerConfiguratorTest
 
     public function operationWithoutTagsHasNoMeta(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags']);
+        $action = $this->action($this->client(), ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 18, 'method' => 'tools/list'], $sessionId);
@@ -394,7 +403,7 @@ final class OpenApiServerConfiguratorTest
                 outputSchema: $tool->outputSchema,
             ),
         );
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier);
+        $action = $this->action($this->client(), ['getBlogTags'], modifier: $modifier);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 13, 'method' => 'tools/list'], $sessionId);
@@ -413,7 +422,7 @@ final class OpenApiServerConfiguratorTest
             return $tool;
         });
         $action = $this->action(
-            new FakeHttpClient(),
+            $this->client(),
             ['getBlogTags'],
             toolNames: ['getBlogTags' => 'blog_tags_list'],
             modifier: $modifier,
@@ -435,7 +444,7 @@ final class OpenApiServerConfiguratorTest
                 outputSchema: $tool->outputSchema,
             ),
         );
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier);
+        $action = $this->action($this->client(), ['getBlogTags'], modifier: $modifier);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 14, 'method' => 'tools/list'], $sessionId);
@@ -459,7 +468,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], modifier: $modifier);
+            $this->action($this->client(), ['getBlogTags'], modifier: $modifier);
         } catch (InvalidSpecException $caught) {
         }
 
@@ -483,7 +492,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags', 'getBlogTagBySlug'], modifier: $modifier);
+            $this->action($this->client(), ['getBlogTags', 'getBlogTagBySlug'], modifier: $modifier);
         } catch (InvalidSpecException $caught) {
         }
 
@@ -493,7 +502,7 @@ final class OpenApiServerConfiguratorTest
 
     public function emptyAllowListExposesNothing(): void
     {
-        $action = $this->action(new FakeHttpClient(), []);
+        $action = $this->action($this->client(), []);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/list'], $sessionId);
@@ -503,7 +512,7 @@ final class OpenApiServerConfiguratorTest
 
     public function dryRunOperationGetsAnExtraArgumentInToolsList(): void
     {
-        $action = $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['getBlogTags']);
+        $action = $this->action($this->client(), ['getBlogTags'], dryRunOperations: ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
         $response = $this->post($action, ['jsonrpc' => '2.0', 'id' => 19, 'method' => 'tools/list'], $sessionId);
@@ -516,7 +525,7 @@ final class OpenApiServerConfiguratorTest
 
     public function dryRunCallReturnsThePlanWithoutCallingUpstream(): void
     {
-        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $client = $this->client(body: '[{"slug":"php"}]');
         $action = $this->action($client, ['getBlogTags'], dryRunOperations: ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
@@ -527,7 +536,7 @@ final class OpenApiServerConfiguratorTest
             'params' => ['name' => 'getBlogTags', 'arguments' => ['locale' => 'ru', 'dryRun' => true]],
         ], $sessionId);
 
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
 
         $body = $this->decode($response);
         Assert::false(isset($body['error']));
@@ -541,7 +550,7 @@ final class OpenApiServerConfiguratorTest
 
     public function dryRunFlagOnANonDryRunnableOperationIsIgnored(): void
     {
-        $client = new FakeHttpClient(body: '[{"slug":"php"}]');
+        $client = $this->client(body: '[{"slug":"php"}]');
         $action = $this->action($client, ['getBlogTags']);
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
@@ -552,7 +561,7 @@ final class OpenApiServerConfiguratorTest
             'params' => ['name' => 'getBlogTags', 'arguments' => ['dryRun' => true]],
         ], $sessionId);
 
-        Assert::same($client->requestCount, 1);
+        verify(fn() => $client->sendRequest(Arg::any()));
     }
 
     public function dryRunWithUnknownOperationIdFailsAtBuildTime(): void
@@ -560,7 +569,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
+            $this->action($this->client(), ['getBlogTags'], dryRunOperations: ['nonExistentOperation']);
         } catch (InvalidArgumentException $caught) {
         }
 
@@ -574,7 +583,7 @@ final class OpenApiServerConfiguratorTest
         $caught = null;
 
         try {
-            $this->action(new FakeHttpClient(), ['getBlogTags'], dryRunOperations: ['a', 'b']);
+            $this->action($this->client(), ['getBlogTags'], dryRunOperations: ['a', 'b']);
         } catch (InvalidArgumentException $caught) {
         }
 
@@ -598,7 +607,7 @@ final class OpenApiServerConfiguratorTest
     public function bridgedFailuresNameTheServedToolNotTheOperationId(): void
     {
         $action = $this->action(
-            new FakeHttpClient(statusCode: 404, body: '{"message":"404 Not Found"}'),
+            $this->client(statusCode: 404, body: '{"message":"404 Not Found"}'),
             ['getBlogTags'],
             toolNames: ['getBlogTags' => 'blog_tags_list'],
         );
@@ -620,7 +629,7 @@ final class OpenApiServerConfiguratorTest
     public function bridgedArgumentGuardsNameTheServedTool(): void
     {
         $action = $this->action(
-            new FakeHttpClient(),
+            $this->client(),
             ['getBlogTagBySlug'],
             toolNames: ['getBlogTagBySlug' => 'blog_tag_get'],
         );
@@ -656,7 +665,7 @@ final class OpenApiServerConfiguratorTest
             ),
         );
         $action = $this->action(
-            new FakeHttpClient(statusCode: 500, body: 'boom'),
+            $this->client(statusCode: 500, body: 'boom'),
             ['getBlogTags'],
             toolNames: ['getBlogTags' => 'intermediate_name'],
             modifier: $modifier,
@@ -684,7 +693,7 @@ final class OpenApiServerConfiguratorTest
     public function dryRunPreviewKeepsReportingTheOperationId(): void
     {
         $action = $this->action(
-            new FakeHttpClient(),
+            $this->client(),
             ['getBlogTags'],
             toolNames: ['getBlogTags' => 'blog_tags_list'],
             dryRunOperations: ['getBlogTags'],
@@ -714,10 +723,18 @@ final class OpenApiServerConfiguratorTest
      */
     public function infrastructureFailuresDoNotReachTheClient(): void
     {
+        // a BARE InvalidArgumentException on purpose: that is the type the
+        // PSR-17 stack raises on deployment detail (an unparseable request
+        // URI) and the bridged handler must NOT hand to the MCP client
+        $requestFactory = Understudy::for(RequestFactoryInterface::class);
+        when(fn() => $requestFactory->createRequest(Arg::any(), Arg::any()))->throws(
+            new InvalidArgumentException('Unable to parse URI: "https://internal.svc.cluster.local/x"'),
+        );
+
         $action = $this->action(
-            new FakeHttpClient(),
+            $this->client(),
             ['getBlogTags'],
-            requestFactory: new ThrowingRequestFactory(),
+            requestFactory: $requestFactory,
         );
         $sessionId = $this->initialize($action)->getHeaderLine('Mcp-Session-Id');
 
@@ -736,8 +753,20 @@ final class OpenApiServerConfiguratorTest
         Assert::false($body['result']['isError'] ?? false);
     }
 
+    /**
+     * A PSR-18 double answering every request with the same canned response.
+     */
+    private function client(int $statusCode = 200, string $body = '{"ok":true}'): ClientInterface
+    {
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return $client;
+    }
+
     private function action(
-        FakeHttpClient $client,
+        ClientInterface $client,
         array $operations,
         bool $safeMethodsOnly = false,
         array $toolNames = [],

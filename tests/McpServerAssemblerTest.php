@@ -7,15 +7,17 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\McpServerAssembler;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerComponents;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyPromptVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyResourceVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
-use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingPromptInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingResourceInterceptor;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -23,6 +25,8 @@ use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\verify;
 
 #[Test]
 #[Covers(McpServerAssembler::class)]
@@ -32,7 +36,7 @@ final class McpServerAssemblerTest
 {
     public function assemblerBuildsFromResolvedComponentsWithoutAContainerDependency(): void
     {
-        $configurator = new RecordingConfigurator();
+        $configurator = Understudy::for(ServerConfiguratorInterface::class);
         $components = new McpServerComponents(
             tools: [GreetingTool::class],
             configurators: [$configurator],
@@ -54,7 +58,7 @@ final class McpServerAssemblerTest
         $server = $assembler->create();
 
         Assert::instanceOf($server, Server::class);
-        Assert::true($configurator->configured);
+        verify(fn() => $configurator->configure(Arg::any()));
 
         $psr17 = new Psr17Factory();
         $tester = new McpTester(

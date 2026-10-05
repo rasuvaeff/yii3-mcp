@@ -11,8 +11,12 @@ use Mcp\Server\Builder;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Invocation;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\ReservedToolNamesAwareInterface;
 use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\AttributelessClass;
@@ -31,10 +35,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\InvalidNameTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyPromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
-use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
-use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingSubscriptionManager;
-use Rasuvaeff\Yii3Mcp\Tests\Support\ReservedNamesRecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\TrailingHelperTool;
@@ -45,6 +46,9 @@ use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 use Yiisoft\Test\Support\Log\SimpleLogger;
+
+use function Rasuvaeff\Understudy\verify;
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(McpServerFactory::class)]
@@ -164,16 +168,17 @@ final class McpServerFactoryTest
 
     public function configuratorsContributeToTheBuilder(): void
     {
-        $configurator = new class implements ServerConfiguratorInterface {
-            #[\Override]
-            public function configure(Builder $builder): void
-            {
+        $configurator = Understudy::for(ServerConfiguratorInterface::class);
+        when(fn() => $configurator->configure(Arg::any()))->answers(
+            static function (Invocation $call): void {
+                $builder = $call->arg('builder');
+                \assert($builder instanceof Builder);
                 $builder->addTool(
                     handler: static fn(): string => 'from-configurator',
                     name: 'configured-tool',
                 );
-            }
-        };
+            },
+        );
 
         $server = $this->factory()->create([], [$configurator]);
 
@@ -385,15 +390,17 @@ final class McpServerFactoryTest
 
     public function reservesAttributeToolNamesForConfigurators(): void
     {
-        $configurator = new ReservedNamesRecordingConfigurator();
+        $configurator = Understudy::for(ServerConfiguratorInterface::class, ReservedToolNamesAwareInterface::class);
+        $reserved = Arg::captor();
 
         // CountingTool's attribute name ("count.up") differs from its method
         // name ("up"), which GreetingTool's does not — without it the
         // explicit name and the derived one are indistinguishable
         $this->factory()->create([GreetingTool::class, CountingTool::class], [$configurator]);
 
-        Assert::same($configurator->reserved, ['greet', 'explode', 'count.up']);
-        Assert::true($configurator->configured);
+        verify(fn() => $configurator->withReservedToolNames($reserved->capture()));
+        verify(fn() => $configurator->configure(Arg::any()));
+        Assert::same($reserved->last(), ['greet', 'explode', 'count.up']);
     }
 
     /**
@@ -403,20 +410,22 @@ final class McpServerFactoryTest
      */
     public function reservedNamesFollowTheSdkDefaultNamingRule(): void
     {
-        $configurator = new ReservedNamesRecordingConfigurator();
+        $configurator = Understudy::for(ServerConfiguratorInterface::class, ReservedToolNamesAwareInterface::class);
+        $reserved = Arg::captor();
 
         $this->factory()->create([DefaultNamedTool::class], [$configurator]);
 
-        Assert::same($configurator->reserved, ['lookup', 'DefaultNamedTool']);
+        verify(fn() => $configurator->withReservedToolNames($reserved->capture()));
+        Assert::same($reserved->last(), ['lookup', 'DefaultNamedTool']);
     }
 
     public function configuratorsWithoutTheInterfaceStillRun(): void
     {
-        $configurator = new RecordingConfigurator();
+        $configurator = Understudy::for(ServerConfiguratorInterface::class);
 
         $this->factory()->create([GreetingTool::class], [$configurator]);
 
-        Assert::true($configurator->configured);
+        verify(fn() => $configurator->configure(Arg::any()));
     }
 
     public function instructionsAreServedOnlyWhenConfigured(): void
@@ -478,12 +487,12 @@ final class McpServerFactoryTest
      */
     public function aCustomSubscriptionManagerBacksTheSubscribeHandler(): void
     {
-        $subscriptions = new RecordingSubscriptionManager();
+        $subscriptions = Understudy::for(SubscriptionManagerInterface::class);
 
         $tester = $this->tester($this->factory(subscriptionManager: $subscriptions)->create([GreetingTool::class]));
         $tester->request('resources/subscribe', ['uri' => 'app://status']);
 
-        Assert::same($subscriptions->subscribed, ['app://status']);
+        verify(fn() => $subscriptions->subscribe(Arg::any(), 'app://status'));
     }
 
     /**

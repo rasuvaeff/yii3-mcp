@@ -6,10 +6,16 @@ namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
 use InvalidArgumentException;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestInterface;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Captor;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidToolArgumentException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
@@ -17,17 +23,18 @@ use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Tests\Support\EndlessStream;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDelegatedHeaderProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
-use Rasuvaeff\Yii3Mcp\Tests\Support\StreamBodyHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StubStream;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
+
+use function Rasuvaeff\Understudy\verify;
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(HttpOperationExecutor::class)]
@@ -40,62 +47,63 @@ final class HttpOperationExecutorTest
 
     public function buildsUrlWithQueryParameters(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $result = $this->executor($client)->execute($this->operation('getBlogTags'), ['locale' => 'en']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tags?locale=en');
-        Assert::same($client->lastRequest?->getMethod(), 'GET');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tags?locale=en');
+        Assert::same($requests->last()->getMethod(), 'GET');
         Assert::same($result, ['ok' => true]);
     }
 
     public function substitutesAndEncodesPathParameters(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         // a separator inside the value is rejected outright (see
         // routeEscapingPathArgumentProvider), so encoding is exercised with
         // the reserved characters that stay legal
         $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => 'a b+c?']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/a%20b%2Bc%3F');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tag/a%20b%2Bc%3F');
     }
 
     public function missingPathParameterThrows(): void
     {
         Expect::exception(InvalidArgumentException::class);
 
-        $this->executor(new FakeHttpClient())->execute($this->operation('getBlogTagBySlug'), []);
+        [$client] = $this->client();
+        $this->executor($client)->execute($this->operation('getBlogTagBySlug'), []);
     }
 
     public function sendsJsonRequestBody(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->executor($client)->execute(
             $this->operation('createSubscriber'),
             ['body' => ['email' => 'user@example.com']],
         );
 
-        Assert::same($client->lastRequest?->getMethod(), 'POST');
-        Assert::same($client->lastRequest?->getHeaderLine('Content-Type'), 'application/json');
-        Assert::same((string) $client->lastRequest?->getBody(), '{"email":"user@example.com"}');
+        Assert::same($requests->last()->getMethod(), 'POST');
+        Assert::same($requests->last()->getHeaderLine('Content-Type'), 'application/json');
+        Assert::same((string) $requests->last()->getBody(), '{"email":"user@example.com"}');
     }
 
     public function appliesDefaultHeaders(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->executor($client, headers: ['Authorization' => 'Bearer token-1'])
             ->execute($this->operation('getBlogTags'), []);
 
-        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer token-1');
-        Assert::same($client->lastRequest?->getHeaderLine('Accept'), 'application/json');
+        Assert::same($requests->last()->getHeaderLine('Authorization'), 'Bearer token-1');
+        Assert::same($requests->last()->getHeaderLine('Accept'), 'application/json');
     }
 
     public function delegatedHeadersAreResolvedForEveryIdentity(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
         $identityProvider = new MutableExecutionIdentityProvider(new ExecutionIdentity(subjectId: 'user-1', tenantId: 'tenant-a'));
         $factory = new Psr17Factory();
         $executor = new HttpOperationExecutor(
@@ -109,20 +117,20 @@ final class HttpOperationExecutorTest
         );
 
         $executor->execute($this->operation('getBlogTags'), []);
-        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer tenant-a:user-1');
+        Assert::same($requests->last()->getHeaderLine('Authorization'), 'Bearer tenant-a:user-1');
 
         $identityProvider->identity = new ExecutionIdentity(subjectId: 'user-2', tenantId: 'tenant-b');
         $executor->execute($this->operation('getBlogTags'), []);
 
-        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer tenant-b:user-2');
-        Assert::same($client->lastRequest?->getHeaderLine('X-Upstream-Operation'), 'getBlogTags');
+        Assert::same($requests->last()->getHeaderLine('Authorization'), 'Bearer tenant-b:user-2');
+        Assert::same($requests->last()->getHeaderLine('X-Upstream-Operation'), 'getBlogTags');
     }
 
     public function nonOverriddenDefaultHeadersSurviveDelegation(): void
     {
         // delegated headers REPLACE matching defaults, they do not evict
         // the rest of the default header set
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
         $factory = new Psr17Factory();
         $executor = new HttpOperationExecutor(
             httpClient: $client,
@@ -136,13 +144,13 @@ final class HttpOperationExecutorTest
 
         $executor->execute($this->operation('getBlogTags'), []);
 
-        Assert::same($client->lastRequest?->getHeaderLine('Authorization'), 'Bearer tenant-a:user-1');
-        Assert::same($client->lastRequest?->getHeaderLine('X-Fixed'), 'kept');
+        Assert::same($requests->last()->getHeaderLine('Authorization'), 'Bearer tenant-a:user-1');
+        Assert::same($requests->last()->getHeaderLine('X-Fixed'), 'kept');
     }
 
     public function delegatedProviderFailureIsFailClosedBeforeHttp(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
         $factory = new Psr17Factory();
         $executor = new HttpOperationExecutor(
             httpClient: $client,
@@ -161,17 +169,18 @@ final class HttpOperationExecutorTest
         }
 
         Assert::notNull($caught);
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
     }
 
     public function delegatedProvidersMustBeConfiguredAsAPair(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client();
 
         Expect::exception(InvalidArgumentException::class);
 
         new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -181,7 +190,8 @@ final class HttpOperationExecutorTest
 
     public function nonSuccessResponseThrows(): void
     {
-        $executor = $this->executor(new FakeHttpClient(statusCode: 422, body: '{"error":"validation"}'));
+        [$client] = $this->client(statusCode: 422, body: '{"error":"validation"}');
+        $executor = $this->executor($client);
 
         Expect::exception(OperationFailedException::class);
 
@@ -190,7 +200,8 @@ final class HttpOperationExecutorTest
 
     public function nonJsonResponseIsReturnedAsString(): void
     {
-        $executor = $this->executor(new FakeHttpClient(body: 'plain text'));
+        [$client] = $this->client(body: 'plain text');
+        $executor = $this->executor($client);
 
         Assert::same($executor->execute($this->operation('getBlogTags'), []), 'plain text');
     }
@@ -199,17 +210,19 @@ final class HttpOperationExecutorTest
     {
         Expect::exception(InvalidArgumentException::class);
 
-        $this->executor(new FakeHttpClient())->execute($this->operation('getBlogTags'), ['locale' => ['en']]);
+        [$client] = $this->client();
+        $this->executor($client)->execute($this->operation('getBlogTags'), ['locale' => ['en']]);
     }
 
     public function emptyBaseUrlThrows(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client();
 
         Expect::exception(InvalidArgumentException::class);
 
         new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: '  ',
@@ -218,24 +231,26 @@ final class HttpOperationExecutorTest
 
     public function bodyArgumentIsIgnoredForBodylessOperations(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->executor($client)->execute($this->operation('getBlogTags'), ['body' => ['x' => 1]]);
 
-        Assert::same((string) $client->lastRequest?->getBody(), '');
-        Assert::same($client->lastRequest?->getHeaderLine('Content-Type'), '');
+        Assert::same((string) $requests->last()->getBody(), '');
+        Assert::same($requests->last()->getHeaderLine('Content-Type'), '');
     }
 
     public function status299IsSuccess(): void
     {
-        $executor = $this->executor(new FakeHttpClient(statusCode: 299, body: '{"ok":1}'));
+        [$client] = $this->client(statusCode: 299, body: '{"ok":1}');
+        $executor = $this->executor($client);
 
         Assert::same($executor->execute($this->operation('getBlogTags'), []), ['ok' => 1]);
     }
 
     public function status300IsFailure(): void
     {
-        $executor = $this->executor(new FakeHttpClient(statusCode: 300, body: 'redirect'));
+        [$client] = $this->client(statusCode: 300, body: 'redirect');
+        $executor = $this->executor($client);
 
         Expect::exception(OperationFailedException::class);
 
@@ -245,7 +260,8 @@ final class HttpOperationExecutorTest
     public function longErrorBodyIsTruncatedWithEllipsis(): void
     {
         // неоднородный префикс: смещение/удаление substr должно менять результат
-        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: 'X' . str_repeat('a', 2_000)));
+        [$client] = $this->client(statusCode: 500, body: 'X' . str_repeat('a', 2_000));
+        $executor = $this->executor($client);
 
         $caught = null;
 
@@ -260,7 +276,8 @@ final class HttpOperationExecutorTest
 
     public function errorBodyAtTheLimitIsNotTruncated(): void
     {
-        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat('b', 2_000)));
+        [$client] = $this->client(statusCode: 500, body: str_repeat('b', 2_000));
+        $executor = $this->executor($client);
 
         $caught = null;
 
@@ -279,7 +296,8 @@ final class HttpOperationExecutorTest
         // 2800 bytes of two-byte characters: the 2000-byte cut lands inside a
         // character, and a broken sequence would make the SDK fail to encode
         // the tool-error envelope — silently dropping the whole response
-        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat('привет ', 400)));
+        [$client] = $this->client(statusCode: 500, body: str_repeat('привет ', 400));
+        $executor = $this->executor($client);
 
         $caught = null;
 
@@ -298,7 +316,8 @@ final class HttpOperationExecutorTest
     {
         // an upstream error page in a legacy encoding is unencodable however
         // it is cut, so the excerpt is dropped in favour of its byte count
-        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: "\xEF\xF0\xE8\xE2\xE5\xF2"));
+        [$client] = $this->client(statusCode: 500, body: "\xEF\xF0\xE8\xE2\xE5\xF2");
+        $executor = $this->executor($client);
 
         $caught = null;
 
@@ -314,33 +333,34 @@ final class HttpOperationExecutorTest
 
     public function nullQueryArgumentIsSkipped(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->executor($client)->execute($this->multiQueryOperation(), ['first' => null, 'second' => 'B']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/multi?second=B');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/multi?second=B');
     }
 
     public function nullPathArgumentThrowsAsIfMissing(): void
     {
         Expect::exception(InvalidArgumentException::class);
 
-        $this->executor(new FakeHttpClient())->execute($this->operation('getBlogTagBySlug'), ['slug' => null]);
+        [$client] = $this->client();
+        $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => null]);
     }
 
     public function missingQueryArgumentDoesNotStopLaterOnes(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
         $operation = $this->multiQueryOperation();
 
         $this->executor($client)->execute($operation, ['second' => 'B']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/multi?second=B');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/multi?second=B');
     }
 
     public function scalarArgumentsAreStringifiedExactly(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->executor($client)->execute($this->multiQueryOperation(), [
             'first' => 5,
@@ -350,14 +370,14 @@ final class HttpOperationExecutorTest
         ]);
 
         Assert::same(
-            (string) $client->lastRequest?->getUri(),
+            (string) $requests->last()->getUri(),
             'https://api.test/multi?first=5&second=1.5&flag=true&off=false',
         );
     }
 
     public function dryRunReturnsThePlannedRequestWithoutCallingHttp(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         $result = $this->executor($client)->execute(
             $this->operation('createSubscriber'),
@@ -365,7 +385,7 @@ final class HttpOperationExecutorTest
             dryRunnable: true,
         );
 
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
         /** @var array{dryRun: bool, operationId: string, method: string, url: string, body: mixed} $plan */
         $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
         Assert::true($plan['dryRun']);
@@ -377,7 +397,7 @@ final class HttpOperationExecutorTest
 
     public function dryRunPreviewOmitsAStrayBodyOnABodylessOperation(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         // the real call ignores `body` on a bodyless operation — the
         // preview must not claim it would be sent
@@ -387,7 +407,7 @@ final class HttpOperationExecutorTest
             dryRunnable: true,
         );
 
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
         /** @var array<string, mixed> $plan */
         $plan = json_decode((string) $result, associative: true, flags: JSON_THROW_ON_ERROR);
         Assert::false(array_key_exists('body', $plan));
@@ -400,7 +420,7 @@ final class HttpOperationExecutorTest
         // Content-Type + a literal JSON "null" body) — the preview must
         // distinguish them by whether the "body" key is present at all,
         // not by showing null either way
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         $result = $this->executor($client)->execute(
             $this->operation('createSubscriber'),
@@ -415,7 +435,7 @@ final class HttpOperationExecutorTest
 
     public function dryRunPreviewIncludesAnExplicitNullBodyArgument(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         $result = $this->executor($client)->execute(
             $this->operation('createSubscriber'),
@@ -431,7 +451,7 @@ final class HttpOperationExecutorTest
 
     public function dryRunFlagIsIgnoredWhenTheOperationIsNotDryRunnable(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         $this->executor($client)->execute(
             $this->operation('getBlogTags'),
@@ -439,21 +459,21 @@ final class HttpOperationExecutorTest
             dryRunnable: false,
         );
 
-        Assert::same($client->requestCount, 1);
+        verify(fn() => $client->sendRequest(Arg::any()));
     }
 
     public function dryRunnableOperationExecutesNormallyWithoutTheFlag(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         $this->executor($client)->execute($this->operation('getBlogTags'), [], dryRunnable: true);
 
-        Assert::same($client->requestCount, 1);
+        verify(fn() => $client->sendRequest(Arg::any()));
     }
 
     public function nonBooleanDryRunIsRejectedNotExecutedForReal(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         // a truthy-but-not-boolean value (e.g. from a lenient client) must
         // never fall through to a REAL call the caller meant to preview —
@@ -466,27 +486,27 @@ final class HttpOperationExecutorTest
         }
 
         Assert::notNull($caught);
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
     }
 
     public function dryRunFalseExecutesForReal(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => false], dryRunnable: true);
 
-        Assert::same($client->requestCount, 1);
+        verify(fn() => $client->sendRequest(Arg::any()));
     }
 
     public function nonBooleanDryRunIsStillIgnoredWhenTheOperationIsNotDryRunnable(): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
 
         // for a non-dry-runnable operation the argument is undeclared noise,
         // exactly like `dryRun: true` — not a reason to reject the call
         $this->executor($client)->execute($this->operation('getBlogTags'), ['dryRun' => 1], dryRunnable: false);
 
-        Assert::same($client->requestCount, 1);
+        verify(fn() => $client->sendRequest(Arg::any()));
     }
 
     /**
@@ -498,10 +518,11 @@ final class HttpOperationExecutorTest
     #[DataProvider('callerArgumentViolationProvider')]
     public function callerArgumentViolationsUseTheDedicatedException(string $operationId, array $arguments): void
     {
+        [$client] = $this->client();
         $caught = null;
 
         try {
-            $this->executor(new FakeHttpClient())->execute($this->operation($operationId), $arguments, dryRunnable: true);
+            $this->executor($client)->execute($this->operation($operationId), $arguments, dryRunnable: true);
         } catch (InvalidToolArgumentException $caught) {
         }
 
@@ -519,7 +540,7 @@ final class HttpOperationExecutorTest
     #[DataProvider('routeEscapingPathArgumentProvider')]
     public function routeEscapingPathArgumentIsRejected(string $value): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
         $caught = null;
 
         try {
@@ -528,7 +549,7 @@ final class HttpOperationExecutorTest
         }
 
         Assert::notNull($caught);
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
     }
 
     public static function routeEscapingPathArgumentProvider(): iterable
@@ -550,21 +571,22 @@ final class HttpOperationExecutorTest
 
     public function pathArgumentContainingDotsIsNotADotSegment(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->executor($client)->execute($this->operation('getBlogTagBySlug'), ['slug' => 'v1.2']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/v1.2');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tag/v1.2');
     }
 
     public function baseUrlWithEmbeddedCredentialsThrows(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client();
 
         Expect::exception(InvalidArgumentException::class);
 
         new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://svc:secret@api.test/',
@@ -574,11 +596,12 @@ final class HttpOperationExecutorTest
     public function baseUrlWithQueryStringThrows(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client();
 
         Expect::exception(InvalidArgumentException::class);
 
         new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/?api_key=secret',
@@ -588,11 +611,12 @@ final class HttpOperationExecutorTest
     public function baseUrlWithFragmentThrows(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client();
 
         Expect::exception(InvalidArgumentException::class);
 
         new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/#fragment',
@@ -606,11 +630,12 @@ final class HttpOperationExecutorTest
         // closed here too, not silently skip themselves because there was
         // no array to read from
         $factory = new Psr17Factory();
+        [$client] = $this->client();
 
         Expect::exception(InvalidArgumentException::class);
 
         new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'http://example.com:notaport',
@@ -638,8 +663,9 @@ final class HttpOperationExecutorTest
     public function successResponseOverTheAdvertisedSizeIsRejected(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client(body: str_repeat('a', 200));
         $executor = new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(body: str_repeat('a', 200)),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -662,15 +688,8 @@ final class HttpOperationExecutorTest
         // a size-less (chunked) endless body: the executor must abandon the
         // read at the cap, not buffer until the worker dies
         $stream = new EndlessStream();
-        $client = new readonly class ($stream) implements \Psr\Http\Client\ClientInterface {
-            public function __construct(private EndlessStream $stream) {}
-
-            #[\Override]
-            public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
-            {
-                return new \Nyholm\Psr7\Response(200, [], $this->stream);
-            }
-        };
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->returns(new Response(200, [], $stream));
 
         $factory = new Psr17Factory();
         $executor = new HttpOperationExecutor(
@@ -697,8 +716,9 @@ final class HttpOperationExecutorTest
     public function opaqueErrorsSuppressTheUpstreamErrorBody(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client(statusCode: 500, body: 'stack trace with internal hostnames');
         $executor = new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(statusCode: 500, body: 'stack trace with internal hostnames'),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -720,8 +740,9 @@ final class HttpOperationExecutorTest
     public function responseCapOfOneByteIsAValidConfiguration(): void
     {
         $factory = new Psr17Factory();
+        [$client] = $this->client(body: '1');
         $executor = new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(body: '1'),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -736,8 +757,12 @@ final class HttpOperationExecutorTest
         // the stream THROWS on any read: the advertised-size rejection must
         // happen before a byte is pulled, or this raises a LogicException
         $factory = new Psr17Factory();
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->returns(
+            new Response(200, [], new StubStream(content: 'x', advertisedSize: 101, throwOnRead: true)),
+        );
         $executor = new HttpOperationExecutor(
-            httpClient: new StreamBodyHttpClient(new StubStream(content: 'x', advertisedSize: 101, throwOnRead: true)),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -763,8 +788,10 @@ final class HttpOperationExecutorTest
         Assert::same(strlen($body), 100);
 
         $factory = new Psr17Factory();
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->returns(new Response(200, [], new StubStream(content: $body)));
         $executor = new HttpOperationExecutor(
-            httpClient: new StreamBodyHttpClient(new StubStream(content: $body)),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -778,8 +805,9 @@ final class HttpOperationExecutorTest
     {
         $body = '{"pad":"' . str_repeat('b', 90) . '"}';
         $factory = new Psr17Factory();
+        [$client] = $this->client(body: $body);
         $executor = new HttpOperationExecutor(
-            httpClient: new FakeHttpClient(body: $body),
+            httpClient: $client,
             requestFactory: $factory,
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
@@ -793,7 +821,8 @@ final class HttpOperationExecutorTest
     {
         // the error-path read is capped at excerpt size + 1 — the byte count
         // in the placeholder reports what was read, marked as a lower bound
-        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat("\xFF", 2_002)));
+        [$client] = $this->client(statusCode: 500, body: str_repeat("\xFF", 2_002));
+        $executor = $this->executor($client);
 
         $caught = null;
 
@@ -810,7 +839,8 @@ final class HttpOperationExecutorTest
     {
         // an advertised size over the excerpt cap must not blank the excerpt
         // — the first bytes of the error page are the diagnostic value
-        $executor = $this->executor(new FakeHttpClient(statusCode: 500, body: str_repeat('e', 5_000)));
+        [$client] = $this->client(statusCode: 500, body: str_repeat('e', 5_000));
+        $executor = $this->executor($client);
 
         $caught = null;
 
@@ -829,20 +859,20 @@ final class HttpOperationExecutorTest
     {
         // a PSR-7 body may arrive already consumed (a middleware logged it);
         // unlike a (string) cast, read() does not rewind by itself
-        $client = new class implements \Psr\Http\Client\ClientInterface {
-            #[\Override]
-            public function sendRequest(\Psr\Http\Message\RequestInterface $request): \Psr\Http\Message\ResponseInterface
-            {
-                $response = new \Nyholm\Psr7\Response(200, [], '{"ok":true}');
+        [$plainClient] = $this->client();
+
+        $result = $this->executor($plainClient)->execute($this->operation('getBlogTags'), []);
+        Assert::same($result, ['ok' => true]);
+
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->answers(
+            static function (): Response {
+                $response = new Response(200, [], '{"ok":true}');
                 $response->getBody()->getContents(); // drain to EOF
 
                 return $response;
-            }
-        };
-
-        $result = $this->executor(new FakeHttpClient())->execute($this->operation('getBlogTags'), []);
-        Assert::same($result, ['ok' => true]);
-
+            },
+        );
         $factory = new Psr17Factory();
         $executor = new HttpOperationExecutor(
             httpClient: $client,
@@ -859,7 +889,8 @@ final class HttpOperationExecutorTest
         // json_decode is capped at depth 128; a deeper (still bounded) body
         // is returned raw instead of recursing further
         $body = str_repeat('[', 200) . str_repeat(']', 200);
-        $executor = $this->executor(new FakeHttpClient(body: $body));
+        [$client] = $this->client(body: $body);
+        $executor = $this->executor($client);
 
         $result = $executor->execute($this->operation('getBlogTags'), []);
 
@@ -868,22 +899,22 @@ final class HttpOperationExecutorTest
 
     public function optedInPathArgumentCarriesSeparatorsPercentEncoded(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->multiSegmentExecutor($client, ['slug' => 3])
             ->execute($this->operation('getBlogTagBySlug'), ['slug' => 'dev/keppio']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/dev%2Fkeppio');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tag/dev%2Fkeppio');
     }
 
     public function optedInPathArgumentStillAcceptsASingleSegment(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
 
         $this->multiSegmentExecutor($client, ['slug' => 3])
             ->execute($this->operation('getBlogTagBySlug'), ['slug' => '122']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/122');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tag/122');
     }
 
     /**
@@ -894,7 +925,7 @@ final class HttpOperationExecutorTest
     #[DataProvider('optedInRejectedPathArgumentProvider')]
     public function optedInPathArgumentIsStillValidated(string $value): void
     {
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
         $caught = null;
 
         try {
@@ -904,7 +935,7 @@ final class HttpOperationExecutorTest
         }
 
         Assert::notNull($caught);
-        Assert::same($client->requestCount, 0);
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
     }
 
     public static function optedInRejectedPathArgumentProvider(): iterable
@@ -928,7 +959,7 @@ final class HttpOperationExecutorTest
 
     public function segmentLimitOfOneKeepsSingleSegmentBehaviour(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
         $executor = $this->multiSegmentExecutor($client, ['slug' => 1]);
         $caught = null;
 
@@ -941,19 +972,19 @@ final class HttpOperationExecutorTest
 
         $executor->execute($this->operation('getBlogTagBySlug'), ['slug' => 'v1.2']);
 
-        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/blog-tag/v1.2');
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tag/v1.2');
     }
 
     public function segmentLimitAtTheCeilingIsAccepted(): void
     {
-        $client = new FakeHttpClient();
+        [$client, $requests] = $this->client();
         $value = implode('/', array_fill(0, 20, 'a'));
 
         $this->multiSegmentExecutor($client, ['slug' => 20])
             ->execute($this->operation('getBlogTagBySlug'), ['slug' => $value]);
 
         Assert::same(
-            (string) $client->lastRequest?->getUri(),
+            (string) $requests->last()->getUri(),
             'https://api.test/rest/blog-tag/' . str_repeat('a%2F', 19) . 'a',
         );
     }
@@ -969,15 +1000,17 @@ final class HttpOperationExecutorTest
     {
         Expect::exception(InvalidArgumentException::class);
 
-        $this->multiSegmentExecutor(new FakeHttpClient(), ['slug' => $limit]);
+        [$client] = $this->client();
+        $this->multiSegmentExecutor($client, ['slug' => $limit]);
     }
 
     public function invalidSegmentLimitNamesTheOffendingValue(): void
     {
+        [$client] = $this->client();
         $caught = null;
 
         try {
-            $this->multiSegmentExecutor(new FakeHttpClient(), ['slug' => 21]);
+            $this->multiSegmentExecutor($client, ['slug' => 21]);
         } catch (InvalidArgumentException $caught) {
         }
 
@@ -989,10 +1022,11 @@ final class HttpOperationExecutorTest
 
     public function invalidSegmentLimitNamesTheOffendingType(): void
     {
+        [$client] = $this->client();
         $caught = null;
 
         try {
-            $this->multiSegmentExecutor(new FakeHttpClient(), ['slug' => '3']);
+            $this->multiSegmentExecutor($client, ['slug' => '3']);
         } catch (InvalidArgumentException $caught) {
         }
 
@@ -1044,7 +1078,7 @@ final class HttpOperationExecutorTest
         Classify::when(count($segments) > 1, 'multi-segment');
         Classify::when(count($segments) > 3, 'over the segment limit');
 
-        $client = new FakeHttpClient();
+        [$client] = $this->client();
         $accepted = true;
 
         try {
@@ -1055,7 +1089,7 @@ final class HttpOperationExecutorTest
         }
 
         Assert::same($accepted, $wellFormed);
-        Assert::same($client->requestCount, $wellFormed ? 1 : 0);
+        verify(fn() => $client->sendRequest(Arg::any()), times: $wellFormed ? 1 : 0);
     }
 
     /**
@@ -1097,7 +1131,7 @@ final class HttpOperationExecutorTest
      */
     public function messagesNameTheServedToolWhenOneIsPassed(): void
     {
-        $client = new FakeHttpClient(statusCode: 404, body: 'nope');
+        [$client] = $this->client(statusCode: 404, body: 'nope');
         $caught = null;
 
         try {
@@ -1116,7 +1150,7 @@ final class HttpOperationExecutorTest
 
     public function messagesFallBackToTheOperationIdWithoutAServedName(): void
     {
-        $client = new FakeHttpClient(statusCode: 404, body: 'nope');
+        [$client] = $this->client(statusCode: 404, body: 'nope');
         $caught = null;
 
         try {
@@ -1127,7 +1161,23 @@ final class HttpOperationExecutorTest
         Assert::string($caught?->getMessage() ?? '')->contains('"getBlogTags"');
     }
 
-    private function executor(FakeHttpClient $client, array $headers = []): HttpOperationExecutor
+    /**
+     * A PSR-18 double answering every request with the same canned response;
+     * the captor keeps the outgoing request for URI/header/body assertions.
+     *
+     * @return array{ClientInterface, Captor<RequestInterface>}
+     */
+    private function client(int $statusCode = 200, string $body = '{"ok":true}'): array
+    {
+        $client = Understudy::for(ClientInterface::class);
+        $requests = Arg::captor(RequestInterface::class);
+        when(fn() => $client->sendRequest($requests->capture()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return [$client, $requests];
+    }
+
+    private function executor(ClientInterface $client, array $headers = []): HttpOperationExecutor
     {
         $factory = new Psr17Factory();
 
@@ -1148,7 +1198,7 @@ final class HttpOperationExecutorTest
     /**
      * @param array<array-key, mixed> $multiSegmentPathParams
      */
-    private function multiSegmentExecutor(FakeHttpClient $client, array $multiSegmentPathParams): HttpOperationExecutor
+    private function multiSegmentExecutor(ClientInterface $client, array $multiSegmentPathParams): HttpOperationExecutor
     {
         $factory = new Psr17Factory();
 

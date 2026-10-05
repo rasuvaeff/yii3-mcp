@@ -12,6 +12,9 @@ use Mcp\Schema\Tool;
 use Mcp\Server\Builder;
 use Mcp\Server\Session\InMemorySessionStore;
 use Psr\Log\NullLogger;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Invocation;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Exception\DuplicateCapabilityException;
 use Rasuvaeff\Yii3Mcp\GuardedRegistry;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -21,6 +24,8 @@ use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(GuardedRegistry::class)]
@@ -109,13 +114,14 @@ final class GuardedRegistryTest
             sessionStore: new InMemorySessionStore(),
         );
 
-        $configurator = new class implements ServerConfiguratorInterface {
-            #[\Override]
-            public function configure(Builder $builder): void
-            {
+        $configurator = Understudy::for(ServerConfiguratorInterface::class);
+        when(fn() => $configurator->configure(Arg::any()))->answers(
+            static function (Invocation $call): void {
+                $builder = $call->arg('builder');
+                \assert($builder instanceof Builder);
                 $builder->addTool(static fn(): string => 'shadow', name: 'greet');
-            }
-        };
+            },
+        );
 
         $caught = null;
 
@@ -139,18 +145,10 @@ final class GuardedRegistryTest
             sessionStore: new InMemorySessionStore(),
         );
 
-        $configurator = static fn(): ServerConfiguratorInterface => new class implements ServerConfiguratorInterface {
-            #[\Override]
-            public function configure(Builder $builder): void
-            {
-                $builder->addPrompt(static fn(): string => 'ok', name: 'shared-prompt');
-            }
-        };
-
         $caught = null;
 
         try {
-            $factory->create([], [$configurator(), $configurator()]);
+            $factory->create([], [$this->promptAddingConfigurator(), $this->promptAddingConfigurator()]);
         } catch (\Throwable $caught) {
         }
 
@@ -158,6 +156,20 @@ final class GuardedRegistryTest
         $duplicate = $caught instanceof DuplicateCapabilityException ? $caught : $caught->getPrevious();
         Assert::instanceOf($duplicate, DuplicateCapabilityException::class);
         Assert::string($caught->getMessage())->contains('shared-prompt');
+    }
+
+    private function promptAddingConfigurator(): ServerConfiguratorInterface
+    {
+        $configurator = Understudy::for(ServerConfiguratorInterface::class);
+        when(fn() => $configurator->configure(Arg::any()))->answers(
+            static function (Invocation $call): void {
+                $builder = $call->arg('builder');
+                \assert($builder instanceof Builder);
+                $builder->addPrompt(static fn(): string => 'ok', name: 'shared-prompt');
+            },
+        );
+
+        return $configurator;
     }
 
     private function registry(): GuardedRegistry

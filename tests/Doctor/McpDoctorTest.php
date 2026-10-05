@@ -9,27 +9,30 @@ use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Understudy\Arg;
+use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Doctor\CheckResult;
 use Rasuvaeff\Yii3Mcp\Doctor\CheckStatus;
 use Rasuvaeff\Yii3Mcp\Doctor\DoctorReport;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
-use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
-use Rasuvaeff\Yii3Mcp\Tests\Support\LyingSessionStore;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
-use Rasuvaeff\Yii3Mcp\Tests\Support\ThrowingSessionStore;
+use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
+
+use function Rasuvaeff\Understudy\when;
 
 #[Test]
 #[Covers(McpDoctor::class)]
@@ -153,7 +156,7 @@ final class McpDoctorTest
 
     public function throwingSessionStoreFailsWithStorageExitCode(): void
     {
-        $report = $this->doctor(store: new ThrowingSessionStore())->diagnose();
+        $report = $this->doctor(store: $this->failingStore('disk on fire'))->diagnose();
 
         Assert::false($report->healthy());
         Assert::same($report->exitCode(), 3);
@@ -212,7 +215,7 @@ final class McpDoctorTest
 
     public function probeFetchesTheUrlSpecAndPasses(): void
     {
-        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $client = $this->client(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
 
         $report = $this->doctor(specPath: 'https://api.example.test/openapi.json', httpClient: $client)->diagnose(probeUpstream: true);
 
@@ -221,7 +224,7 @@ final class McpDoctorTest
 
     public function probeFailureIsReportedWithUpstreamExitCode(): void
     {
-        $client = new FakeHttpClient(statusCode: 500, body: 'boom');
+        $client = $this->client(statusCode: 500, body: 'boom');
 
         $report = $this->doctor(specPath: 'https://api.example.test/openapi.json', httpClient: $client)->diagnose(probeUpstream: true);
 
@@ -295,7 +298,7 @@ final class McpDoctorTest
 
     public function exceptionDetailsAreRedactedAndTruncated(): void
     {
-        $store = new ThrowingSessionStore('token leak https://svc:hunter2@internal.test/x ' . str_repeat('A', 600));
+        $store = $this->failingStore('token leak https://svc:hunter2@internal.test/x ' . str_repeat('A', 600));
 
         $report = $this->doctor(store: $store)->diagnose();
 
@@ -312,7 +315,7 @@ final class McpDoctorTest
 
     public function exceptionMessageAtTheTruncationBoundaryIsKeptWhole(): void
     {
-        $report = $this->doctor(store: new ThrowingSessionStore(str_repeat('B', 500)))->diagnose();
+        $report = $this->doctor(store: $this->failingStore(str_repeat('B', 500)))->diagnose();
 
         $details = $this->check($report, 'session_store')->details;
         Assert::string($details)->contains(str_repeat('B', 500));
@@ -321,7 +324,7 @@ final class McpDoctorTest
 
     public function exceptionMessageOverTheBoundaryKeepsExactlyFiveHundredBytes(): void
     {
-        $report = $this->doctor(store: new ThrowingSessionStore(str_repeat('C', 700)))->diagnose();
+        $report = $this->doctor(store: $this->failingStore(str_repeat('C', 700)))->diagnose();
 
         $details = $this->check($report, 'session_store')->details;
 
@@ -331,7 +334,7 @@ final class McpDoctorTest
 
     public function nonUtf8ExceptionMessageBecomesAPlaceholder(): void
     {
-        $report = $this->doctor(store: new ThrowingSessionStore("\xFF\xFE"))->diagnose();
+        $report = $this->doctor(store: $this->failingStore("\xFF\xFE"))->diagnose();
 
         Assert::string($this->check($report, 'session_store')->details)
             ->contains('<non-UTF-8 exception message, 2 bytes>');
@@ -349,7 +352,13 @@ final class McpDoctorTest
 
     public function storeThatDoesNotReadBackTheProbeFails(): void
     {
-        $report = $this->doctor(store: new LyingSessionStore())->diagnose();
+        $store = Understudy::for(SessionStoreInterface::class);
+        // accepts the probe write but never reads anything back — a store
+        // whose disk silently drops data
+        when(fn() => $store->write(Arg::any(), Arg::any()))->returns(true);
+        when(fn() => $store->read(Arg::any()))->returns(false);
+
+        $report = $this->doctor(store: $store)->diagnose();
 
         Assert::false($report->healthy());
         Assert::same($this->check($report, 'session_store')->status, CheckStatus::Fail);
@@ -360,7 +369,7 @@ final class McpDoctorTest
     {
         $doctor = new McpDoctor(
             container: new SimpleContainer([
-                ClientInterface::class => new FakeHttpClient(),
+                ClientInterface::class => $this->client(),
                 RequestFactoryInterface::class => new \stdClass(),
             ]),
             sessionStore: new InMemorySessionStore(),
@@ -392,7 +401,7 @@ final class McpDoctorTest
 
     public function reportNeverContainsConfiguredHeaderValues(): void
     {
-        $client = new FakeHttpClient(statusCode: 500, body: 'boom');
+        $client = $this->client(statusCode: 500, body: 'boom');
 
         $report = $this->doctor(
             specPath: 'https://api.example.test/openapi.json',
@@ -439,7 +448,7 @@ final class McpDoctorTest
         $factory = new Psr17Factory();
         $doctor = new McpDoctor(
             container: new SimpleContainer([
-                ClientInterface::class => new FakeHttpClient(),
+                ClientInterface::class => $this->client(),
                 RequestFactoryInterface::class => $factory,
                 ServerRequestFactoryInterface::class => $factory,
                 ResponseFactoryInterface::class => $factory,
@@ -532,6 +541,30 @@ final class McpDoctorTest
     }
 
     /**
+     * A PSR-18 double answering every request with the same canned response.
+     */
+    private function client(int $statusCode = 200, string $body = '{"ok":true}'): ClientInterface
+    {
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))
+            ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
+
+        return $client;
+    }
+
+    /**
+     * A session store double whose probe round-trip fails on the write
+     * itself, carrying $message into the report.
+     */
+    private function failingStore(string $message): SessionStoreInterface
+    {
+        $store = Understudy::for(SessionStoreInterface::class);
+        when(fn() => $store->write(Arg::any(), Arg::any()))->throws(new RuntimeException($message));
+
+        return $store;
+    }
+
+    /**
      * @param array<string, string> $headers
      * @param list<string> $clientIds
      */
@@ -551,7 +584,7 @@ final class McpDoctorTest
     ): McpDoctor {
         $factory = new Psr17Factory();
         $definitions = [
-            ClientInterface::class => $httpClient ?? new FakeHttpClient(),
+            ClientInterface::class => $httpClient ?? $this->client(),
             RequestFactoryInterface::class => $factory,
             ServerRequestFactoryInterface::class => $factory,
             ResponseFactoryInterface::class => $factory,
