@@ -1196,6 +1196,43 @@ final class ConfigWiringTest
         Assert::same($client->requestCount, 0);
     }
 
+    /**
+     * Regression for #60: a psr15 server with a LOCAL spec builds and serves
+     * in a container that binds no PSR-18 client and no outbound request
+     * factory at all — resolving them "just in case" failed the build and
+     * contradicted the no-network-I/O contract of the in-process executor.
+     */
+    public function psr15BuildsWithoutAnyHttpTransportInTheContainer(): void
+    {
+        $psr17 = new Psr17Factory();
+        $handler = new RecordingRequestHandler();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'psr15';
+        $mcp['openapi']['handler'] = RecordingRequestHandler::class;
+
+        try {
+            // NO ClientInterface, NO RequestFactoryInterface — SimpleContainer
+            // throws on unresolved ids, so their absence is the assertion
+            $result = $this->bridgeTester($params, new SimpleContainer([
+                ServerRequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+                RecordingRequestHandler::class => $handler,
+            ]), $psr17)->callTool('getBlogTags');
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same(count($handler->requests), 1);
+        Assert::json($result['content'][0]['text'])->isObject()->hasKeys('ok');
+    }
+
     public function psr15ExecutorRequiresAHandler(): void
     {
         $psr17 = new Psr17Factory();

@@ -55,12 +55,17 @@ final readonly class OpenApiBridgeFactory
      *                                to request attributes on the nested request (in-process only)
      * @param ?InProcessScopeInterface $inProcessScope enter()/leave() hooks around the nested handle()
      *                                for resetting request-scoped state (in-process only)
+     * @param ?ClientInterface $httpClient PSR-18 client: REQUIRED for http execution and for a URL
+     *                                $spec; psr15 mode with a file/decoded spec may pass null —
+     *                                the container then needs no HTTP transport services at all
+     * @param ?RequestFactoryInterface $requestFactory PSR-17 request factory, same nullability rules
+     *                                as $httpClient
      */
     public static function create(
         string|array $spec,
         string $baseUrl,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory,
+        ?ClientInterface $httpClient,
+        ?RequestFactoryInterface $requestFactory,
         StreamFactoryInterface $streamFactory,
         array $operations,
         array $headers = [],
@@ -88,6 +93,19 @@ final readonly class OpenApiBridgeFactory
             throw new InvalidArgumentException('In-process execution requires a ServerRequestFactoryInterface');
         }
 
+        // the HTTP transport services are needed for http execution and for
+        // fetching a URL spec — and ONLY then. A psr15 server with a local or
+        // decoded spec must build in a container that binds no PSR-18 client
+        // at all; resolving one "just in case" would reintroduce the very
+        // coupling the in-process executor exists to remove (#60)
+        $inProcess = $inProcessHandler instanceof RequestHandlerInterface;
+        $urlSpec = is_string($spec) && (str_starts_with($spec, 'http://') || str_starts_with($spec, 'https://'));
+
+        if ($urlSpec) {
+            $httpClient ??= throw new InvalidArgumentException('A URL spec is fetched over HTTP and needs the PSR-18 client and PSR-17 request factory even in psr15 mode');
+            $requestFactory ??= throw new InvalidArgumentException('A URL spec is fetched over HTTP and needs the PSR-18 client and PSR-17 request factory even in psr15 mode');
+        }
+
         $maxResponseBytes ??= OperationResponseDecoder::DEFAULT_MAX_RESPONSE_BYTES;
 
         $executor = $inProcessHandler instanceof RequestHandlerInterface
@@ -106,8 +124,8 @@ final readonly class OpenApiBridgeFactory
                 multiSegmentPathParams: $multiSegmentPathParams,
             )
             : new HttpOperationExecutor(
-                httpClient: $httpClient,
-                requestFactory: $requestFactory,
+                httpClient: $httpClient ?? throw new InvalidArgumentException('HTTP execution requires a PSR-18 client and a PSR-17 request factory; switch to openapi.executor "psr15" to run without them'),
+                requestFactory: $requestFactory ?? throw new InvalidArgumentException('HTTP execution requires a PSR-18 client and a PSR-17 request factory; switch to openapi.executor "psr15" to run without them'),
                 streamFactory: $streamFactory,
                 baseUrl: $baseUrl,
                 defaultHeaders: $headers,
@@ -135,8 +153,8 @@ final readonly class OpenApiBridgeFactory
      */
     private static function index(
         string|array $spec,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory,
+        ?ClientInterface $httpClient,
+        ?RequestFactoryInterface $requestFactory,
         array $specHeaders,
         ?CacheInterface $specCache,
         int $specCacheTtl,
@@ -149,9 +167,11 @@ final readonly class OpenApiBridgeFactory
             return SpecIndex::fromFile($spec);
         }
 
+        // the URL branch is only reachable with both transport services
+        // present — create() rejects the combination before getting here
         return (new SpecLoader(
-            httpClient: $httpClient,
-            requestFactory: $requestFactory,
+            httpClient: $httpClient ?? throw new InvalidArgumentException('A URL spec needs a PSR-18 client'),
+            requestFactory: $requestFactory ?? throw new InvalidArgumentException('A URL spec needs a PSR-17 request factory'),
             headers: $specHeaders,
             cache: $specCache,
             cacheTtl: $specCacheTtl,

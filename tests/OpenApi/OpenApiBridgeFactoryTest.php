@@ -263,6 +263,49 @@ final class OpenApiBridgeFactoryTest
         Assert::same((string) $handler->requests[0]->getUri(), 'https://api.test/rest/blog-tags');
     }
 
+    public function httpModeRequiresTheHttpTransportServices(): void
+    {
+        $caught = null;
+
+        try {
+            OpenApiBridgeFactory::create(
+                spec: OpenApiFixture::spec(),
+                baseUrl: 'https://api.test/',
+                httpClient: null,
+                requestFactory: null,
+                streamFactory: new Psr17Factory(),
+                operations: ['getBlogTags'],
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('PSR-18 client');
+    }
+
+    public function aUrlSpecNeedsTheHttpTransportEvenInPsr15Mode(): void
+    {
+        $psr17 = new Psr17Factory();
+        $caught = null;
+
+        try {
+            OpenApiBridgeFactory::create(
+                spec: 'https://spec.test/openapi.json',
+                baseUrl: 'https://api.test/',
+                httpClient: null,
+                requestFactory: null,
+                streamFactory: $psr17,
+                operations: ['getBlogTags'],
+                inProcessHandler: new RecordingRequestHandler(),
+                serverRequestFactory: $psr17,
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('even in psr15 mode');
+    }
+
     private function tester(OpenApiServerConfigurator $configurator): McpTester
     {
         $psr17 = new Psr17Factory();
