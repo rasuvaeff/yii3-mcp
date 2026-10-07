@@ -350,7 +350,7 @@ final class McpActionTest
         );
 
         if ($sessionId !== '') {
-            $request = $request
+            return $request
                 ->withHeader('Mcp-Session-Id', $sessionId)
                 ->withHeader('MCP-Protocol-Version', '2025-06-18');
         }

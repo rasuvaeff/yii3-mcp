@@ -150,7 +150,7 @@ final class McpServerAssemblerTest
     private function params(): array
     {
         /** @var array<string, array<string, mixed>> $params */
-        $params = require dirname(__DIR__) . '/config/params.php';
+        $params = require __DIR__ . '/../config/params.php';
 
         return $params['rasuvaeff/yii3-mcp'];
     }

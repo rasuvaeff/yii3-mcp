@@ -42,6 +42,8 @@ final readonly class Psr15OperationExecutor implements OperationExecutorInterfac
      * @param bool $opaqueErrors suppress the error-body excerpt in failures
      * @param array<array-key, mixed> $multiSegmentPathParams path parameter name => how many
      *                           "/"-separated segments its values may carry
+     * @param ?string $arrayQueryStyle default serialization for array-valued query parameters
+     * @param array<string, array<string, string>> $arrayQueryParams per-operation/parameter style overrides
      */
     public function __construct(
         private RequestHandlerInterface $handler,
@@ -56,6 +58,8 @@ final readonly class Psr15OperationExecutor implements OperationExecutorInterfac
         int $maxResponseBytes = OperationResponseDecoder::DEFAULT_MAX_RESPONSE_BYTES,
         bool $opaqueErrors = false,
         array $multiSegmentPathParams = [],
+        ?string $arrayQueryStyle = null,
+        array $arrayQueryParams = [],
     ) {
         $this->builder = new OperationRequestBuilder(
             baseUrl: $baseUrl,
@@ -63,6 +67,8 @@ final readonly class Psr15OperationExecutor implements OperationExecutorInterfac
             identityProvider: $this->identityProvider,
             delegatedHeaderProvider: $this->delegatedHeaderProvider,
             multiSegmentPathParams: $multiSegmentPathParams,
+            arrayQueryStyle: $arrayQueryStyle,
+            arrayQueryParams: $arrayQueryParams,
         );
         $this->decoder = new OperationResponseDecoder(
             maxResponseBytes: $maxResponseBytes,

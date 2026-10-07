@@ -130,7 +130,7 @@ final class CompactToolResultFormatterTest
 
         Expect::exception(\JsonException::class);
 
-        CompactToolResultFormatter::format($this->nestedObject(512))->structuredContent;
+        CompactToolResultFormatter::format($this->nestedObject(512));
     }
 
     /**

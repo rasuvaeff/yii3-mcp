@@ -375,6 +375,203 @@ final class HttpOperationExecutorTest
         );
     }
 
+    public function arrayQueryParameterRepeatsKeysByDefault(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client)->execute(
+            $this->operation('getCreators'),
+            ['platforms' => ['instagram', 'youtube']],
+        );
+
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?platforms=instagram&platforms=youtube');
+    }
+
+    public function arrayQueryParameterSupportsTheBracketsStyle(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client, arrayQueryStyle: 'brackets')->execute(
+            $this->operation('getCreators'),
+            ['platforms' => ['instagram', 'youtube']],
+        );
+
+        // what PHP's parse_str reads back as an array
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?platforms%5B%5D=instagram&platforms%5B%5D=youtube');
+    }
+
+    public function arrayQueryParameterSupportsTheCommaStyle(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client, arrayQueryStyle: 'comma')->execute(
+            $this->operation('getCreators'),
+            ['platforms' => ['instagram', 'youtube']],
+        );
+
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?platforms=instagram,youtube');
+    }
+
+    public function declaredExplodeFalseSerializesAsComma(): void
+    {
+        // the fixture's `regions` declares explode=false: without any app
+        // override that means comma-separated
+        [$client, $requests] = $this->client();
+
+        $this->executor($client)->execute(
+            $this->operation('getCreators'),
+            ['regions' => ['eu', 'us']],
+        );
+
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?regions=eu,us');
+    }
+
+    public function perParameterOverrideWinsOverGlobalStyleAndDeclaredExplode(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client, arrayQueryStyle: 'comma', arrayQueryParams: ['getCreators' => ['regions' => 'repeat']])->execute(
+            $this->operation('getCreators'),
+            ['regions' => ['eu', 'us']],
+        );
+
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?regions=eu&regions=us');
+    }
+
+    public function scalarAndArrayQueryParametersCompose(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client)->execute(
+            $this->operation('getCreators'),
+            ['limit' => 5, 'platforms' => ['instagram']],
+        );
+
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?limit=5&platforms=instagram');
+    }
+
+    public function arrayQueryItemsAreRfc3986Encoded(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client)->execute(
+            $this->operation('getCreators'),
+            ['platforms' => ['a b+c']],
+        );
+
+        // %20, not '+': array items are rawurlencoded
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators?platforms=a%20b%2Bc');
+    }
+
+    public function arrayWithoutMinItemsSendsNoPairs(): void
+    {
+        [$client, $requests] = $this->client();
+
+        $this->executor($client)->execute(
+            $this->operation('getCreators'),
+            ['platforms' => []],
+        );
+
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/creators');
+    }
+
+    public function maxItemsIsEnforcedBeforeTheRequest(): void
+    {
+        [$client] = $this->client();
+        $executor = $this->executor($client);
+
+        $caught = null;
+
+        try {
+            $executor->execute(
+                $this->operation('getCreators'),
+                ['platforms' => ['instagram', 'tiktok', 'youtube', 'x']],
+            );
+        } catch (InvalidToolArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('at most 3');
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
+    }
+
+    public function minItemsIsEnforcedBeforeTheRequest(): void
+    {
+        [$client] = $this->client();
+        $executor = $this->executor($client);
+
+        $caught = null;
+
+        try {
+            $executor->execute(
+                $this->operation('getCreators'),
+                ['regions' => []],
+            );
+        } catch (InvalidToolArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('at least 1');
+    }
+
+    public function nonScalarArrayItemIsRejected(): void
+    {
+        [$client] = $this->client();
+        $executor = $this->executor($client);
+
+        $caught = null;
+
+        try {
+            $executor->execute(
+                $this->operation('getCreators'),
+                ['platforms' => ['instagram', ['nested']]],
+            );
+        } catch (InvalidToolArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('must be a scalar');
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
+    }
+
+    public function unsupportedArrayQueryStyleFailsTheBuild(): void
+    {
+        [$client] = $this->client();
+        $factory = new Psr17Factory();
+
+        Expect::exception(InvalidArgumentException::class);
+
+        new HttpOperationExecutor(
+            httpClient: $client,
+            requestFactory: $factory,
+            streamFactory: $factory,
+            baseUrl: 'https://api.test/',
+            arrayQueryStyle: 'pipes',
+        );
+    }
+
+    public function unsupportedArrayQueryOverrideFailsTheBuild(): void
+    {
+        [$client] = $this->client();
+        $factory = new Psr17Factory();
+
+        $caught = null;
+
+        try {
+            new HttpOperationExecutor(
+                httpClient: $client,
+                requestFactory: $factory,
+                streamFactory: $factory,
+                baseUrl: 'https://api.test/',
+                arrayQueryParams: ['getCreators' => ['platforms' => 'semicolon']],
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('getCreators.platforms');
+    }
+
     public function dryRunnableOperationWithoutTheFlagExecutesForReal(): void
     {
         // a dry-run-ENABLED operation called WITHOUT the dryRun argument is a
@@ -1211,8 +1408,16 @@ final class HttpOperationExecutorTest
         return [$client, $requests];
     }
 
-    private function executor(ClientInterface $client, array $headers = []): HttpOperationExecutor
-    {
+    /**
+     * @param array<string, string> $headers
+     * @param array<string, array<string, string>> $arrayQueryParams
+     */
+    private function executor(
+        ClientInterface $client,
+        array $headers = [],
+        ?string $arrayQueryStyle = null,
+        array $arrayQueryParams = [],
+    ): HttpOperationExecutor {
         $factory = new Psr17Factory();
 
         return new HttpOperationExecutor(
@@ -1221,6 +1426,8 @@ final class HttpOperationExecutorTest
             streamFactory: $factory,
             baseUrl: 'https://api.test/',
             defaultHeaders: $headers,
+            arrayQueryStyle: $arrayQueryStyle,
+            arrayQueryParams: $arrayQueryParams,
         );
     }
 

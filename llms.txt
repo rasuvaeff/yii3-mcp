@@ -383,7 +383,13 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   (suppress upstream error bodies) / `identity_provider` /
   `delegated_header_provider` / `dry_run` (list of operationIds) /
   `multi_segment_path_params` (path parameter name => segment budget; empty
-  default keeps every path argument single-segment).
+  default keeps every path argument single-segment) / `array_query_style`
+  ('repeat' name=a&name=b | 'brackets' name[]=a&name[]=b | 'comma' name=a,b;
+  empty = per parameter from its declared explode) / `array_query_params`
+  (operationId => parameter => style). `type: array` query parameters with scalar
+  items are bridged as array arguments (items/enum/minItems/maxItems kept and
+  re-validated before the call); arrays in a path, object/nested items, style
+  other than form and allowReserved fail the server build.
 - `OpenApi\OpenApiBridgeFactory::create(spec:, baseUrl:, httpClient:,
   requestFactory:, streamFactory:, operations:, …)` returns a configured
   `OpenApiServerConfigurator` WITHOUT a Yii3 application: `spec` takes a file
@@ -738,7 +744,8 @@ client ids is rejected), `secret_header`,
 `openapi.spec_headers`, `openapi.max_response_bytes`, `openapi.opaque_errors`,
 `openapi.cache_ttl`, `openapi.identity_provider`,
 `openapi.delegated_header_provider`, `openapi.safe_methods_only`,
-`openapi.multi_segment_path_params`,
+`openapi.multi_segment_path_params`, `openapi.array_query_style`,
+`openapi.array_query_params`,
 `expected_http_host`.
 
 `configurators`: list of `ServerConfiguratorInterface` FQCNs, DI-resolved,

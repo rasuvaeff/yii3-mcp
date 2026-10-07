@@ -447,12 +447,12 @@ final class SpecIndexTest
         $caught = null;
 
         try {
-            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['type' => ['array', 'null']]]);
+            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['type' => ['object', 'null']]]);
         } catch (InvalidSpecException $caught) {
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('["array","null"]');
+        Assert::string($caught->getMessage())->contains('["object","null"]');
     }
 
     public function unsupportedHeaderParameterFailsWhenOperationIsSelected(): void
@@ -489,6 +489,8 @@ final class SpecIndexTest
 
     public function arrayParameterSchemaThrows(): void
     {
+        // an array schema with NO items (or non-scalar items) still fails
+        // closed — only arrays of scalars are bridged
         $caught = null;
 
         try {
@@ -497,8 +499,8 @@ final class SpecIndexTest
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('must use a scalar schema');
-        Assert::string($caught->getMessage())->contains('"array"');
+        Assert::string($caught->getMessage())->contains('array of scalar items');
+        Assert::string($caught->getMessage())->contains('"ids"');
     }
 
     public function unsupportedSerializationOptionsThrow(): void
@@ -535,6 +537,96 @@ final class SpecIndexTest
 
         try {
             $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'style' => 'spaceDelimited']);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('only "form" is supported for query parameters');
+    }
+
+    public function arrayQueryParametersAreAccepted(): void
+    {
+        // the fixture operation carries an enum-constrained, maxItems-capped
+        // array and a plain string array — both must build
+        $operation = (new SpecIndex(OpenApiFixture::spec()))->get('getCreators');
+
+        Assert::same(count($operation->parameters), 3);
+    }
+
+    public function nullableArrayTypeIsAccepted(): void
+    {
+        // OpenAPI 3.1 union notation
+        $operation = $this->operationWithParameter([
+            'name' => 'tags',
+            'in' => 'query',
+            'schema' => ['type' => ['array', 'null'], 'items' => ['type' => 'string']],
+        ]);
+
+        Assert::same($operation->parameters[0]['name'], 'tags');
+    }
+
+    public function arrayExplodeFalseIsAcceptedForQueryParameters(): void
+    {
+        // comma-separated is a legal OpenAPI form for arrays — the scalar
+        // branch rejects explode=false, the array branch must not
+        $operation = $this->operationWithParameter([
+            'name' => 'tags',
+            'in' => 'query',
+            'explode' => false,
+            'schema' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ]);
+
+        Assert::same($operation->parameters[0]['name'], 'tags');
+    }
+
+    public function arraySchemaOutsideQueryIsRejected(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter([
+                'name' => 'ids',
+                'in' => 'path',
+                'required' => true,
+                'schema' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('array schema outside a query parameter');
+    }
+
+    public function arrayOfNonScalarItemsIsRejected(): void
+    {
+        foreach ([
+            'object items' => ['type' => 'array', 'items' => ['type' => 'object']],
+            'nested arrays' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ['type' => 'string']]],
+            'missing items' => ['type' => 'array'],
+        ] as $schema) {
+            $caught = null;
+
+            try {
+                $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => $schema]);
+            } catch (InvalidSpecException $caught) {
+            }
+
+            Assert::notNull($caught);
+            Assert::string($caught->getMessage())->contains('array of scalar items');
+        }
+    }
+
+    public function arrayParameterStyleOutsideFormIsRejected(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter([
+                'name' => 'q',
+                'in' => 'query',
+                'style' => 'spaceDelimited',
+                'schema' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ]);
         } catch (InvalidSpecException $caught) {
         }
 

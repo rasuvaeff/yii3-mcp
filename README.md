@@ -1053,6 +1053,14 @@ below).
         // "group/project"); empty default = every path argument is
         // single-segment, exactly as before
         'multi_segment_path_params' => ['id' => 3],
+        // array-valued query parameters (`type: array` in the spec): how they
+        // are written on the wire — 'repeat' (name=a&name=b, the OpenAPI
+        // default), 'brackets' (name[]=a&name[]=b, what PHP reads back as an
+        // array) or 'comma' (name=a,b); empty = per parameter from its own
+        // `explode` (false => comma, else repeat)
+        'array_query_style' => 'brackets',
+        // per-operation, per-parameter override of the above
+        'array_query_params' => ['getCreators' => ['platforms' => 'comma']],
         // how bridged operations are executed: 'http' (default) sends a real
         // PSR-18 request to base_url; 'psr15' runs the application's own
         // request handler in-process — see "In-process execution" below
@@ -1114,6 +1122,28 @@ empty value is the same escape one level up (`/users/` is typically the
 collection route, not the allow-listed item route). Single dots are fine
 (`v1.2` is a valid slug); a value that needs `..` inside it cannot be bridged
 as a path argument.
+
+### Array-valued query parameters
+
+List/search operations take array filters (`regions`, `platforms`, `niches`).
+A `type: array` parameter in `in: query` is bridged as an array argument: the
+tool's input schema keeps `items`, `enum`, `minItems` and `maxItems` exactly as
+the spec declares them, and the executor validates them again before sending
+(a direct caller cannot smuggle an oversized or non-scalar array past the
+SDK's schema check). Items must be scalars — objects and nested arrays fail the
+server build, as do arrays in a path segment; `style` other than `form` and
+`allowReserved: true` fail it too.
+
+The wire format is the application's contract, so it is configurable. With the
+default (`array_query_style` empty) each parameter follows its own declared
+`explode`: `explode: false` is written `name=a,b`, anything else repeats the
+key (`name=a&name=b`, the OpenAPI default). PHP applications that read arrays
+as `name[]=a&name[]=b` set `array_query_style` to `brackets` — a plain repeated
+key is read back by PHP's `parse_str` as the LAST value only. `array_query_params`
+overrides the style for one parameter of one operation; an unknown style fails
+the server build. An empty array sends nothing (an empty filter constrains
+nothing); `minItems` rejects it before the call. The same options exist on
+`OpenApiBridgeFactory::create()` as `arrayQueryStyle` and `arrayQueryParams`.
 
 A parameter listed in `multi_segment_path_params` may carry that many
 `"/"`-separated segments — for an upstream that identifies a resource by a

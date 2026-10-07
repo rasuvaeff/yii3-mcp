@@ -42,6 +42,54 @@ final readonly class OpenApiFixture
                         ],
                     ],
                 ],
+                '/rest/creators' => [
+                    'get' => [
+                        'operationId' => 'getCreators',
+                        'summary' => 'Search creators',
+                        'parameters' => [
+                            [
+                                'name' => 'platforms',
+                                'in' => 'query',
+                                'required' => false,
+                                'description' => 'Platform filter',
+                                'schema' => [
+                                    'type' => 'array',
+                                    'items' => ['type' => 'string', 'enum' => ['instagram', 'tiktok', 'youtube']],
+                                    'maxItems' => 3,
+                                ],
+                            ],
+                            [
+                                'name' => 'regions',
+                                'in' => 'query',
+                                'required' => false,
+                                'explode' => false,
+                                'schema' => ['type' => 'array', 'items' => ['type' => 'string'], 'minItems' => 1],
+                            ],
+                            [
+                                'name' => 'limit',
+                                'in' => 'query',
+                                'required' => false,
+                                'schema' => ['type' => 'integer'],
+                            ],
+                        ],
+                        'responses' => [
+                            '200' => [
+                                'description' => 'Creator page',
+                                'content' => [
+                                    'application/json' => [
+                                        'schema' => [
+                                            'type' => 'object',
+                                            'properties' => [
+                                                'items' => ['type' => 'array', 'items' => ['type' => 'object']],
+                                                'total' => ['type' => 'integer'],
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
                 '/rest/blog-tag/{slug}' => [
                     'parameters' => [
                         ['name' => 'slug', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']],

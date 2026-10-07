@@ -49,7 +49,7 @@ final readonly class McpServerComponentResolver
     {
         /** @var list<class-string> $tools */
         $tools = $this->params['tools'];
-        /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, spec_headers?: array<string, string>, cache_ttl?: int, max_response_bytes?: int, opaque_errors?: bool, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>, multi_segment_path_params?: array<array-key, mixed>, executor?: string, handler?: class-string<RequestHandlerInterface>|'', request_attributes?: class-string<ExecutionRequestAttributesInterface>|'', in_process_scope?: class-string<InProcessScopeInterface>|''} $openapi */
+        /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, spec_headers?: array<string, string>, cache_ttl?: int, max_response_bytes?: int, opaque_errors?: bool, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>, multi_segment_path_params?: array<array-key, mixed>, executor?: string, handler?: class-string<RequestHandlerInterface>|'', request_attributes?: class-string<ExecutionRequestAttributesInterface>|'', in_process_scope?: class-string<InProcessScopeInterface>|'', array_query_style?: string, array_query_params?: array<string, array<string, string>>} $openapi */
         $openapi = $this->params['openapi'];
 
         /** @var list<ServerConfiguratorInterface> $configurators */
@@ -91,6 +91,11 @@ final readonly class McpServerComponentResolver
             $requestAttributesClass = $openapi['request_attributes'] ?? '';
             /** @var class-string<InProcessScopeInterface>|'' $inProcessScopeClass */
             $inProcessScopeClass = $openapi['in_process_scope'] ?? '';
+            /** @var ?string $arrayQueryStyle */
+            $configuredArrayQueryStyle = $openapi['array_query_style'] ?? '';
+            $arrayQueryStyle = $configuredArrayQueryStyle === '' ? null : $configuredArrayQueryStyle;
+            /** @var array<string, array<string, string>> $arrayQueryParams */
+            $arrayQueryParams = $openapi['array_query_params'] ?? [];
 
             if (!in_array($executorMode, ['http', 'psr15'], strict: true)) {
                 throw new LogicException(sprintf('Unsupported openapi.executor "%s"; supported: http, psr15', $executorMode));
@@ -151,6 +156,8 @@ final readonly class McpServerComponentResolver
                 serverRequestFactory: $inProcessHandlerClass !== '' ? $this->getService(ServerRequestFactoryInterface::class) : null,
                 requestAttributes: $requestAttributesClass !== '' ? $this->getService($requestAttributesClass) : null,
                 inProcessScope: $inProcessScopeClass !== '' ? $this->getService($inProcessScopeClass) : null,
+                arrayQueryStyle: $arrayQueryStyle,
+                arrayQueryParams: $arrayQueryParams,
             );
         }
 

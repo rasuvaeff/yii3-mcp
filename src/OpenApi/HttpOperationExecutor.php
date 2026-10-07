@@ -46,6 +46,8 @@ final readonly class HttpOperationExecutor implements OperationExecutorInterface
      *                           this arrives from params, so a string "1" must fail loudly
      *                           instead of enabling the multi-segment path with a limit no
      *                           comparison treats as one
+     * @param ?string $arrayQueryStyle default serialization for array-valued query parameters
+     * @param array<string, array<string, string>> $arrayQueryParams per-operation/parameter style overrides
      */
     public function __construct(
         private ClientInterface $httpClient,
@@ -58,6 +60,8 @@ final readonly class HttpOperationExecutor implements OperationExecutorInterface
         int $maxResponseBytes = OperationResponseDecoder::DEFAULT_MAX_RESPONSE_BYTES,
         bool $opaqueErrors = false,
         array $multiSegmentPathParams = [],
+        ?string $arrayQueryStyle = null,
+        array $arrayQueryParams = [],
     ) {
         $this->builder = new OperationRequestBuilder(
             baseUrl: $baseUrl,
@@ -65,6 +69,8 @@ final readonly class HttpOperationExecutor implements OperationExecutorInterface
             identityProvider: $identityProvider,
             delegatedHeaderProvider: $delegatedHeaderProvider,
             multiSegmentPathParams: $multiSegmentPathParams,
+            arrayQueryStyle: $arrayQueryStyle,
+            arrayQueryParams: $arrayQueryParams,
         );
         $this->decoder = new OperationResponseDecoder(
             maxResponseBytes: $maxResponseBytes,

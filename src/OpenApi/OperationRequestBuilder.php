@@ -34,7 +34,24 @@ final readonly class OperationRequestBuilder
      */
     private const string PATH_SEGMENT_PATTERN = '/\A[A-Za-z0-9_][A-Za-z0-9_.-]*\z/';
 
+    /**
+     * Legal serializations for an array-valued query parameter.
+     */
+    public const string ARRAY_STYLE_REPEAT = 'repeat';
+    public const string ARRAY_STYLE_BRACKETS = 'brackets';
+    public const string ARRAY_STYLE_COMMA = 'comma';
+
+    /**
+     * @var list<string>
+     */
+    private const array ARRAY_STYLES = [self::ARRAY_STYLE_REPEAT, self::ARRAY_STYLE_BRACKETS, self::ARRAY_STYLE_COMMA];
+
     private string $baseUrl;
+
+    /**
+     * @var array<string, array<string, string>> operationId => parameter name => validated style
+     */
+    private array $arrayStyleOverrides;
 
     /**
      * Narrowed from the raw constructor argument: the value comes from
@@ -46,6 +63,15 @@ final readonly class OperationRequestBuilder
 
     /**
      * @param array<string, string> $defaultHeaders e.g. ['Authorization' => 'Bearer …']
+     * @param ?string $arrayQueryStyle default serialization for array-valued query parameters:
+     *                                 'repeat' (name=a&name=b, the OpenAPI form/explode default),
+     *                                 'brackets' (name[]=a&name[]=b, what PHP's parse_str reads as an array)
+     *                                 or 'comma' (name=a,b). Null derives it from the parameter's own
+     *                                 declared explode (false -> comma, else repeat).
+     * @param array<array-key, mixed> $arrayQueryParams per-operation, per-parameter
+     *                                 style overrides: ['getCreators' => ['platforms' => 'brackets']];
+     *                                 wins over $arrayQueryStyle, which wins over the declared explode.
+     *                                 It arrives from params, so its shape is validated here, not trusted
      * @param array<array-key, mixed> $multiSegmentPathParams path parameter name => how many
      *                           "/"-separated segments its values may carry. Absent (the
      *                           default for every parameter) means one segment, i.e. no
@@ -60,7 +86,45 @@ final readonly class OperationRequestBuilder
         private ?ExecutionIdentityProviderInterface $identityProvider = null,
         private ?DelegatedHeaderProviderInterface $delegatedHeaderProvider = null,
         array $multiSegmentPathParams = [],
+        private ?string $arrayQueryStyle = null,
+        array $arrayQueryParams = [],
     ) {
+        if ($this->arrayQueryStyle !== null && !in_array($this->arrayQueryStyle, self::ARRAY_STYLES, strict: true)) {
+            throw new InvalidArgumentException(sprintf(
+                'Array query style must be one of %s, "%s" given',
+                implode(', ', self::ARRAY_STYLES),
+                $this->arrayQueryStyle,
+            ));
+        }
+
+        $styleOverrides = [];
+
+        foreach ($arrayQueryParams as $operationId => $styles) {
+            if (!is_array($styles)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Array query style overrides for operation "%s" must be a parameter-name => style map',
+                    is_string($operationId) ? $operationId : get_debug_type($operationId),
+                ));
+            }
+
+            /** @var mixed $style */
+            foreach ($styles as $parameterName => $style) {
+                if (!is_string($style) || !in_array($style, self::ARRAY_STYLES, strict: true)) {
+                    throw new InvalidArgumentException(sprintf(
+                        'Array query style for "%s.%s" must be one of %s, %s given',
+                        is_string($operationId) ? $operationId : get_debug_type($operationId),
+                        is_string($parameterName) ? $parameterName : get_debug_type($parameterName),
+                        implode(', ', self::ARRAY_STYLES),
+                        is_string($style) ? '"' . $style . '"' : get_debug_type($style),
+                    ));
+                }
+
+                $styleOverrides[(string) $operationId][(string) $parameterName] = $style;
+            }
+        }
+
+        $this->arrayStyleOverrides = $styleOverrides;
+
         $segmentLimits = [];
 
         foreach ($multiSegmentPathParams as $parameterName => $maxSegments) {
@@ -220,6 +284,7 @@ final readonly class OperationRequestBuilder
     {
         $path = $operation->path;
         $query = [];
+        $arrayPairs = [];
 
         foreach ($operation->parameters as $parameter) {
             $name = $parameter['name'];
@@ -228,6 +293,19 @@ final readonly class OperationRequestBuilder
             // scalars are nullable in the 3.1 union notation, and there is
             // no REST distinction between an absent and a null query/path value
             if (!array_key_exists($name, $arguments) || $arguments[$name] === null) {
+                continue;
+            }
+
+            // array-valued arguments take their own serialization path —
+            // stringifyArgument below is for scalars only, and an ARRAY
+            // argument to a SCALAR-typed parameter must still fail there
+            if ($parameter['in'] === 'query' && is_array($arguments[$name]) && $this->isArraySchema($parameter['schema'])) {
+                // array-valued filter: serialized per the resolved style,
+                // validated here so a direct-executor caller cannot smuggle
+                // an oversized or non-scalar-items array past the SDK's own
+                // input-schema validation
+                $arrayPairs[] = $this->arrayQueryPairs($operation, $parameter, array_values($arguments[$name]), $served);
+
                 continue;
             }
 
@@ -297,7 +375,113 @@ final readonly class OperationRequestBuilder
             ));
         }
 
-        return $path . ($query === [] ? '' : '?' . http_build_query($query));
+        $queryString = $query === [] ? '' : http_build_query($query);
+
+        foreach ($arrayPairs as $pairs) {
+            if ($pairs === '') {
+                continue;
+            }
+
+            $queryString = $queryString === '' ? $pairs : $queryString . '&' . $pairs;
+        }
+
+        return $path . ($queryString === '' ? '' : '?' . $queryString);
+    }
+
+    /**
+     * Same union handling as the validator: a bare "array" (OpenAPI 3.0) or
+     * a two-element nullable union containing it (OpenAPI 3.1).
+     */
+    private function isArraySchema(array $schema): bool
+    {
+        /** @var mixed $type */
+        $type = $schema['type'] ?? null;
+
+        if (is_string($type)) {
+            return $type === 'array';
+        }
+
+        return is_array($type)
+            && count($type) === 2
+            && in_array('array', $type, strict: true)
+            && in_array('null', $type, strict: true);
+    }
+
+    /**
+     * Serializes one array-valued query parameter into wire pairs, honouring
+     * the resolved style: per-parameter override, then the configured
+     * default, then the parameter's own declared explode.
+     *
+     * @param array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool} $parameter
+     * @param list<mixed> $values
+     */
+    private function arrayQueryPairs(Operation $operation, array $parameter, array $values, string $served): string
+    {
+        $schema = $parameter['schema'];
+        /** @var mixed $maxItems */
+        $maxItems = $schema['maxItems'] ?? null;
+        /** @var mixed $minItems */
+        $minItems = $schema['minItems'] ?? null;
+
+        if (is_int($maxItems) && count($values) > $maxItems) {
+            throw new InvalidToolArgumentException(sprintf(
+                'Argument "%s" of tool "%s" must contain at most %d item%s',
+                $parameter['name'],
+                $served,
+                $maxItems,
+                $maxItems === 1 ? '' : 's',
+            ));
+        }
+
+        if (is_int($minItems) && count($values) < $minItems) {
+            throw new InvalidToolArgumentException(sprintf(
+                'Argument "%s" of tool "%s" must contain at least %d item%s',
+                $parameter['name'],
+                $served,
+                $minItems,
+                $minItems === 1 ? '' : 's',
+            ));
+        }
+
+        $stringified = [];
+
+        /** @var mixed $value */
+        foreach ($values as $value) {
+            // the same scalar guard as single-valued arguments — an object
+            // or nested array item has no query representation
+            $stringified[] = rawurlencode($this->stringifyArgument($served, $parameter['name'], $value));
+        }
+
+        if ($stringified === []) {
+            // an empty filter constrains nothing; minItems (if declared)
+            // already rejected it above
+            return '';
+        }
+
+        $name = rawurlencode($parameter['name']);
+
+        return match ($this->arrayQueryStyle($operation, $parameter)) {
+            self::ARRAY_STYLE_BRACKETS => implode('&', array_map(
+                static fn(string $value): string => $name . '%5B%5D=' . $value,
+                $stringified,
+            )),
+            self::ARRAY_STYLE_COMMA => $name . '=' . implode(',', $stringified),
+            default => implode('&', array_map(
+                static fn(string $value): string => $name . '=' . $value,
+                $stringified,
+            )),
+        };
+    }
+
+    /**
+     * @param array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool} $parameter
+     */
+    private function arrayQueryStyle(Operation $operation, array $parameter): string
+    {
+        $override = $this->arrayStyleOverrides[$operation->operationId][$parameter['name']] ?? null;
+        $declared = $parameter['explode'] === false ? self::ARRAY_STYLE_COMMA : self::ARRAY_STYLE_REPEAT;
+
+        return $override ?? $this->arrayQueryStyle ?? $declared;
     }
 
     private function segmentRuleViolation(string $served, string $name, int $maxSegments): string
