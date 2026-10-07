@@ -195,6 +195,10 @@ jobs:
           key: property-db-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Mutation testing
+        # the narrow `mutation` filter decides: CHANGELOG-only PRs (releases)
+        # must still RUN this job so the required check reports, but they
+        # cannot change which mutants exist — skip the long part for them
+        if: needs.changes.outputs.mutation == 'true'
         run: composer mutation
 
   compatibility:
