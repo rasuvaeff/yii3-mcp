@@ -93,7 +93,7 @@ final class MarkdownPromptsConfiguratorTest
     {
         Expect::exception(InvalidPromptFileException::class);
 
-        $this->server(\dirname(__DIR__) . '/Support/prompts-invalid');
+        $this->server(__DIR__ . '/../Support/prompts-invalid');
     }
 
     public function malformedArgumentEntryThrows(): void
@@ -101,7 +101,7 @@ final class MarkdownPromptsConfiguratorTest
         $caught = null;
 
         try {
-            $this->server(\dirname(__DIR__) . '/Support/prompts-malformed-argument');
+            $this->server(__DIR__ . '/../Support/prompts-malformed-argument');
         } catch (InvalidPromptFileException $caught) {
         }
 
@@ -114,7 +114,7 @@ final class MarkdownPromptsConfiguratorTest
         $caught = null;
 
         try {
-            $this->server(\dirname(__DIR__) . '/Support/prompts-nameless-argument');
+            $this->server(__DIR__ . '/../Support/prompts-nameless-argument');
         } catch (InvalidPromptFileException $caught) {
         }
 
@@ -126,7 +126,7 @@ final class MarkdownPromptsConfiguratorTest
     {
         $factory = new Psr17Factory();
         $tester = new McpTester(
-            server: $this->server(\dirname(__DIR__) . '/Support/prompts-empty'),
+            server: $this->server(__DIR__ . '/../Support/prompts-empty'),
             requestFactory: $factory,
             responseFactory: $factory,
             streamFactory: $factory,
@@ -140,7 +140,7 @@ final class MarkdownPromptsConfiguratorTest
         $caught = null;
 
         try {
-            $this->server(\dirname(__DIR__) . '/Support/prompts-duplicate');
+            $this->server(__DIR__ . '/../Support/prompts-duplicate');
         } catch (InvalidPromptFileException $caught) {
         }
 
@@ -182,6 +182,15 @@ final class MarkdownPromptsConfiguratorTest
         $link = $dir . '/broken.md';
         symlink($dir . '/does-not-exist', $link);
 
+        // The kill must not depend on the environment's display_errors: a
+        // handler returning `false` (or a missing handler) hands the warning
+        // to PHP's normal handler, which PRINTS it only when display_errors
+        // is on — off on some CI images, which let these mutants escape
+        // there while dying where warnings print. Force both settings so the
+        // leak is always observable in the output buffer.
+        $previousDisplay = ini_set('display_errors', '1');
+        $previousReporting = ini_set('error_reporting', (string) E_ALL);
+
         ob_start();
 
         try {
@@ -195,6 +204,8 @@ final class MarkdownPromptsConfiguratorTest
             Assert::notNull($caught);
         } finally {
             $output = ob_get_clean();
+            ini_set('display_errors', $previousDisplay === false ? '1' : $previousDisplay);
+            ini_set('error_reporting', $previousReporting === false ? (string) E_ALL : $previousReporting);
             unlink($link);
             rmdir($dir);
         }
@@ -209,7 +220,7 @@ final class MarkdownPromptsConfiguratorTest
 
     public function parseAlwaysRestoresTheErrorHandlerAfterwards(): void
     {
-        PromptFile::parse(\dirname(__DIR__) . '/Support/prompts/plain-note.md');
+        PromptFile::parse(__DIR__ . '/../Support/prompts/plain-note.md');
 
         // if parse() failed to restore_error_handler(), this process would
         // still carry parse()'s own silencing handler; set_error_handler()
@@ -432,7 +443,7 @@ final class MarkdownPromptsConfiguratorTest
             name: 'prompts-suite',
             version: '1.0.0',
         ))->create([], [new MarkdownPromptsConfigurator(
-            \dirname(__DIR__) . '/Support/prompts-amplify',
+            __DIR__ . '/../Support/prompts-amplify',
             maxResultBytes: $maxResultBytes,
         )]);
 
@@ -444,7 +455,7 @@ final class MarkdownPromptsConfiguratorTest
         $factory = new Psr17Factory();
 
         return new McpTester(
-            server: $this->server(\dirname(__DIR__) . '/Support/prompts'),
+            server: $this->server(__DIR__ . '/../Support/prompts'),
             requestFactory: $factory,
             responseFactory: $factory,
             streamFactory: $factory,

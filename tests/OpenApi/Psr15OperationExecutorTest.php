@@ -222,7 +222,8 @@ final class Psr15OperationExecutorTest
         Assert::same(count($handler->requests), 1);
     }
 
-    public function dryRunPreviewMirrorsTheHttpExecutorSemantics(): void    {
+    public function dryRunPreviewMirrorsTheHttpExecutorSemantics(): void
+    {
         $handler = new RecordingRequestHandler();
 
         $preview = $this->executor($handler)->execute(
