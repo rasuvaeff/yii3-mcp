@@ -46,6 +46,7 @@ jobs:
 
           if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
             src tests config examples composer.json testo.php psalm.xml \
+            CHANGELOG.md \
             rector.php .php-cs-fixer.php infection.json5 \
             .github/workflows/static-analysis.yml; then
             echo "run=false" >> "$GITHUB_OUTPUT"
