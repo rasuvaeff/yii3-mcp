@@ -91,6 +91,10 @@ final readonly class McpServerComponentResolver
             $requestAttributesClass = $openapi['request_attributes'] ?? '';
             /** @var class-string<InProcessScopeInterface>|'' $inProcessScopeClass */
             $inProcessScopeClass = $openapi['in_process_scope'] ?? '';
+            /** @var ?string $arrayQueryStyle */
+            $arrayQueryStyle = $openapi['array_query_style'] ?? null;
+            /** @var array<string, array<string, string>> $arrayQueryParams */
+            $arrayQueryParams = $openapi['array_query_params'] ?? [];
 
             if (!in_array($executorMode, ['http', 'psr15'], strict: true)) {
                 throw new LogicException(sprintf('Unsupported openapi.executor "%s"; supported: http, psr15', $executorMode));
@@ -151,6 +155,8 @@ final readonly class McpServerComponentResolver
                 serverRequestFactory: $inProcessHandlerClass !== '' ? $this->getService(ServerRequestFactoryInterface::class) : null,
                 requestAttributes: $requestAttributesClass !== '' ? $this->getService($requestAttributesClass) : null,
                 inProcessScope: $inProcessScopeClass !== '' ? $this->getService($inProcessScopeClass) : null,
+                arrayQueryStyle: $arrayQueryStyle,
+                arrayQueryParams: $arrayQueryParams,
             );
         }
 

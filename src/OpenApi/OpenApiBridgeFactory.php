@@ -123,6 +123,8 @@ final readonly class OpenApiBridgeFactory
                 maxResponseBytes: $maxResponseBytes,
                 opaqueErrors: $opaqueErrors,
                 multiSegmentPathParams: $multiSegmentPathParams,
+                arrayQueryStyle: $arrayQueryStyle,
+                arrayQueryParams: $arrayQueryParams,
             )
             : new HttpOperationExecutor(
                 httpClient: $httpClient ?? throw new InvalidArgumentException('HTTP execution requires a PSR-18 client; switch to openapi.executor "psr15" to run without one'),
@@ -135,6 +137,8 @@ final readonly class OpenApiBridgeFactory
                 maxResponseBytes: $maxResponseBytes,
                 opaqueErrors: $opaqueErrors,
                 multiSegmentPathParams: $multiSegmentPathParams,
+                arrayQueryStyle: $arrayQueryStyle,
+                arrayQueryParams: $arrayQueryParams,
             );
 
         return new OpenApiServerConfigurator(
