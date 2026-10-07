@@ -24,6 +24,7 @@ use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingRequestHandler;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -197,6 +198,42 @@ final class McpDoctorTest
 
             Assert::false(in_array('service_psr_http_client_clientinterface', $checks, strict: true));
             Assert::false(in_array('service_http_message_requestfactoryinterface', $checks, strict: true));
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function inProcessExecutionRequiresServerRequestFactoryAndTheHandler(): void
+    {
+        $path = sys_get_temp_dir() . '/yii3-mcp-doctor-spec-' . bin2hex(random_bytes(8)) . '.json';
+        file_put_contents($path, json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+
+        try {
+            $factory = new Psr17Factory();
+            $doctor = new McpDoctor(
+                container: new SimpleContainer([
+                    ServerRequestFactoryInterface::class => $factory,
+                    StreamFactoryInterface::class => $factory,
+                    RecordingRequestHandler::class => new RecordingRequestHandler(),
+                ]),
+                sessionStore: new InMemorySessionStore(),
+                endpointSecret: 'test-secret',
+                sessionDirectory: $this->sessionDir,
+                openApiSpecPath: $path,
+                openApiOperationsEnabled: true,
+                openApiInProcess: true,
+                openApiInProcessHandler: RecordingRequestHandler::class,
+            );
+
+            $names = array_column($doctor->diagnose()->toArray()['checks'], 'name');
+
+            // psr15 mode swaps the transport services: server-request factory
+            // and the configured handler are required…
+            Assert::true(in_array('service_http_message_serverrequestfactoryinterface', $names, strict: true));
+            Assert::true(in_array('service_rasuvaeff_yii3mcp_tests_support_recordingrequesthandler', $names, strict: true));
+
+            // …and the outbound transport is not
+            Assert::false(in_array('service_psr_http_client_clientinterface', $names, strict: true));
         } finally {
             unlink($path);
         }

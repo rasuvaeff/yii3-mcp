@@ -20,6 +20,7 @@ use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\SimpleCache\CacheInterface;
@@ -27,6 +28,9 @@ use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpAction;
+use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
+use Rasuvaeff\Yii3Mcp\McpListCommand;
+use Rasuvaeff\Yii3Mcp\McpServeCommand;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
@@ -41,10 +45,15 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeHttpClient;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDelegatedHeaderProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingRequestHandler;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingScope;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\SubjectRequestAttributes;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -115,6 +124,103 @@ final class ConfigWiringTest
         Assert::same($params['rasuvaeff/yii3-mcp']['visibility'], ['deny' => [], 'allow' => []]);
         Assert::same($params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'], 0);
         Assert::same($params['rasuvaeff/yii3-mcp']['cache']['tools'], []);
+        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'pretty');
+        Assert::same($params['rasuvaeff/yii3-mcp']['openapi']['executor'], 'http');
+    }
+
+    /**
+     * The commands the README documents must be a `yii list` away after
+     * `composer require` — the package's params contribution is what makes
+     * that true, so it is asserted as a contract, not prose.
+     */
+    public function consoleCommandsAreRegisteredThroughYiiConsoleParams(): void
+    {
+        $params = $this->params();
+
+        Assert::same($params['yiisoft/yii-console']['commands'], [
+            'mcp:serve' => McpServeCommand::class,
+            'mcp:list' => McpListCommand::class,
+            'mcp:doctor' => McpDoctorCommand::class,
+        ]);
+    }
+
+    public function resultJsonDefaultsToPrettyPrintedText(): void
+    {
+        $params = $this->params();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'pretty');
+
+        // the default must stay byte-identical to the SDK's own formatting —
+        // pretty text with structuredContent for an array result
+        $result = $this->weatherResult($params);
+
+        Assert::string($result['content'][0]['text'])->contains("\n");
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Rome', 'temperature' => 21, 'conditions' => 'sunny']);
+    }
+
+    public function compactResultJsonEncodesArrayToolsWithoutIndentation(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['result_json'] = 'compact';
+
+        $result = $this->weatherResult($params);
+
+        Assert::same($result['content'][0]['text'], '{"city":"Rome","temperature":21,"conditions":"sunny"}');
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Rome', 'temperature' => 21, 'conditions' => 'sunny']);
+    }
+
+    public function compactResultJsonLeavesStringResultsUnchanged(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['result_json'] = 'compact';
+        $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]);
+        $factory = new McpServerFactory(
+            container: $container,
+            sessionStore: new InMemorySessionStore(),
+            compactToolResults: true,
+        );
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+        $result = (new McpTester($server, $psr17, $psr17, $psr17))->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][0]['text'], 'Hi, Yii!');
+    }
+
+    public function compactResultJsonReachesTheFactoryWiring(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['result_json'] = 'compact';
+
+        /** @var array{__construct(): array<string, mixed>} $factory */
+        $factory = $this->di($params)[McpServerFactory::class];
+
+        Assert::true($factory['__construct()']['compactToolResults']);
+    }
+
+    public function anInvalidResultJsonValueFailsAtConfigLoad(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['result_json'] = 'monospace';
+
+        $caught = null;
+
+        try {
+            $this->di($params);
+        } catch (\InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())
+            ->contains('monospace')
+            ->contains('pretty')
+            ->contains('compact');
     }
 
     public function serverDefinitionWiresTheSizeLimitInterceptor(): void
@@ -1022,9 +1128,235 @@ final class ConfigWiringTest
         return new McpTester($server, $psr17, $psr17, $psr17);
     }
 
+    /**
+     * End-to-end for the in-process executor: the bridged tool call reaches
+     * the application's own handler with the same request shape the HTTP
+     * executor would send — and the PSR-18 client is never touched.
+     */
+    public function inProcessExecutorRunsBridgedToolsThroughTheConfiguredHandler(): void
+    {
+        $psr17 = new Psr17Factory();
+        $client = new FakeHttpClient();
+        $handler = new RecordingRequestHandler();
+        $scope = new RecordingScope();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'psr15';
+        $mcp['openapi']['handler'] = RecordingRequestHandler::class;
+        $mcp['openapi']['identity_provider'] = MutableExecutionIdentityProvider::class;
+        $mcp['openapi']['delegated_header_provider'] = IdentityDelegatedHeaderProvider::class;
+        $mcp['openapi']['request_attributes'] = SubjectRequestAttributes::class;
+        $mcp['openapi']['in_process_scope'] = RecordingScope::class;
+
+        try {
+            $tester = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+                ServerRequestFactoryInterface::class => $psr17,
+                RecordingRequestHandler::class => $handler,
+                MutableExecutionIdentityProvider::class => new MutableExecutionIdentityProvider(
+                    new ExecutionIdentity(subjectId: 'user-7', tenantId: 'tenant-a'),
+                ),
+                IdentityDelegatedHeaderProvider::class => new IdentityDelegatedHeaderProvider(),
+                SubjectRequestAttributes::class => new SubjectRequestAttributes(),
+                RecordingScope::class => $scope,
+            ]), $psr17);
+
+            $result = $tester->callTool('getBlogTags');
+        } finally {
+            @unlink($path);
+        }
+
+        $request = $handler->requests[0];
+
+        Assert::same($request->getMethod(), 'GET');
+        Assert::same((string) $request->getUri(), 'https://api.test/rest/blog-tags');
+        Assert::same($request->getHeaderLine('Accept'), 'application/json');
+
+        // delegated headers AND attributes arrive on the nested request —
+        // both from the same identity resolution
+        Assert::same($request->getHeaderLine('Authorization'), 'Bearer tenant-a:user-7');
+        Assert::same($request->getAttribute('current_user_id'), 'user-7');
+
+        // the handler's body came back through the executor's JSON decode —
+        // the text itself stays pretty-printed (result_json default)
+        Assert::json($result['content'][0]['text'])->isObject()->hasKeys('ok');
+
+        // the configured scope ran around the nested call
+        Assert::same($scope->log, ['enter', 'leave']);
+
+        // no loopback HTTP: the in-process executor never touched PSR-18
+        Assert::same($client->requestCount, 0);
+    }
+
+    public function psr15ExecutorRequiresAHandler(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'psr15';
+
+        $caught = null;
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+                ServerRequestFactoryInterface::class => $psr17,
+            ]), $psr17);
+        } catch (LogicException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('requires openapi.handler');
+    }
+
+    public function httpModeRejectsInProcessOnlyConfiguration(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['handler'] = RecordingRequestHandler::class;
+
+        $caught = null;
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+                RecordingRequestHandler::class => new RecordingRequestHandler(),
+            ]), $psr17);
+        } catch (LogicException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('only read when openapi.executor is "psr15"');
+    }
+
+    /**
+     * Each of the three psr15-only keys alone must fail http mode — a check
+     * wired with `||` that only the first key can trip would let the other
+     * two through silently.
+     */
+    public function httpModeRejectsEachInProcessOnlyKeyAlone(): void
+    {
+        $psr17 = new Psr17Factory();
+
+        foreach (['request_attributes' => SubjectRequestAttributes::class, 'in_process_scope' => RecordingScope::class] as $key => $class) {
+            $path = $this->writeSpecFile();
+
+            $params = $this->params();
+            $mcp = &$params['rasuvaeff/yii3-mcp'];
+            $mcp['tools'] = [];
+            $mcp['openapi']['spec_path'] = $path;
+            $mcp['openapi']['base_url'] = 'https://api.test/';
+            $mcp['openapi']['operations'] = ['getBlogTags'];
+            $mcp['openapi'][$key] = $class;
+
+            $caught = null;
+
+            try {
+                $this->bridgeTester($params, new SimpleContainer([
+                    ClientInterface::class => new FakeHttpClient(),
+                    RequestFactoryInterface::class => $psr17,
+                    StreamFactoryInterface::class => $psr17,
+                    SubjectRequestAttributes::class => new SubjectRequestAttributes(),
+                    RecordingScope::class => new RecordingScope(),
+                ]), $psr17);
+            } catch (LogicException $caught) {
+            } finally {
+                @unlink($path);
+            }
+
+            Assert::notNull($caught);
+            Assert::string($caught->getMessage())->contains('only read when openapi.executor is "psr15"');
+        }
+    }
+
+    public function unsupportedExecutorModeFailsTheServerBuild(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'grpc';
+
+        $caught = null;
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17);
+        } catch (LogicException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('Unsupported openapi.executor "grpc"');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     *
+     * @return array<string, mixed>
+     */
+    private function weatherResult(array $params): array
+    {
+        $params['rasuvaeff/yii3-mcp']['tools'] = [StructuredWeatherTool::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+
+        $container = new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]);
+        $factory = new McpServerFactory(
+            container: $container,
+            sessionStore: new InMemorySessionStore(),
+            compactToolResults: ($params['rasuvaeff/yii3-mcp']['result_json'] ?? 'pretty') === McpServerFactory::RESULT_JSON_COMPACT,
+        );
+
+        /** @var Server $server */
+        $server = $definition($factory, $container);
+        $psr17 = new Psr17Factory();
+
+        return (new McpTester($server, $psr17, $psr17, $psr17))->callTool('weather', ['city' => 'Rome']);
+    }
+
     private function params(): array
     {
-        return require dirname(__DIR__) . '/config/params.php';
+        return require __DIR__ . '/../config/params.php';
     }
 
     /**
@@ -1036,6 +1368,6 @@ final class ConfigWiringTest
     {
         $params ??= $this->params();
 
-        return (static fn(array $params): array => require dirname(__DIR__) . '/config/di.php')($params);
+        return (static fn(array $params): array => require __DIR__ . '/../config/di.php')($params);
     }
 }

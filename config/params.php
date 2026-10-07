@@ -2,7 +2,22 @@
 
 declare(strict_types=1);
 
+use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
+use Rasuvaeff\Yii3Mcp\McpListCommand;
+use Rasuvaeff\Yii3Mcp\McpServeCommand;
+
 return [
+    // registering through params (not the application's config) makes the
+    // commands available right after `composer require`: yiisoft/config
+    // merges `commands` from all packages, and the application layer can
+    // still override any single entry by re-declaring its name
+    'yiisoft/yii-console' => [
+        'commands' => [
+            'mcp:serve' => McpServeCommand::class,
+            'mcp:list' => McpListCommand::class,
+            'mcp:doctor' => McpDoctorCommand::class,
+        ],
+    ],
     'rasuvaeff/yii3-mcp' => [
         'server_name' => 'yii3-mcp',
         'server_version' => 'dev',
@@ -38,6 +53,13 @@ return [
             // NOT a client quota — a new session starts a fresh counter
             'budget' => 0,
         ],
+        // how array/object tool results are encoded into the text content the
+        // agent reads: 'pretty' (default, the SDK's own formatting) or
+        // 'compact' — no indentation, JSON_UNESCAPED_SLASHES |
+        // JSON_UNESCAPED_UNICODE (~3x fewer bytes; structuredContent is still
+        // produced for array results). An unsupported value fails at config
+        // load.
+        'result_json' => 'pretty',
         // guard against a tool result burning an agent's context window
         // (0 = unlimited). A string result over the limit is truncated with
         // a marker; any other result (array/object) is rejected outright —
@@ -171,6 +193,34 @@ return [
             'delegated_header_provider' => '',
             // read-only bridge: reject non-GET operations at build time
             'safe_methods_only' => false,
+            // how bridged operations are executed. 'http' (default) sends a
+            // real PSR-18 request to base_url — the call passes the API's
+            // full middleware stack, but occupies a second worker under FPM
+            // and pays loopback latency. 'psr15' calls the application's own
+            // request handler in-process: same method/URI/query/body/headers,
+            // no network I/O. An unsupported value fails the server build.
+            'executor' => 'http',
+            // FQCN of a Psr\Http\Server\RequestHandlerInterface, resolved
+            // through the container; required for (and only read in) psr15
+            // mode. The nested request carries the same shape the HTTP
+            // executor would send — the handler is the application's, so
+            // isolating its request-scoped state (current route/user) is the
+            // application's contract, see 'in_process_scope'.
+            'handler' => '',
+            // FQCN of an OpenApi\ExecutionRequestAttributesInterface — maps
+            // the resolved ExecutionIdentity to request attributes on the
+            // nested request, so the app's stack authenticates the user the
+            // usual way. psr15 mode only, optional; delegated headers are
+            // still sent as headers either way.
+            'request_attributes' => '',
+            // FQCN of an OpenApi\InProcessScopeInterface — enter()/leave()
+            // hooks the executor runs around the nested handle() (leave()
+            // fires even on failure) for resetting request-scoped state the
+            // outer MCP request left behind: Yii3's own re-entry otherwise
+            // fails with "Can not set URI since it was already set" or, far
+            // worse, serves the nested call under the outer identity. psr15
+            // mode only, optional.
+            'in_process_scope' => '',
             // operationIds that get an extra `dryRun` boolean argument; a call
             // with `dryRun: true` returns the planned request (method, url,
             // body) instead of executing it. Orthogonal to safe_methods_only —

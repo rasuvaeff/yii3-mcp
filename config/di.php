@@ -33,6 +33,18 @@ $protocolVersion = $protocolVersionParam === ''
         implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::cases())),
     )));
 
+// Same fail-early contract for the result-JSON knob: a typo like "compct"
+// would otherwise silently serve pretty-printed results forever.
+$resultJson = (string) ($params['rasuvaeff/yii3-mcp']['result_json'] ?? McpServerFactory::RESULT_JSON_PRETTY);
+$compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETTY, McpServerFactory::RESULT_JSON_COMPACT], true)
+    ? $resultJson === McpServerFactory::RESULT_JSON_COMPACT
+    : throw new InvalidArgumentException(sprintf(
+        'Unsupported result_json "%s"; supported: %s, %s',
+        $resultJson,
+        McpServerFactory::RESULT_JSON_PRETTY,
+        McpServerFactory::RESULT_JSON_COMPACT,
+    ));
+
 // Session store default is FPM-safe (file-based): the MCP Streamable HTTP
 // session spans several requests, so the SDK's in-memory default would lose
 // it between FPM workers. Rebind to Psr16SessionStore for multi-host setups.
@@ -65,6 +77,7 @@ return [
             'instructions' => $params['rasuvaeff/yii3-mcp']['instructions'] ?? '',
             'paginationLimit' => $params['rasuvaeff/yii3-mcp']['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
             'protocolVersion' => $protocolVersion,
+            'compactToolResults' => $compactToolResults,
         ],
     ],
     Server::class => [
@@ -121,7 +134,7 @@ return [
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
             /** @var string $serverName */
             $serverName = $params['rasuvaeff/yii3-mcp']['server_name'];
-            /** @var array{spec_path: string, operations: list<string>, spec_headers?: array<string, string>, cache_ttl?: int} $openapi */
+            /** @var array{spec_path: string, operations: list<string>, spec_headers?: array<string, string>, cache_ttl?: int, executor?: string, handler?: string} $openapi */
             $openapi = $params['rasuvaeff/yii3-mcp']['openapi'];
 
             /** @var array<string, string|list<string>> $clientSecrets */
@@ -145,6 +158,8 @@ return [
                 toolResultCacheEnabled: ($params['rasuvaeff/yii3-mcp']['cache']['tools'] ?? []) !== [],
                 appsEnabled: $apps['enable'] ?? false,
                 appDefinitions: $apps['definitions'] ?? [],
+                openApiInProcess: ($openapi['executor'] ?? 'http') === 'psr15',
+                openApiInProcessHandler: $openapi['handler'] ?? '',
             );
         },
     ],

@@ -375,6 +375,40 @@ final class HttpOperationExecutorTest
         );
     }
 
+    public function dryRunnableOperationWithoutTheFlagExecutesForReal(): void
+    {
+        // a dry-run-ENABLED operation called WITHOUT the dryRun argument is a
+        // normal execution — a precedence slip in the flag check would turn
+        // every such call into a preview and silently stop executing anything
+        [$client, $requests] = $this->client();
+
+        $result = $this->executor($client)->execute(
+            $this->operation('getBlogTags'),
+            ['locale' => 'en'],
+            dryRunnable: true,
+        );
+
+        Assert::same($result, ['ok' => true]);
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tags?locale=en');
+    }
+
+    public function anExplicitDryRunFalseExecutesForReal(): void
+    {
+        // `dryRun: false` is the caller actively declining the preview — the
+        // only input that distinguishes the flag check from its precedence
+        // mutant, which would preview exactly this call
+        [$client, $requests] = $this->client();
+
+        $result = $this->executor($client)->execute(
+            $this->operation('getBlogTags'),
+            ['locale' => 'en', 'dryRun' => false],
+            dryRunnable: true,
+        );
+
+        Assert::same($result, ['ok' => true]);
+        Assert::same((string) $requests->last()->getUri(), 'https://api.test/rest/blog-tags?locale=en');
+    }
+
     public function dryRunReturnsThePlannedRequestWithoutCallingHttp(): void
     {
         [$client] = $this->client();

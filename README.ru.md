@@ -267,12 +267,19 @@ MCP-клиент подключается с секретом в заголов�
 
 ### stdio для локальной разработки
 
-```php
-// add McpServeCommand to your console commands
+```bash
 ./yii mcp:serve
 ```
 
 Конфигурация Claude Code: `claude mcp add my-app -- ./yii mcp:serve`.
+
+Команды `mcp:serve`, `mcp:list` и `mcp:doctor` регистрируются через params
+пакета для `yiisoft/yii-console`, поэтому появляются в `./yii list` сразу
+после `composer require` — без конфигурации на стороне приложения.
+Приложение со своим map'ом commands мержится с ним рекурсивно (слой
+приложения выигрывает при конфликте имён — команду можно переименовать
+или перевязать, повторно объявив её имя); приложение без `yiisoft/config`
+может, как раньше, перечислить три класса в своих console params.
 
 ### Интроспекция фактически доступных capabilities
 
@@ -282,8 +289,7 @@ MCP-клиент подключается с секретом в заголов�
 реальный клиент, поэтому в неё попадают attribute tools, OpenAPI-операции и
 Markdown prompts.
 
-```php
-// add McpListCommand to your console commands
+```bash
 ./yii mcp:list
 ./yii mcp:list --json   # full definitions as normalized JSON
 ```
@@ -305,6 +311,7 @@ capabilities.
 | `McpListCommand`, `McpTester` | `ServerRequestFactoryInterface`, `ResponseFactoryInterface`, `StreamFactoryInterface` |
 | URL OpenAPI spec | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface` |
 | OpenAPI operation execution | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface`, `StreamFactoryInterface` |
+| OpenAPI operation execution (`executor => 'psr15'`) | PSR-17 `ServerRequestFactoryInterface`, `StreamFactoryInterface`, настроенный `openapi.handler` |
 
 `ServerRequestFactoryInterface` и `RequestFactoryInterface` — разные PSR-17
 контракты; binding одного не заменяет другой.
@@ -468,6 +475,11 @@ interceptor.
     // фиксирует ревизию, анонсируемую в initialize; пусто — дефолт SDK
     // (2025-11-25). Неподдерживаемое значение падает на загрузке конфига.
     'protocol_version' => '',
+    // как array/object результаты tools кодируются в текст, который читает
+    // агент: 'pretty' (по умолчанию, форматирование самого SDK) или 'compact'
+    // — без отступов, ~3x меньше байт; на structuredContent не влияет.
+    // Неподдерживаемое значение падает на загрузке конфига.
+    'result_json' => 'pretty',
 ],
 ```
 
@@ -649,6 +661,36 @@ API или hand-written tool над большой таблицей может �
 JSON-encoded байты. Он ограничивает то, что попадает в context window
 агента; память worker-а при ПРОИЗВОДСТВЕ результата ограничивается отдельно
 через `openapi.max_response_bytes`.
+
+#### Компактный JSON результатов tools
+
+SDK сериализует array/object результат tool с `JSON_PRETTY_PRINT` — это ~3x
+байт против компактной записи того же payload: страница поиска из 20 карточек
+стоит агенту десятки килобайт чистых отступов. Опционально:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    // 'pretty' (по умолчанию, побайтово как у самого SDK) или 'compact':
+    // array/object результаты кодируются без отступов, с
+    // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE. Любое другое значение
+    // падает при загрузке конфига.
+    'result_json' => 'compact',
+],
+```
+
+Что меняется — и что намеренно нет:
+
+- перекодируется только **text content** array/object результатов; string,
+  int, float, bool и `null` результаты и результаты, уже являющиеся SDK
+  `Content`-объектами, отдаются ровно как раньше;
+- `structuredContent` по-прежнему строится для array результатов (tool с
+  `outputSchema` сохраняет структурированный вывод) — компактный текст это
+  просто JSON-кодировка того же payload;
+- interceptors, cache tool-результатов и `limits.tool_result_bytes` видят
+  **сырой** результат handler'а: конверсия происходит после цепочки
+  interceptors, ровно перед тем, как SDK стал бы форматировать результат.
+  Байтовый бюджет лимита измеряет то же, что и раньше, — закодированный
+  результат просто получается меньше.
 
 Для read-heavy tools, вызываемых повторно с теми же аргументами внутри
 session (справочник, OpenAPI GET), `cache.tools` полностью пропускает
@@ -980,7 +1022,10 @@ allow-listed operations можно без дублирования опубли�
 output schemas - из success response (см. ниже).
 Вызовы исполняются как настоящие HTTP requests к API
 и проходят весь middleware stack (validation, rate limiting, auth), в отличие
-от hand-written tools, вызывающих handlers напрямую.
+от hand-written tools, вызывающих handlers напрямую; когда API — это само
+приложение, in-process executor избавляет от loopback HTTP-обращения (см.
+[In-process исполнение](#in-process-исполнение-мост-к-собственному-api-приложения)
+ниже).
 
 ```php
 // config/params.php
@@ -1006,6 +1051,10 @@ output schemas - из success response (см. ниже).
         // (GitLab "group/project"); пустой список по умолчанию = каждый path
         // argument односегментный, ровно как раньше
         'multi_segment_path_params' => ['id' => 3],
+        // как исполняются bridged operations: 'http' (по умолчанию) шлёт
+        // настоящий PSR-18 request на base_url; 'psr15' запускает собственный
+        // request handler приложения in-process — см. "In-process исполнение"
+        'executor' => 'http',
     ],
 ],
 ```
@@ -1115,6 +1164,61 @@ parameter трактуется как отсутствующий (пропуск
 (`{"type": ["string", "null"]}`) для scalar parameter schemas, которую bridge
 принимает наравне с обычной 3.0 type-строкой.
 
+### In-process исполнение: мост к собственному API приложения
+
+Когда `base_url` указывает на само приложение, каждый bridged call — настоящий
+HTTP request обратно в тот же pool процессов: под php-fpm один вызов занимает
+двух workers (MCP request ждёт вложенный) и может истощить небольшой
+`pm.max_children`, плюс настройка loopback TLS/DNS и задержка на каждый вызов.
+`executor => 'psr15'` полностью убирает сеть из пути:
+
+```php
+'openapi' => [
+    // ...
+    'executor' => 'psr15',
+    // FQCN Psr\Http\Server\RequestHandlerInterface, разрешается через DI
+    // container — собственный handler приложения (обычно handler console
+    // application). Обязателен в psr15-режиме.
+    'handler' => App\RequestHandler::class,
+    // опционально: FQCN OpenApi\ExecutionRequestAttributesInterface —
+    // отображает resolved ExecutionIdentity в request attributes вложенного
+    // request, чтобы стек аутентифицировал пользователя за MCP-клиентом
+    // привычным образом (delegated headers при этом остаются headers)
+    'request_attributes' => App\ExecutionRequestAttributes::class,
+    // опционально: FQCN OpenApi\InProcessScopeInterface — enter()/leave(),
+    // которые executor выполняет вокруг вложенного handle()
+    'in_process_scope' => App\InProcessScope::class,
+],
+```
+
+Вложенный request несёт тот же method, URI (`base_url` + подставленный path +
+query), headers (настроенные defaults, delegated, `Accept`, `Content-Type`) и
+JSON body, что отправил бы HTTP executor; ответ проходит тот же
+инкрементальный size cap, то же отображение ошибок и тот же `opaque_errors`.
+`base_url` по-прежнему формирует URI запроса и dry-run preview — из процесса
+ничего не выходит, PSR-18 client трогает только загрузка URL-`spec_path`.
+
+Два контракта остаются на стороне приложения:
+
+- **`handler` сам отвечает за свою re-entrancy.** Scoped-состояние внешнего
+  MCP request — текущий route, текущий пользователь, уже установленный на
+  общем request URI — всё ещё стоит, когда выполняется вложенный request;
+  наивный повторный вход в стек Yii3 падает с `Can not set URI since it was
+  already set` или, гораздо хуже, обслуживает вложенный вызов под identity
+  внешнего request. Сбрасывайте то, что ваш стек глобализует, в
+  `InProcessScopeInterface::enter()` и восстанавливайте в `leave()`; executor
+  вызывает `leave()` в `finally`, поэтому он выполняется даже когда вложенный
+  вызов бросает, а stateless-реализация scope может быть shared.
+- **delegated mode продолжает работать**: вывод delegated header provider'а
+  приходит headers, а `request_attributes` (если настроен) добавляет identity
+  как attributes — оба из ОДНОЙ резолюции identity на вызов.
+
+Ошибочная конфигурация валит server build: `psr15` без `handler`, любой из
+трёх psr15-only ключей в режиме `http` или неподдерживаемое значение
+`executor`. `mcp:doctor` отражает режим — для исполнения operations он
+требует PSR-17 server-request factory и настроенный handler вместо PSR-18
+client.
+
 ### Без Yii3-приложения
 
 Мост - фича пакета, а не приложения: `OpenApiBridgeFactory` собирает готовый
@@ -1143,8 +1247,10 @@ URL-спека загружается с `specHeaders` (свой скоуп cred
 через `specCache`, когда `specCacheTtl` больше нуля. Все остальные опции из
 params `openapi` - `modifier`, `dryRunOperations`, `identityProvider`,
 `delegatedHeaderProvider`, `maxResponseBytes`, `opaqueErrors`,
-`multiSegmentPathParams` - здесь именованные аргументы. Config-plugin зовёт
-эту же фабрику, так что оба пути собирают мост одинаково.
+`multiSegmentPathParams` и in-process-квартет `inProcessHandler`,
+`serverRequestFactory`, `requestAttributes`, `inProcessScope` - здесь
+именованные аргументы. Config-plugin зовёт эту же фабрику, так что оба пути
+собирают мост одинаково.
 
 ### Что видит клиент при неудачном bridged-вызове
 
@@ -1403,7 +1509,9 @@ public function refresh(): string { /* … */ }
 | `Interceptor\PromptGetInterceptorInterface` / `Interceptor\ResourceReadInterceptorInterface` | обёртка каждого prompts/get и resources/read (params `prompt_interceptors` / `resource_interceptors`) с `PromptGetContext` / `ResourceReadContext` |
 | `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session фильтры prompts/resources (params `prompt_visibility` / `resource_visibility`): списки скрывают, прямой get/read отвечает not-found |
 | `Interceptor\CallOutcome` | единый словарь `success`/`rejected`/`error` для audit/telemetry бриджей (`fromThrowable()`) |
-| `OpenApi\OpenApiServerConfigurator` | публикует allow-listed OpenAPI operations как tools через HTTP |
+| `OpenApi\OpenApiServerConfigurator` | публикует allow-listed OpenAPI operations как tools (исполнение по HTTP или in-process) |
+| `OpenApi\ExecutionRequestAttributesInterface` | реализуемый приложением контракт: отображает resolved `ExecutionIdentity` в request attributes вложенного in-process вызова (параметр `openapi.request_attributes`, psr15-режим) |
+| `OpenApi\InProcessScopeInterface` | реализуемый приложением контракт: сброс request-scoped состояния вокруг вложенного in-process вызова (параметр `openapi.in_process_scope`, psr15-режим); `leave()` выполняется даже при исключении во вложенном вызове |
 | `OpenApi\OperationModifierInterface` | hook кастомизации на уровне operation, применяется после `tool_names` rename |
 | `OpenApi\Operation` | read-only контекст operation, передаваемый в `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |

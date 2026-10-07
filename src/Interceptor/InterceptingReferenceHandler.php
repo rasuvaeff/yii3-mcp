@@ -13,7 +13,9 @@ use Mcp\Capability\Registry\ToolReference;
 use Mcp\Exception\PromptNotFoundException;
 use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Result\CallToolResult;
 use Mcp\Server\Session\SessionInterface;
+use Rasuvaeff\Yii3Mcp\CompactToolResultFormatter;
 use Rasuvaeff\Yii3Mcp\Exception\SessionOwnershipException;
 use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
@@ -27,6 +29,11 @@ use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
  * fail-closed — an invisible tool cannot be called even by its exact name,
  * and a hidden prompt/resource is reported as not found, indistinguishable
  * from a missing one.
+ *
+ * With $compactToolResults on, tool results are also re-encoded here as
+ * compact JSON text ({@see CompactToolResultFormatter}) — the SDK's own
+ * formatter pretty-prints array results, which costs an agent ~3x context
+ * tokens for the same payload.
  *
  * The client identity of a call comes FROM THE SESSION first
  * ({@see self::CLIENT_ID_SESSION_KEY} — the immutable owner
@@ -59,6 +66,9 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
      * @param list<ToolCallInterceptorInterface> $interceptors applied in order, first = outermost
      * @param list<PromptGetInterceptorInterface> $promptInterceptors applied in order, first = outermost
      * @param list<ResourceReadInterceptorInterface> $resourceInterceptors applied in order, first = outermost
+     * @param bool $compactToolResults encode array/object tool results as compact JSON text
+     *                                ({@see CompactToolResultFormatter}); pretty-printing stays the
+     *                                default for backward compatibility
      */
     public function __construct(
         private ReferenceHandlerInterface $inner,
@@ -68,6 +78,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         private array $resourceInterceptors = [],
         private ?PromptVisibilityInterface $promptVisibility = null,
         private ?ResourceVisibilityInterface $resourceVisibility = null,
+        private bool $compactToolResults = false,
     ) {}
 
     /**
@@ -123,7 +134,21 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
             $next = static fn(): mixed => $interceptor->intercept($context, $current);
         }
 
-        return $next();
+        /** @var mixed $result */
+        $result = $next();
+
+        // compact results are built HERE, deliberately: after the interceptor
+        // chain (every interceptor — RBAC, audit, the cache, the size limit —
+        // keeps seeing the raw handler result it was written against) and
+        // before the SDK's CallToolHandler, which skips BOTH its pretty
+        // formatter and structured-content extraction for a ready
+        // CallToolResult. A handler that already returned one keeps it
+        // untouched, exactly as the SDK would.
+        if ($this->compactToolResults && !$result instanceof CallToolResult) {
+            return CompactToolResultFormatter::format($result);
+        }
+
+        return $result;
     }
 
     /**

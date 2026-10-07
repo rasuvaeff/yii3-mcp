@@ -59,6 +59,10 @@ final readonly class McpServerFactory
      *                                              null keeps the SDK's own default
      * @param SubscriptionManagerInterface|null $subscriptionManager backs resources/subscribe; pass the SAME
      *                                                               instance {@see ResourceUpdateNotifier} reads
+     * @param bool $compactToolResults encode array/object tool results as compact JSON text
+     *                                 instead of the SDK's pretty-printed one (~3x fewer bytes in
+     *                                 the text an agent reads); `structuredContent` keeps being
+     *                                 produced for array results
      */
     public function __construct(
         private ContainerInterface $container,
@@ -70,6 +74,7 @@ final readonly class McpServerFactory
         private int $paginationLimit = self::DEFAULT_PAGINATION_LIMIT,
         private ?ProtocolVersion $protocolVersion = null,
         private ?SubscriptionManagerInterface $subscriptionManager = null,
+        private bool $compactToolResults = false,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -81,6 +86,10 @@ final readonly class McpServerFactory
      * and the SDK's pagination cannot drift apart silently.
      */
     public const int DEFAULT_PAGINATION_LIMIT = 50;
+
+    /** Result-JSON knob values for the `result_json` param ({@see self::__construct()}) */
+    public const string RESULT_JSON_PRETTY = 'pretty';
+    public const string RESULT_JSON_COMPACT = 'compact';
 
     /**
      * @param list<class-string> $toolClasses
@@ -163,7 +172,7 @@ final readonly class McpServerFactory
             || $promptVisibility instanceof PromptVisibilityInterface
             || $resourceVisibility instanceof ResourceVisibilityInterface;
 
-        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility) {
+        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility || $this->compactToolResults) {
             // the decorator wraps EVERY registration path: [class, method]
             // references, closures and explicit handler objects all execute
             // through the reference handler
@@ -175,6 +184,7 @@ final readonly class McpServerFactory
                 resourceInterceptors: $resourceInterceptorList,
                 promptVisibility: $promptVisibility,
                 resourceVisibility: $resourceVisibility,
+                compactToolResults: $this->compactToolResults,
             ));
         }
 

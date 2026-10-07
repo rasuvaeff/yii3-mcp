@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
+use InvalidArgumentException;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use Psr\SimpleCache\CacheInterface;
 
 /**
@@ -44,6 +47,14 @@ final readonly class OpenApiBridgeFactory
      * @param ?int $maxResponseBytes upstream body cap; null uses the package default
      * @param array<array-key, mixed> $multiSegmentPathParams path parameter name => how many
      *                                "/"-separated segments its values may carry
+     * @param ?RequestHandlerInterface $inProcessHandler selects in-process execution: the application's
+     *                                own handler receives the same request the HTTP executor would
+     *                                send, without network I/O; null (default) keeps real HTTP calls
+     * @param ?ServerRequestFactoryInterface $serverRequestFactory required together with $inProcessHandler
+     * @param ?ExecutionRequestAttributesInterface $requestAttributes maps the resolved ExecutionIdentity
+     *                                to request attributes on the nested request (in-process only)
+     * @param ?InProcessScopeInterface $inProcessScope enter()/leave() hooks around the nested handle()
+     *                                for resetting request-scoped state (in-process only)
      */
     public static function create(
         string|array $spec,
@@ -65,10 +76,36 @@ final readonly class OpenApiBridgeFactory
         ?int $maxResponseBytes = null,
         bool $opaqueErrors = false,
         array $multiSegmentPathParams = [],
+        ?RequestHandlerInterface $inProcessHandler = null,
+        ?ServerRequestFactoryInterface $serverRequestFactory = null,
+        ?ExecutionRequestAttributesInterface $requestAttributes = null,
+        ?InProcessScopeInterface $inProcessScope = null,
     ): OpenApiServerConfigurator {
-        return new OpenApiServerConfigurator(
-            spec: self::index($spec, $httpClient, $requestFactory, $specHeaders, $specCache, $specCacheTtl),
-            executor: new HttpOperationExecutor(
+        // psr15 mode is selected by the handler alone: everything else about
+        // the call (URI, headers, body, caps, error mapping) is identical,
+        // so the presence of the one PSR-15-only service is the mode
+        if ($inProcessHandler instanceof RequestHandlerInterface && !$serverRequestFactory instanceof ServerRequestFactoryInterface) {
+            throw new InvalidArgumentException('In-process execution requires a ServerRequestFactoryInterface');
+        }
+
+        $maxResponseBytes ??= OperationResponseDecoder::DEFAULT_MAX_RESPONSE_BYTES;
+
+        $executor = $inProcessHandler instanceof RequestHandlerInterface
+            ? new Psr15OperationExecutor(
+                handler: $inProcessHandler,
+                serverRequestFactory: $serverRequestFactory,
+                streamFactory: $streamFactory,
+                baseUrl: $baseUrl,
+                defaultHeaders: $headers,
+                identityProvider: $identityProvider,
+                delegatedHeaderProvider: $delegatedHeaderProvider,
+                requestAttributes: $requestAttributes,
+                inProcessScope: $inProcessScope,
+                maxResponseBytes: $maxResponseBytes,
+                opaqueErrors: $opaqueErrors,
+                multiSegmentPathParams: $multiSegmentPathParams,
+            )
+            : new HttpOperationExecutor(
                 httpClient: $httpClient,
                 requestFactory: $requestFactory,
                 streamFactory: $streamFactory,
@@ -76,10 +113,14 @@ final readonly class OpenApiBridgeFactory
                 defaultHeaders: $headers,
                 identityProvider: $identityProvider,
                 delegatedHeaderProvider: $delegatedHeaderProvider,
-                maxResponseBytes: $maxResponseBytes ?? HttpOperationExecutor::DEFAULT_MAX_RESPONSE_BYTES,
+                maxResponseBytes: $maxResponseBytes,
                 opaqueErrors: $opaqueErrors,
                 multiSegmentPathParams: $multiSegmentPathParams,
-            ),
+            );
+
+        return new OpenApiServerConfigurator(
+            spec: self::index($spec, $httpClient, $requestFactory, $specHeaders, $specCache, $specCacheTtl),
+            executor: $executor,
             operations: $operations,
             safeMethodsOnly: $safeMethodsOnly,
             toolNames: $toolNames,

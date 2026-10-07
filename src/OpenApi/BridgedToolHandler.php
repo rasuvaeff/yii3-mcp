@@ -19,7 +19,7 @@ final readonly class BridgedToolHandler implements ToolHandlerInterface
 {
     public function __construct(
         private Operation $operation,
-        private HttpOperationExecutor $executor,
+        private OperationExecutorInterface $executor,
         private bool $dryRunnable = false,
         private ?string $toolName = null,
     ) {}

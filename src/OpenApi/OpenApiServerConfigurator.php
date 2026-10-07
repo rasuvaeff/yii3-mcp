@@ -61,7 +61,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
      */
     public function __construct(
         private SpecIndex $spec,
-        private HttpOperationExecutor $executor,
+        private OperationExecutorInterface $executor,
         private array $operations,
         private bool $safeMethodsOnly = false,
         private array $toolNames = [],
