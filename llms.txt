@@ -41,7 +41,14 @@ composer require rasuvaeff/yii3-mcp
 - Server-wide params knobs: `instructions` (text served in initialize, '' omits),
   `pagination_limit` (default 50; applied to BOTH the SDK's list handlers and this
   package's filtering ones so they never page differently), `protocol_version`
-  ('' = SDK default; an unsupported value throws at config load).
+  ('' = SDK default; an unsupported value throws at config load), `result_json`
+  ('pretty' default | 'compact': array/object tool results as unindented JSON
+  text, ~3x fewer bytes; structuredContent still produced for array results;
+  interceptors/cache/size-limit see the raw result; anything else throws at
+  config load).
+- `mcp:serve` / `mcp:list` / `mcp:doctor` are registered through the package's
+  `yiisoft/yii-console` params — available right after `composer require`;
+  the application layer can override any command by re-declaring its name.
 - Caller-influenced output is bounded BEFORE allocation: upstream bodies
   (`openapi.max_response_bytes`, incremental read), substituted prompts
   (`limits.prompt_result_bytes`, arithmetic pre-check), spec documents
@@ -307,6 +314,18 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   at most 2000 bytes of the upstream body, cut on a character boundary; a body
   that is not valid UTF-8 is replaced by `<non-UTF-8 response body, N bytes>`
   (the envelope must stay JSON-encodable).
+- In-process execution for the application's OWN API: `openapi.executor =>
+  'psr15'` + `openapi.handler` (a RequestHandlerInterface FQCN) builds the
+  same request (method, URI, headers, JSON body) and calls the handler
+  in-process — no network I/O, one FPM worker instead of two. Optional
+  `request_attributes` (ExecutionRequestAttributesInterface: ExecutionIdentity
+  => request attributes; delegated headers still sent as headers) and
+  `in_process_scope` (InProcessScopeInterface: enter()/leave() around the
+  nested handle() — leave() runs even on failure — for resetting
+  request-scoped state the outer MCP request left behind). Response cap,
+  error mapping and `opaque_errors` identical to HTTP mode; `psr15` without
+  `handler`, psr15-only keys in `http` mode or an unsupported `executor`
+  value fail the server build.
 - Static `defaultHeaders` are service-token mode: upstream does NOT inherit the
   MCP caller/RBAC identity. Do not expose tenant/user data with a broader token.
   Delegated mode configures both ExecutionIdentityProviderInterface and
@@ -372,8 +391,10 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   a named argument (`headers`, `specHeaders`, `specCache`, `specCacheTtl`,
   `safeMethodsOnly`, `toolNames`, `modifier`, `dryRunOperations`,
   `identityProvider`, `delegatedHeaderProvider`, `maxResponseBytes`,
-  `opaqueErrors`, `multiSegmentPathParams`). `SpecIndex` and
-  `HttpOperationExecutor` stay `@internal`; the config-plugin path calls this
+  `opaqueErrors`, `multiSegmentPathParams`, `inProcessHandler`,
+  `serverRequestFactory`, `requestAttributes`, `inProcessScope`).
+  `SpecIndex` and the executors stay
+  `@internal`; the config-plugin path calls this
   same factory.
 - Only `OperationFailedException` and `Exception\InvalidToolArgumentException`
   (non-scalar URL parameter, route-escaping or missing path argument,

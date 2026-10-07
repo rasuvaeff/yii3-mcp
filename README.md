@@ -266,12 +266,20 @@ An MCP client connects with the secret header:
 
 ### stdio for local development
 
-```php
-// add McpServeCommand to your console commands
+```bash
 ./yii mcp:serve
 ```
 
 Claude Code config: `claude mcp add my-app -- ./yii mcp:serve`.
+
+The `mcp:serve`, `mcp:list` and `mcp:doctor` commands are registered through
+the package's `yiisoft/yii-console` params, so they show up in `./yii list`
+right after `composer require` — no application-side configuration. An
+application that maintains its own commands map merges with it recursively
+(the application layer wins on a name conflict, so a command can be renamed
+or rebound by re-declaring its name); an application not using
+`yiisoft/config` can still list the three classes in its console params the
+way previous versions documented it.
 
 ### Introspection: what is actually served
 
@@ -280,8 +288,7 @@ prompt — with argument summaries (`name*` = required) — without an MCP clien
 It goes through the same in-process JSON-RPC path a real client uses, so
 attribute tools, OpenAPI-bridged operations and Markdown prompts all show up:
 
-```php
-// add McpListCommand to your console commands
+```bash
 ./yii mcp:list
 ./yii mcp:list --json   # full definitions as normalized JSON
 ```
@@ -306,6 +313,7 @@ console group:
 | `McpListCommand`, `McpTester` | `ServerRequestFactoryInterface`, `ResponseFactoryInterface`, `StreamFactoryInterface` |
 | URL OpenAPI spec | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface` |
 | OpenAPI operation execution | PSR-18 `ClientInterface`, PSR-17 `RequestFactoryInterface`, `StreamFactoryInterface` |
+| OpenAPI operation execution (`executor => 'psr15'`) | PSR-17 `ServerRequestFactoryInterface`, `StreamFactoryInterface`, the configured `openapi.handler` |
 
 `ServerRequestFactoryInterface` and `RequestFactoryInterface` are distinct
 PSR-17 contracts; binding one does not satisfy the other.
@@ -471,6 +479,11 @@ authorization in the visibility filter, not in an interceptor.
     // pins the revision advertised in initialize; empty keeps the SDK's default
     // (2025-11-25). An unsupported value fails at config load, not at runtime.
     'protocol_version' => '',
+    // how array/object tool results are encoded into the text the agent
+    // reads: 'pretty' (default, the SDK's own formatting) or 'compact' —
+    // no indentation, ~3x fewer bytes; structuredContent is unaffected.
+    // An unsupported value fails at config load.
+    'result_json' => 'pretty',
 ],
 ```
 
@@ -650,6 +663,37 @@ JSON encoding (control characters expand on the wire, up to ~6x); for
 arrays/objects it counts the JSON-encoded bytes. It bounds what reaches the
 agent's context window — worker memory during production of the result is
 bounded separately by `openapi.max_response_bytes`.
+
+#### Compact JSON tool results
+
+The SDK serializes an array or object tool result with `JSON_PRETTY_PRINT`,
+which is ~3x the bytes of the same payload compact — a `search` page of 20
+cards costs the agent tens of kilobytes of pure indentation. Opting into
+compact text:
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    // 'pretty' (default, byte-identical to the SDK's own formatting) or
+    // 'compact': array/object results are encoded without indentation, with
+    // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE. Anything else fails
+    // at config load.
+    'result_json' => 'compact',
+],
+```
+
+What changes — and what deliberately does not:
+
+- only the **text content** of array/object results is re-encoded; string,
+  int, float, bool and `null` results, and results that are already SDK
+  `Content` objects, are served exactly as before;
+- `structuredContent` is still produced for array results (an
+  `outputSchema`-declaring tool keeps its structured output) — the compact
+  text is simply the JSON encoding of that same payload;
+- interceptors, the tool-result cache and `limits.tool_result_bytes` all
+  keep seeing the **raw** handler result: the conversion happens after the
+  interceptor chain, right before the SDK would have formatted the result.
+  The size limit's byte budget therefore measures the same thing it did
+  before — the encoded result simply ends up smaller.
 
 For read-heavy tools called repeatedly with the same arguments inside a
 session (a lookup table, an OpenAPI GET), `cache.tools` skips the handler
@@ -980,7 +1024,10 @@ from `summary`/`description`, input schemas from parameters/request body,
 output schemas from the success response (see below). Calls are executed as
 real HTTP requests against the API, passing its full middleware stack
 (validation, rate limiting, auth) — unlike hand-written tools that invoke
-handlers directly.
+handlers directly; when the API is the application itself, an in-process
+executor avoids the loopback HTTP round-trip (see
+[In-process execution](#in-process-execution-bridge-the-applications-own-api)
+below).
 
 ```php
 // config/params.php
@@ -1006,6 +1053,10 @@ handlers directly.
         // "group/project"); empty default = every path argument is
         // single-segment, exactly as before
         'multi_segment_path_params' => ['id' => 3],
+        // how bridged operations are executed: 'http' (default) sends a real
+        // PSR-18 request to base_url; 'psr15' runs the application's own
+        // request handler in-process — see "In-process execution" below
+        'executor' => 'http',
     ],
 ],
 ```
@@ -1118,6 +1169,64 @@ empty value) — matching OpenAPI 3.1's nullable union notation
 (`{"type": ["string", "null"]}`) on scalar parameter schemas, which the
 bridge accepts alongside the plain 3.0 type string.
 
+### In-process execution: bridge the application's own API
+
+When `base_url` points at the application itself, every bridged call is a
+real HTTP request back into the same process pool: under php-fpm one call
+occupies two workers (the MCP request waits for the nested one) and can
+starve a small `pm.max_children`, on top of loopback TLS/DNS configuration
+and per-call latency. `executor => 'psr15'` removes the network from the
+path entirely:
+
+```php
+'openapi' => [
+    // ...
+    'executor' => 'psr15',
+    // Psr\Http\Server\RequestHandlerInterface FQCN, resolved through the DI
+    // container — the application's own handler (typically the console
+    // application's). Required for psr15 mode.
+    'handler' => App\RequestHandler::class,
+    // optional: OpenApi\ExecutionRequestAttributesInterface FQCN — maps the
+    // resolved ExecutionIdentity to request attributes on the nested
+    // request, so the stack authenticates the user behind the MCP client
+    // the usual way (delegated headers are still sent as headers)
+    'request_attributes' => App\ExecutionRequestAttributes::class,
+    // optional: OpenApi\InProcessScopeInterface FQCN — enter()/leave() hooks
+    // the executor runs around the nested handle()
+    'in_process_scope' => App\InProcessScope::class,
+],
+```
+
+The nested request carries the same method, URI (`base_url` + substituted
+path + query), headers (configured defaults, delegated ones, `Accept`,
+`Content-Type`) and JSON body the HTTP executor would send; the response
+goes through the same incremental size cap, error mapping and
+`opaque_errors` handling. `base_url` keeps shaping the request URI and the
+dry-run preview — nothing leaves the process, and the PSR-18 client is only
+touched by a URL `spec_path` fetch.
+
+Two contracts are the application's to honour:
+
+- **`handler` is responsible for its own re-entrancy.** The outer MCP
+  request's scoped state — current route, current user, a URI already set
+  on the shared request — is still in place when the nested request runs;
+  re-entering the Yii3 stack naively fails with `Can not set URI since it
+  was already set` or, far worse, serves the nested call under the outer
+  request's identity. Reset what your stack globalizes in
+  `InProcessScopeInterface::enter()` and restore it in `leave()`; the
+  executor calls `leave()` in a `finally`, so it runs even when the nested
+  call throws, and a stateless scope implementation may be shared.
+- **delegated mode keeps working**: the delegated header provider's output
+  arrives as headers, and `request_attributes` (when configured) adds the
+  identity as attributes — both derive from the SAME per-call identity
+  resolution.
+
+Misconfiguration fails the server build: `psr15` without `handler`, any of
+the three psr15-only keys in `http` mode, or an unsupported `executor`
+value. `mcp:doctor` reflects the mode — it requires the PSR-17
+server-request factory and the configured handler instead of the PSR-18
+client for operation execution.
+
 ### Without a Yii3 application
 
 The bridge is a package feature, not an application one: `OpenApiBridgeFactory`
@@ -1146,8 +1255,10 @@ A URL spec is fetched with `specHeaders` (its own credential scope) and cached
 through `specCache` when `specCacheTtl` is above zero. Every other option the
 `openapi` params carry — `modifier`, `dryRunOperations`, `identityProvider`,
 `delegatedHeaderProvider`, `maxResponseBytes`, `opaqueErrors`,
-`multiSegmentPathParams` — is a named argument here. The config-plugin path
-calls this same factory, so both assemble the bridge identically.
+`multiSegmentPathParams`, and the in-process quartet `inProcessHandler`,
+`serverRequestFactory`, `requestAttributes`, `inProcessScope` — is a named
+argument here. The config-plugin path calls this same factory, so both
+assemble the bridge identically.
 
 ### What a failing bridged call tells the client
 
@@ -1409,7 +1520,9 @@ build (the SDK rejects a duplicate extension id).
 | `Interceptor\PromptGetInterceptorInterface` / `Interceptor\ResourceReadInterceptorInterface` | wrap every prompts/get and resources/read (`prompt_interceptors` / `resource_interceptors` params) with `PromptGetContext` / `ResourceReadContext` |
 | `Visibility\PromptVisibilityInterface` / `Visibility\ResourceVisibilityInterface` | per-session prompt/resource filters (`prompt_visibility` / `resource_visibility` params): lists omit, direct get/read reports not-found |
 | `Interceptor\CallOutcome` | shared `success`/`rejected`/`error` vocabulary for audit/telemetry bridges (`fromThrowable()`) |
-| `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP execution) |
+| `OpenApi\OpenApiServerConfigurator` | bridges allow-listed OpenAPI operations as tools (HTTP or in-process execution) |
+| `OpenApi\ExecutionRequestAttributesInterface` | application-implemented contract mapping the resolved `ExecutionIdentity` to request attributes on a nested in-process call (`openapi.request_attributes` param, psr15 mode) |
+| `OpenApi\InProcessScopeInterface` | application-implemented contract resetting request-scoped state around a nested in-process call (`openapi.in_process_scope` param, psr15 mode); `leave()` runs even when the nested call throws |
 | `OpenApi\OperationModifierInterface` | per-operation customization hook, applied after the `tool_names` rename |
 | `OpenApi\Operation` | read-only operation context passed to `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |

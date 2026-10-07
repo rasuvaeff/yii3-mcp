@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\OpenApi;
 
+use InvalidArgumentException;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
@@ -18,8 +19,10 @@ use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingRequestHandler;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
@@ -220,6 +223,44 @@ final class OpenApiBridgeFactoryTest
             ->returns(new Response($statusCode, ['Content-Type' => 'application/json'], $body));
 
         return [$client, $requests];
+    }
+
+    public function inProcessModeRequiresTheServerRequestFactory(): void
+    {
+        Expect::exception(InvalidArgumentException::class);
+
+        OpenApiBridgeFactory::create(
+            spec: OpenApiFixture::spec(),
+            baseUrl: 'https://api.test/',
+            httpClient: $this->trackingClient()[0],
+            requestFactory: new Psr17Factory(),
+            streamFactory: new Psr17Factory(),
+            operations: ['getBlogTags'],
+            inProcessHandler: new RecordingRequestHandler(),
+        );
+    }
+
+    public function inProcessModeBuildsThroughTheConfiguredHandler(): void
+    {
+        $psr17 = new Psr17Factory();
+        $handler = new RecordingRequestHandler();
+
+        $configurator = OpenApiBridgeFactory::create(
+            spec: OpenApiFixture::spec(),
+            baseUrl: 'https://api.test/',
+            httpClient: $this->trackingClient()[0],
+            requestFactory: $psr17,
+            streamFactory: $psr17,
+            operations: ['getBlogTags'],
+            inProcessHandler: $handler,
+            serverRequestFactory: $psr17,
+        );
+
+        $this->tester($configurator)->callTool('getBlogTags');
+
+        // the bridged call reached the application handler, not the wire
+        Assert::same(count($handler->requests), 1);
+        Assert::same((string) $handler->requests[0]->getUri(), 'https://api.test/rest/blog-tags');
     }
 
     private function tester(OpenApiServerConfigurator $configurator): McpTester

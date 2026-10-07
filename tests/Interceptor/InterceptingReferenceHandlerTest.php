@@ -18,7 +18,9 @@ use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ReadyResultTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -39,6 +41,57 @@ final class InterceptingReferenceHandlerTest
 
         Assert::same($result['content'][0]['text'], 'Hello, Yii!');
         Assert::same($recording->entries, ['interceptor:before:greet', 'interceptor:after:greet']);
+    }
+
+    public function compactToolResultsReEncodeArrayResults(): void
+    {
+        $factory = new Psr17Factory();
+
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]),
+            sessionStore: new InMemorySessionStore(),
+            compactToolResults: true,
+        ))->create([StructuredWeatherTool::class]);
+
+        $result = (new McpTester($server, $factory, $factory, $factory))->callTool('weather', ['city' => 'Rome']);
+
+        Assert::same($result['content'][0]['text'], '{"city":"Rome","temperature":21,"conditions":"sunny"}');
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Rome', 'temperature' => 21, 'conditions' => 'sunny']);
+    }
+
+    public function compactToolResultsPassAReadyCallToolResultThrough(): void
+    {
+        $factory = new Psr17Factory();
+
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([ReadyResultTool::class => new ReadyResultTool()]),
+            sessionStore: new InMemorySessionStore(),
+            compactToolResults: true,
+        ))->create([ReadyResultTool::class]);
+
+        $result = (new McpTester($server, $factory, $factory, $factory))->callTool('ready', []);
+
+        // the tool's own CallToolResult is served untouched — re-formatting it
+        // would wrap or re-encode what the tool already decided
+        Assert::same($result['content'][0]['text'], 'ready-made');
+        Assert::false(isset($result['structuredContent']));
+    }
+
+    public function arrayResultsStayPrettyWhenCompactModeIsOff(): void
+    {
+        $factory = new Psr17Factory();
+
+        // an interceptor installs the SAME decorator; with compact mode off
+        // its array results must keep the SDK's pretty formatting
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]),
+            sessionStore: new InMemorySessionStore(),
+        ))->create([StructuredWeatherTool::class], [], [new RecordingInterceptor()]);
+
+        $result = (new McpTester($server, $factory, $factory, $factory))->callTool('weather', ['city' => 'Rome']);
+
+        Assert::string($result['content'][0]['text'])->contains("\n");
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Rome', 'temperature' => 21, 'conditions' => 'sunny']);
     }
 
     public function interceptorsRunInConfiguredOrderFirstOutermost(): void

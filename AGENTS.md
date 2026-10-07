@@ -37,7 +37,8 @@ FilteredCompletionCompleteHandler are @internal}`,
 OutputSchemaProjector, OperationContractValidator are @internal;
 OpenApiBridgeFactory, OpenApiServerConfigurator,
 SpecLoader, Operation, OperationModifierInterface, ExecutionIdentity,
-ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface}`,
+ExecutionIdentityProviderInterface, DelegatedHeaderProviderInterface,
+ExecutionRequestAttributesInterface, InProcessScopeInterface}`,
 `Apps\{McpAppsConfigurator, AppDefinition; AppParamParser and
 AppResourceHandler are @internal}`,
 `Resource\ResourceUpdateNotifier`,
@@ -75,6 +76,51 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 `make test-coverage`, `make mutation`, `make release-check`.
 
 ## Invariants & gotchas
+
+- **`mcp:serve`/`mcp:list`/`mcp:doctor` are registered through the package's
+  `yiisoft/yii-console` params** — the contribution is a contract tested by
+  `ConfigWiringTest::consoleCommandsAreRegisteredThroughYiiConsoleParams`, not
+  prose. `yiisoft/yii-console` is deliberately NOT a dependency: the params key
+  is inert in an application without the console component. Any new console
+  command joins that same block; do not move registration into `di.php`.
+- **`result_json => 'compact'` converts the tool result in
+  `InterceptingReferenceHandler::handleTool()`, AFTER the interceptor chain and
+  BEFORE the SDK's `CallToolHandler`** — the SDK skips both its pretty formatter
+  and `extractStructuredContent()` for a reference handler that already returns
+  a `CallToolResult`, which is the entire mechanism. The placement is
+  load-bearing: interceptors (RBAC/audit), the cache and the size limit must
+  keep seeing the RAW handler result they were written against.
+  `CompactToolResultFormatter` (@internal) must stay a branch-for-branch mirror
+  of the SDK's `ToolResultFormatter::format()` + structured-content extraction
+  (Content pass-through, mixed-array per-item formatting, scalar/null/bool
+  sentinels, `JSON_INVALID_UTF8_SUBSTITUTE`); re-diff it on every SDK pin bump.
+  Its property test compares the text with `json_encode(structuredContent)` at
+  the ENCODING level on purpose: PHP decodes JSON numbers without a decimal
+  point as ints, so `0.0` does not survive `json_decode(json_encode(0.0))` as a
+  float — true for the SDK's pretty path alike (PHP 8.5 encodes `0.0` as `0`).
+- **The two OpenAPI executors share `OperationRequestBuilder` and
+  `OperationResponseDecoder` and must never grow transport-specific logic that
+  the other one misses.** Everything a caller can observe before the send
+  (path guards, dry-run preview semantics, delegated headers, body encoding)
+  and after it (size cap, error excerpt, `opaque_errors`, JSON/plain fallback)
+  lives in the shared classes; `HttpOperationExecutor` and
+  `Psr15OperationExecutor` differ ONLY in how the built plan reaches the
+  application (PSR-18 `sendRequest` vs a `ServerRequest` +
+  `$handler->handle()`). A guard added to one path and not the other is a bug
+  even if both test suites stay green — their unit suites deliberately mirror
+  each other.
+- **`Psr15OperationExecutor` resolves the `ExecutionIdentity` once per call**
+  (inside the builder's `plan()`): delegated headers AND request attributes
+  derive from the same resolution, because a provider that reads request state
+  need not be idempotent — `CountingIdentityProvider` in the test suite is the
+  regression guard. `inProcessScope->leave()` runs in a `finally`: it fires
+  even when the nested handler throws, and only ever after `enter()` of the
+  same invocation. Re-entrancy of the application's own stack is the HANDLER's
+  contract — the package provides the `enter()`/`leave()` hook, not the reset
+  itself; `psr15` without `handler`, psr15-only keys in `http` mode or an
+  unsupported `executor` value fail the server build in
+  `McpServerComponentResolver` (and the same validation set is mirrored by
+  `OpenApiBridgeFactory::create()` for standalone consumers).
 
 - **Interceptor chain order is fixed and load-bearing:** session budget
   (outermost) → configured `interceptors` → `CachingToolCallInterceptor` →

@@ -71,6 +71,8 @@ final readonly class McpDoctor
         private bool $toolResultCacheEnabled = false,
         private bool $appsEnabled = false,
         private array $appDefinitions = [],
+        private bool $openApiInProcess = false,
+        private string $openApiInProcessHandler = '',
     ) {}
 
     public function diagnose(bool $probeUpstream = false): DoctorReport
@@ -157,9 +159,23 @@ final readonly class McpDoctor
         }
 
         if ($this->openApiOperationsEnabled) {
-            $requirements[ClientInterface::class][] = 'OpenAPI operation execution';
-            $requirements[RequestFactoryInterface::class][] = 'OpenAPI operation execution';
-            $requirements[StreamFactoryInterface::class][] = 'OpenAPI operation execution';
+            if ($this->openApiInProcess) {
+                // psr15 mode swaps the transport services: the nested request
+                // is built and handled in-process, so there is no PSR-18
+                // client and no outbound request factory to require — but
+                // the handler itself and the server-request factory are on
+                // the hot path of every bridged call
+                $requirements[ServerRequestFactoryInterface::class][] = 'OpenAPI in-process execution';
+                $requirements[StreamFactoryInterface::class][] = 'OpenAPI in-process execution';
+
+                if ($this->openApiInProcessHandler !== '') {
+                    $requirements[$this->openApiInProcessHandler][] = 'OpenAPI in-process execution';
+                }
+            } else {
+                $requirements[ClientInterface::class][] = 'OpenAPI operation execution';
+                $requirements[RequestFactoryInterface::class][] = 'OpenAPI operation execution';
+                $requirements[StreamFactoryInterface::class][] = 'OpenAPI operation execution';
+            }
         }
 
         if ($this->toolResultCacheEnabled) {

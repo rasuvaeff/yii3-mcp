@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.0.0 — 2026-10-07
+
+- Intentional compatibility boundary: `OpenApiServerConfigurator::__construct()`
+  now accepts the executor as the new `OpenApi\OperationExecutorInterface`
+  (HTTP or in-process) instead of the concrete `HttpOperationExecutor`. Every
+  previously valid construction keeps working unchanged — the old class
+  implements the interface — but widening an `@api` constructor parameter is
+  a major under SemVer, so the boundary is declared here deliberately rather
+  than suppressed. No manual upgrade steps: see `UPGRADE.md`.
+
+- `mcp:serve`, `mcp:list` and `mcp:doctor` are registered through the
+  package's `yiisoft/yii-console` params, so the commands appear in
+  `./yii list` right after `composer require` with no application-side
+  configuration. An application's own commands map merges recursively and
+  wins on a name conflict; applications not using `yiisoft/config` can still
+  list the three classes manually.
+
+- New `result_json` server param (`'pretty'` default, `'compact'` opt-in):
+  array/object tool results are encoded into the text content without
+  indentation (`JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`, ~3x fewer
+  context tokens) while `structuredContent` keeps being produced for array
+  results. Interceptors, the tool-result cache and
+  `limits.tool_result_bytes` keep seeing the raw handler result — the
+  conversion happens after the interceptor chain, right before the SDK's own
+  formatter would run. Anything but `'pretty'`/`'compact'` fails at config
+  load.
+
+- The OpenAPI bridge gained an in-process executor for bridging the
+  application's own API: `openapi.executor => 'psr15'` with
+  `openapi.handler` (a `Psr\Http\Server\RequestHandlerInterface` FQCN)
+  builds the same request the HTTP executor would send — method, URI,
+  headers, delegated headers, JSON body — and calls the handler in-process:
+  no network I/O, one FPM worker instead of two under php-fpm. Optional
+  `openapi.request_attributes`
+  (`OpenApi\ExecutionRequestAttributesInterface`) maps the resolved
+  `ExecutionIdentity` to request attributes on the nested request, and
+  optional `openapi.in_process_scope` (`OpenApi\InProcessScopeInterface`)
+  gets `enter()`/`leave()` calls around the nested `handle()` — `leave()`
+  runs even when the nested call throws — so the application can reset the
+  request-scoped state the outer MCP request left behind. Response size
+  cap, error mapping, `opaque_errors` and dry-run previews are identical to
+  HTTP mode; request assembly and response decoding live in shared
+  `OperationRequestBuilder`/`OperationResponseDecoder` so the two
+  transports cannot drift. `mcp:doctor` requires the PSR-17 server-request
+  factory and the configured handler instead of the PSR-18 client in this
+  mode.
+
 ## 2.3.0 — 2026-09-08
 
 - `OpenApi\Exception\InvalidToolArgumentException` is thrown by every guard on
