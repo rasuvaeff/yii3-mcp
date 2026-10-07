@@ -169,8 +169,60 @@ final class Psr15OperationExecutorTest
         Assert::null($handler->requests[0]->getAttribute('current_user_id'));
     }
 
-    public function dryRunPreviewMirrorsTheHttpExecutorSemantics(): void
+    public function dryRunnableOperationWithoutTheFlagExecutesForReal(): void
     {
+        // a dry-run-ENABLED operation called WITHOUT the dryRun argument is a
+        // normal execution — a precedence slip in the flag check would turn
+        // every such call into a preview and silently stop executing anything
+        $handler = new RecordingRequestHandler();
+
+        $result = $this->executor($handler)->execute(
+            $this->operation('getBlogTags'),
+            ['locale' => 'en'],
+            dryRunnable: true,
+        );
+
+        Assert::same($result, ['ok' => true]);
+        Assert::same(count($handler->requests), 1);
+        Assert::same((string) $handler->requests[0]->getUri(), 'https://api.test/rest/blog-tags?locale=en');
+    }
+
+    public function anExplicitDryRunFalseExecutesForReal(): void
+    {
+        // `dryRun: false` is the caller actively declining the preview — the
+        // only input that distinguishes the flag check from its precedence
+        // mutant, which would preview exactly this call
+        $handler = new RecordingRequestHandler();
+
+        $result = $this->executor($handler)->execute(
+            $this->operation('getBlogTags'),
+            ['locale' => 'en', 'dryRun' => false],
+            dryRunnable: true,
+        );
+
+        Assert::same($result, ['ok' => true]);
+        Assert::same(count($handler->requests), 1);
+    }
+
+    public function dryRunArgumentOnANonDryRunnableOperationIsIgnored(): void
+    {
+        // the executor reached directly with a stray dryRun argument on an
+        // operation that never opted in must still execute — the SDK's
+        // schema validation keeps the argument out of real calls; this guard
+        // keeps the executor's own failure direction safe
+        $handler = new RecordingRequestHandler();
+
+        $result = $this->executor($handler)->execute(
+            $this->operation('getBlogTags'),
+            ['locale' => 'en', 'dryRun' => true],
+            dryRunnable: false,
+        );
+
+        Assert::same($result, ['ok' => true]);
+        Assert::same(count($handler->requests), 1);
+    }
+
+    public function dryRunPreviewMirrorsTheHttpExecutorSemantics(): void    {
         $handler = new RecordingRequestHandler();
 
         $preview = $this->executor($handler)->execute(

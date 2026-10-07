@@ -204,9 +204,14 @@
     //    guards re-appends every Content item unchanged, in order, producing
     //    the identical Content[]:
     //    - CompactToolResultFormatter.php:78 ReturnRemoval
-    //    The mirror-flag mutants around it (:59-:76) ARE killed — the unit
-    //    suite distinguishes empty/mixed/no-Content arrays — this single
-    //    entry is the remaining fallthrough convergence.
+    //    - CompactToolResultFormatter.php:76 LogicalAnd (`&&` -> `||`): the
+    //      sub-expressions `allAreContent` and `hasContent` can only
+    //      disagree as (false, true) — a mixed array — where `||` still
+    //      evaluates like `&&`; the (true, false) case that would differ is
+    //      unreachable (a non-empty all-Content array always sets
+    //      hasContent, and an empty one returned earlier)
+    //    The other mirror-flag mutants (:59-:76) ARE killed — the unit
+    //    suite distinguishes empty/mixed/no-Content arrays.
     //
     // I. Installing the pass-through reference handler decorator
     //    unconditionally is behaviorally identical to installing it
