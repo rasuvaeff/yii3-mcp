@@ -193,6 +193,18 @@ return [
             'delegated_header_provider' => '',
             // read-only bridge: reject non-GET operations at build time
             'safe_methods_only' => false,
+            // default serialization for array-valued query parameters
+            // (type: array in the OpenAPI document): 'repeat' => name=a&name=b
+            // (the OpenAPI form/explode default), 'brackets' => name[]=a&name[]=b
+            // (what PHP's parse_str reads back as an array), 'comma' => name=a,b.
+            // Empty (the default) derives it per parameter from its declared
+            // explode (false => comma, else repeat). An unsupported value fails
+            // the server build.
+            'array_query_style' => '',
+            // per-operation, per-parameter overrides for mixed APIs:
+            // ['getCreators' => ['platforms' => 'brackets']]. Wins over
+            // array_query_style, which wins over the declared explode.
+            'array_query_params' => [],
             // how bridged operations are executed. 'http' (default) sends a
             // real PSR-18 request to base_url — the call passes the API's
             // full middleware stack, but occupies a second worker under FPM

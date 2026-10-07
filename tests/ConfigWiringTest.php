@@ -1267,7 +1267,222 @@ final class ConfigWiringTest
         Assert::same($client->requestCount, 1);
         Assert::same(count($handler->requests), 1);
     }
+    /**
+     * The #58 acceptance: tools/list advertises the array schema (type,
+     * items, enum, maxItems) exactly as the OpenAPI document declares it.
+     */
+    public function arrayQueryToolsAdvertiseTheArraySchema(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
 
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+
+        try {
+            $tools = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->listTools();
+        } finally {
+            @unlink($path);
+        }
+
+        $tool = null;
+
+        foreach ($tools as $candidate) {
+            if (($candidate['name'] ?? null) === 'getCreators') {
+                $tool = $candidate;
+            }
+        }
+
+        Assert::notNull($tool);
+
+        $platforms = $tool['inputSchema']['properties']['platforms'] ?? null;
+
+        Assert::same($platforms['type'] ?? null, 'array');
+        Assert::same($platforms['maxItems'] ?? null, 3);
+        Assert::same($platforms['items']['enum'] ?? null, ['instagram', 'tiktok', 'youtube']);
+    }
+
+    /**
+     * The #58 acceptance: tools/list advertises the array schema (type,
+     * items, enum, maxItems) exactly as the OpenAPI document declares it.
+     */
+    public function arrayQueryToolsAdvertiseTheArraySchema(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+
+        try {
+            $tools = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->listTools();
+        } finally {
+            @unlink($path);
+        }
+
+        $tool = null;
+
+        foreach ($tools as $candidate) {
+            if (($candidate['name'] ?? null) === 'getCreators') {
+                $tool = $candidate;
+            }
+        }
+
+        Assert::notNull($tool);
+
+        $platforms = $tool['inputSchema']['properties']['platforms'] ?? null;
+
+        Assert::same($platforms['type'] ?? null, 'array');
+        Assert::same($platforms['maxItems'] ?? null, 3);
+        Assert::same($platforms['items']['enum'] ?? null, ['instagram', 'tiktok', 'youtube']);
+    }
+
+    public function arrayQueryStyleReachesTheBridge(): void
+    {
+        $psr17 = new Psr17Factory();
+        $client = new FakeHttpClient();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+        $mcp['openapi']['array_query_style'] = 'brackets';
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->callTool('getCreators', ['platforms' => ['instagram', 'youtube']]);
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/creators?platforms%5B%5D=instagram&platforms%5B%5D=youtube');
+    }
+
+    /**
+     * The #58 acceptance: tools/list advertises the array schema (type,
+     * items, enum, maxItems) exactly as the OpenAPI document declares it.
+     */
+    public function arrayQueryToolsAdvertiseTheArraySchema(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+
+        try {
+            $tools = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->listTools();
+        } finally {
+            @unlink($path);
+        }
+
+        $tool = null;
+
+        foreach ($tools as $candidate) {
+            if (($candidate['name'] ?? null) === 'getCreators') {
+                $tool = $candidate;
+            }
+        }
+
+        Assert::notNull($tool);
+
+        $platforms = $tool['inputSchema']['properties']['platforms'] ?? null;
+
+        Assert::same($platforms['type'] ?? null, 'array');
+        Assert::same($platforms['maxItems'] ?? null, 3);
+        Assert::same($platforms['items']['enum'] ?? null, ['instagram', 'tiktok', 'youtube']);
+    }
+
+    public function arrayQueryStyleReachesTheBridge(): void
+    {
+        $psr17 = new Psr17Factory();
+        $client = new FakeHttpClient();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+        $mcp['openapi']['array_query_style'] = 'brackets';
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->callTool('getCreators', ['platforms' => ['instagram', 'youtube']]);
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/creators?platforms%5B%5D=instagram&platforms%5B%5D=youtube');
+    }
+
+    public function anInvalidArrayQueryStyleFailsTheServerBuild(): void
+    {
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+        $mcp['openapi']['array_query_style'] = 'pipes';
+
+        $caught = null;
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => new FakeHttpClient(),
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17);
+        } catch (\InvalidArgumentException $caught) {
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('repeat, brackets, comma');
+    }
+
+    /**
+     * psr15 mode requires the handler service.
+     */
     public function psr15ExecutorRequiresAHandler(): void
     {
         $psr17 = new Psr17Factory();

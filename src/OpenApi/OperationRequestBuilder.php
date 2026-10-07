@@ -40,7 +40,11 @@ final readonly class OperationRequestBuilder
     public const string ARRAY_STYLE_REPEAT = 'repeat';
     public const string ARRAY_STYLE_BRACKETS = 'brackets';
     public const string ARRAY_STYLE_COMMA = 'comma';
-    private const list<string> ARRAY_STYLES = [self::ARRAY_STYLE_REPEAT, self::ARRAY_STYLE_BRACKETS, self::ARRAY_STYLE_COMMA];
+
+    /**
+     * @var list<string>
+     */
+    private const array ARRAY_STYLES = [self::ARRAY_STYLE_REPEAT, self::ARRAY_STYLE_BRACKETS, self::ARRAY_STYLE_COMMA];
 
     private string $baseUrl;
 
@@ -280,6 +284,19 @@ final readonly class OperationRequestBuilder
                 continue;
             }
 
+            // array-valued arguments take their own serialization path —
+            // stringifyArgument below is for scalars only, and an ARRAY
+            // argument to a SCALAR-typed parameter must still fail there
+            if ($parameter['in'] === 'query' && is_array($arguments[$name]) && $this->isArraySchema($parameter['schema'])) {
+                // array-valued filter: serialized per the resolved style,
+                // validated here so a direct-executor caller cannot smuggle
+                // an oversized or non-scalar-items array past the SDK's own
+                // input-schema validation
+                $arrayPairs[] = $this->arrayQueryPairs($operation, $parameter, $arguments[$name], $served);
+
+                continue;
+            }
+
             $value = $this->stringifyArgument($served, $name, $arguments[$name]);
 
             if ($parameter['in'] === 'path') {
@@ -333,12 +350,6 @@ final readonly class OperationRequestBuilder
                 }
 
                 $path = str_replace('{' . $name . '}', rawurlencode($value), $path);
-            } elseif (is_array($arguments[$name])) {
-                // array-valued filter: serialized per the resolved style,
-                // validated here so a direct-executor caller cannot smuggle
-                // an oversized or non-scalar-items array past the SDK's own
-                // input-schema validation
-                $arrayPairs[] = $this->arrayQueryPairs($operation, $parameter, $arguments[$name], $served);
             } else {
                 $query[$name] = $value;
             }
@@ -363,6 +374,25 @@ final readonly class OperationRequestBuilder
         }
 
         return $path . ($queryString === '' ? '' : '?' . $queryString);
+    }
+
+    /**
+     * Same union handling as the validator: a bare "array" (OpenAPI 3.0) or
+     * a two-element nullable union containing it (OpenAPI 3.1).
+     */
+    private function isArraySchema(array $schema): bool
+    {
+        /** @var mixed $type */
+        $type = $schema['type'] ?? null;
+
+        if (is_string($type)) {
+            return $type === 'array';
+        }
+
+        return is_array($type)
+            && count($type) === 2
+            && in_array('array', $type, strict: true)
+            && in_array('null', $type, strict: true);
     }
 
     /**
