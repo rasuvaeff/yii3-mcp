@@ -102,6 +102,11 @@ final readonly class Psr15OperationExecutor implements OperationExecutorInterfac
 
         $request = $this->serverRequestFactory->createServerRequest($plan->method, $plan->url);
 
+        // a PSR-17 factory only sets the URI; a real SAPI request also carries
+        // the parsed query, which is what applications read arguments from
+        parse_str($request->getUri()->getQuery(), $queryParams);
+        $request = $request->withQueryParams($queryParams);
+
         foreach ($plan->headers as $name => $value) {
             $request = $request->withHeader($name, $value);
         }

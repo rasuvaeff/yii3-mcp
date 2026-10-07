@@ -55,6 +55,15 @@ final class Psr15OperationExecutorTest
         Assert::same($result, ['ok' => true]);
     }
 
+    public function exposesTheQueryAsParsedQueryParams(): void
+    {
+        $handler = new RecordingRequestHandler();
+
+        $this->executor($handler)->execute($this->operation('getBlogTags'), ['locale' => 'en']);
+
+        Assert::same($handler->requests[0]->getQueryParams(), ['locale' => 'en']);
+    }
+
     public function appliesDefaultHeaders(): void
     {
         $handler = new RecordingRequestHandler();
