@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 3.0.0 — 2026-10-07
+
+- Intentional compatibility boundary: `OpenApiServerConfigurator::__construct()`
+  now accepts the executor as the new `OpenApi\OperationExecutorInterface`
+  (HTTP or in-process) instead of the concrete `HttpOperationExecutor`. Every
+  previously valid construction keeps working unchanged — the old class
+  implements the interface — but widening an `@api` constructor parameter is
+  a major under SemVer, so the boundary is declared here deliberately rather
+  than suppressed. No manual upgrade steps: see `UPGRADE.md`.
 
 - `mcp:serve`, `mcp:list` and `mcp:doctor` are registered through the
   package's `yiisoft/yii-console` params, so the commands appear in

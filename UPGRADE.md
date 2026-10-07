@@ -1,5 +1,16 @@
 # Upgrade guide
 
+## 2.x → 3.0.0
+
+No manual steps. The only contract change is
+`OpenApiServerConfigurator::__construct()` accepting the executor as
+`OpenApi\OperationExecutorInterface` instead of the concrete
+`HttpOperationExecutor` — every construction that was valid in 2.x passes the
+same `HttpOperationExecutor` instance and keeps working; consumers always
+obtain the configurator from `OpenApiBridgeFactory` anyway. The major exists
+because widening an `@api` constructor parameter is a boundary under SemVer,
+declared deliberately in `CHANGELOG.md`.
+
 ## 1.x → next major (security-hardening release)
 
 Manual steps you must take before/while upgrading. The full rationale for
