@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.1.1 — 2026-10-07
+
+- `executor: psr15` fills the nested request's query params from its URL
+  (`getQueryParams()`); the PSR-17 factory only set the URI, so applications
+  reading arguments from the parsed query (every Yii/Symfony/Laravel action)
+  saw none of the tool's query arguments, and array parameters in particular
+  never arrived.
+
 ## 3.1.0 — 2026-10-07
 
 - The OpenAPI bridge supports array-typed query parameters (#58): a

@@ -616,6 +616,27 @@ final class SpecIndexTest
         }
     }
 
+    public function parametersAfterAnArrayParameterAreStillValidated(): void
+    {
+        $caught = null;
+
+        try {
+            (new SpecIndex([
+                'paths' => ['/x' => ['get' => [
+                    'operationId' => 'op',
+                    'parameters' => [
+                        ['name' => 'tags', 'in' => 'query', 'schema' => ['type' => 'array', 'items' => ['type' => 'string']]],
+                        ['name' => 'filter', 'in' => 'query', 'schema' => ['type' => 'object']],
+                    ],
+                ]]],
+            ]))->get('op');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('must use a scalar schema');
+    }
+
     public function arrayParameterStyleOutsideFormIsRejected(): void
     {
         $caught = null;

@@ -1336,6 +1336,35 @@ final class ConfigWiringTest
 
         Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/creators?platforms%5B%5D=instagram&platforms%5B%5D=youtube');
     }
+
+    public function arrayQueryParamsOverrideTheStyleOfOneParameter(): void
+    {
+        $psr17 = new Psr17Factory();
+        $client = new FakeHttpClient();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getCreators'];
+        $mcp['openapi']['array_query_style'] = 'brackets';
+        $mcp['openapi']['array_query_params'] = ['getCreators' => ['platforms' => 'repeat']];
+
+        try {
+            $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->callTool('getCreators', ['platforms' => ['instagram', 'youtube']]);
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same((string) $client->lastRequest?->getUri(), 'https://api.test/rest/creators?platforms=instagram&platforms=youtube');
+    }
+
     public function anInvalidArrayQueryStyleFailsTheServerBuild(): void
     {
         $psr17 = new Psr17Factory();
