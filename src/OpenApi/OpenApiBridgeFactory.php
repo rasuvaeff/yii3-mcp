@@ -98,12 +98,13 @@ final readonly class OpenApiBridgeFactory
         // decoded spec must build in a container that binds no PSR-18 client
         // at all; resolving one "just in case" would reintroduce the very
         // coupling the in-process executor exists to remove (#60)
-        $inProcess = $inProcessHandler instanceof RequestHandlerInterface;
         $urlSpec = is_string($spec) && (str_starts_with($spec, 'http://') || str_starts_with($spec, 'https://'));
 
         if ($urlSpec) {
-            $httpClient ??= throw new InvalidArgumentException('A URL spec is fetched over HTTP and needs the PSR-18 client and PSR-17 request factory even in psr15 mode');
-            $requestFactory ??= throw new InvalidArgumentException('A URL spec is fetched over HTTP and needs the PSR-18 client and PSR-17 request factory even in psr15 mode');
+            // distinct messages per service: the guards are twins, and a
+            // twin's throw must not satisfy the other's failure
+            $httpClient ??= throw new InvalidArgumentException('A URL spec is fetched over HTTP and needs a PSR-18 client even in psr15 mode');
+            $requestFactory ??= throw new InvalidArgumentException('A URL spec is fetched over HTTP and needs a PSR-17 request factory even in psr15 mode');
         }
 
         $maxResponseBytes ??= OperationResponseDecoder::DEFAULT_MAX_RESPONSE_BYTES;
@@ -124,8 +125,8 @@ final readonly class OpenApiBridgeFactory
                 multiSegmentPathParams: $multiSegmentPathParams,
             )
             : new HttpOperationExecutor(
-                httpClient: $httpClient ?? throw new InvalidArgumentException('HTTP execution requires a PSR-18 client and a PSR-17 request factory; switch to openapi.executor "psr15" to run without them'),
-                requestFactory: $requestFactory ?? throw new InvalidArgumentException('HTTP execution requires a PSR-18 client and a PSR-17 request factory; switch to openapi.executor "psr15" to run without them'),
+                httpClient: $httpClient ?? throw new InvalidArgumentException('HTTP execution requires a PSR-18 client; switch to openapi.executor "psr15" to run without one'),
+                requestFactory: $requestFactory ?? throw new InvalidArgumentException('HTTP execution requires a PSR-17 request factory; switch to openapi.executor "psr15" to run without one'),
                 streamFactory: $streamFactory,
                 baseUrl: $baseUrl,
                 defaultHeaders: $headers,

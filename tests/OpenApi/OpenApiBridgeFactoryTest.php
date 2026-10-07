@@ -265,6 +265,7 @@ final class OpenApiBridgeFactoryTest
 
     public function httpModeRequiresTheHttpTransportServices(): void
     {
+        $psr17 = new Psr17Factory();
         $caught = null;
 
         try {
@@ -272,8 +273,8 @@ final class OpenApiBridgeFactoryTest
                 spec: OpenApiFixture::spec(),
                 baseUrl: 'https://api.test/',
                 httpClient: null,
-                requestFactory: null,
-                streamFactory: new Psr17Factory(),
+                requestFactory: $psr17,
+                streamFactory: $psr17,
                 operations: ['getBlogTags'],
             );
         } catch (InvalidArgumentException $caught) {
@@ -281,6 +282,23 @@ final class OpenApiBridgeFactoryTest
 
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('PSR-18 client');
+
+        $caught = null;
+
+        try {
+            OpenApiBridgeFactory::create(
+                spec: OpenApiFixture::spec(),
+                baseUrl: 'https://api.test/',
+                httpClient: $this->trackingClient()[0],
+                requestFactory: null,
+                streamFactory: $psr17,
+                operations: ['getBlogTags'],
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('PSR-17 request factory');
     }
 
     public function aUrlSpecNeedsTheHttpTransportEvenInPsr15Mode(): void
@@ -304,6 +322,78 @@ final class OpenApiBridgeFactoryTest
 
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('even in psr15 mode');
+    }
+
+    public function aUrlSpecWithoutAClientNamesTheClientAlone(): void
+    {
+        $psr17 = new Psr17Factory();
+        $caught = null;
+
+        try {
+            OpenApiBridgeFactory::create(
+                spec: 'https://spec.test/openapi.json',
+                baseUrl: 'https://api.test/',
+                httpClient: null,
+                requestFactory: $psr17,
+                streamFactory: $psr17,
+                operations: ['getBlogTags'],
+                inProcessHandler: new RecordingRequestHandler(),
+                serverRequestFactory: $psr17,
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        // the client's twin guard must not answer for the factory
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('PSR-18 client even');
+    }
+
+    public function aUrlSpecWithoutARequestFactoryNamesTheFactoryAlone(): void
+    {
+        $psr17 = new Psr17Factory();
+        $caught = null;
+
+        try {
+            OpenApiBridgeFactory::create(
+                spec: 'https://spec.test/openapi.json',
+                baseUrl: 'https://api.test/',
+                httpClient: $this->trackingClient()[0],
+                requestFactory: null,
+                streamFactory: $psr17,
+                operations: ['getBlogTags'],
+                inProcessHandler: new RecordingRequestHandler(),
+                serverRequestFactory: $psr17,
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('PSR-17 request factory even');
+    }
+
+    public function anInsecureUrlSpecNeedsTheTransportToo(): void
+    {
+        // both URL schemes count: an http:// spec must not slip past the
+        // guard into a fetch that lacks its transport
+        $psr17 = new Psr17Factory();
+        $caught = null;
+
+        try {
+            OpenApiBridgeFactory::create(
+                spec: 'http://spec.local/openapi.json',
+                baseUrl: 'https://api.test/',
+                httpClient: null,
+                requestFactory: $psr17,
+                streamFactory: $psr17,
+                operations: ['getBlogTags'],
+                inProcessHandler: new RecordingRequestHandler(),
+                serverRequestFactory: $psr17,
+            );
+        } catch (InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('PSR-18 client even');
     }
 
     private function tester(OpenApiServerConfigurator $configurator): McpTester

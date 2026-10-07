@@ -71,6 +71,7 @@ use function Rasuvaeff\Understudy\when;
 #[Test]
 #[Covers(ExecutionIdentity::class)]
 #[Covers(McpServerComponentResolver::class)]
+#[Covers(\Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory::class)]
 final class ConfigWiringTest
 {
     public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void
@@ -1231,6 +1232,40 @@ final class ConfigWiringTest
 
         Assert::same(count($handler->requests), 1);
         Assert::json($result['content'][0]['text'])->isObject()->hasKeys('ok');
+    }
+
+    /**
+     * psr15 with a URL spec: the executor is in-process, but the spec fetch
+     * is HTTP — the transport services must still be resolved for it.
+     */
+    public function psr15WithAUrlSpecStillResolvesTheTransportForTheFetch(): void
+    {
+        $psr17 = new Psr17Factory();
+        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $path = $this->writeSpecFile();
+        @unlink($path);
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = 'https://spec.test/openapi.json';
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'psr15';
+        $mcp['openapi']['handler'] = RecordingRequestHandler::class;
+
+        $handler = new RecordingRequestHandler();
+        $this->bridgeTester($params, new SimpleContainer([
+            ClientInterface::class => $client,
+            RequestFactoryInterface::class => $psr17,
+            StreamFactoryInterface::class => $psr17,
+            ServerRequestFactoryInterface::class => $psr17,
+            RecordingRequestHandler::class => $handler,
+        ]), $psr17)->callTool('getBlogTags');
+
+        // the spec was fetched over HTTP, the operation was not
+        Assert::same($client->requestCount, 1);
+        Assert::same(count($handler->requests), 1);
     }
 
     public function psr15ExecutorRequiresAHandler(): void
