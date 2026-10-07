@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Fixed the `psr15` executor still requiring a PSR-18 `ClientInterface` (and
+  the outbound PSR-17 request factory) in the container: the component
+  resolver resolved both unconditionally, so a psr15-only application failed
+  the server build with a `NotFoundException` — contradicting the mode's
+  no-network-I/O contract while `mcp:doctor` reported the handler as
+  available. Both services are now resolved only for `http` execution or a
+  URL `spec_path`; `OpenApiBridgeFactory::create()` accepts `null` for them
+  in `psr15` mode (a URL spec still needs the client and rejects `null` with
+  an explicit message).
+
 ## 3.0.0 — 2026-10-07
 
 - Intentional compatibility boundary: `OpenApiServerConfigurator::__construct()`

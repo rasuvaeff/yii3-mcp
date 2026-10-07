@@ -71,6 +71,7 @@ use function Rasuvaeff\Understudy\when;
 #[Test]
 #[Covers(ExecutionIdentity::class)]
 #[Covers(McpServerComponentResolver::class)]
+#[Covers(\Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory::class)]
 final class ConfigWiringTest
 {
     public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void
@@ -1194,6 +1195,77 @@ final class ConfigWiringTest
 
         // no loopback HTTP: the in-process executor never touched PSR-18
         Assert::same($client->requestCount, 0);
+    }
+
+    /**
+     * Regression for #60: a psr15 server with a LOCAL spec builds and serves
+     * in a container that binds no PSR-18 client and no outbound request
+     * factory at all — resolving them "just in case" failed the build and
+     * contradicted the no-network-I/O contract of the in-process executor.
+     */
+    public function psr15BuildsWithoutAnyHttpTransportInTheContainer(): void
+    {
+        $psr17 = new Psr17Factory();
+        $handler = new RecordingRequestHandler();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'psr15';
+        $mcp['openapi']['handler'] = RecordingRequestHandler::class;
+
+        try {
+            // NO ClientInterface, NO RequestFactoryInterface — SimpleContainer
+            // throws on unresolved ids, so their absence is the assertion
+            $result = $this->bridgeTester($params, new SimpleContainer([
+                ServerRequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+                RecordingRequestHandler::class => $handler,
+            ]), $psr17)->callTool('getBlogTags');
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same(count($handler->requests), 1);
+        Assert::json($result['content'][0]['text'])->isObject()->hasKeys('ok');
+    }
+
+    /**
+     * psr15 with a URL spec: the executor is in-process, but the spec fetch
+     * is HTTP — the transport services must still be resolved for it.
+     */
+    public function psr15WithAUrlSpecStillResolvesTheTransportForTheFetch(): void
+    {
+        $psr17 = new Psr17Factory();
+        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $path = $this->writeSpecFile();
+        @unlink($path);
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = 'https://spec.test/openapi.json';
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        $mcp['openapi']['executor'] = 'psr15';
+        $mcp['openapi']['handler'] = RecordingRequestHandler::class;
+
+        $handler = new RecordingRequestHandler();
+        $this->bridgeTester($params, new SimpleContainer([
+            ClientInterface::class => $client,
+            RequestFactoryInterface::class => $psr17,
+            StreamFactoryInterface::class => $psr17,
+            ServerRequestFactoryInterface::class => $psr17,
+            RecordingRequestHandler::class => $handler,
+        ]), $psr17)->callTool('getBlogTags');
+
+        // the spec was fetched over HTTP, the operation was not
+        Assert::same($client->requestCount, 1);
+        Assert::same(count($handler->requests), 1);
     }
 
     public function psr15ExecutorRequiresAHandler(): void

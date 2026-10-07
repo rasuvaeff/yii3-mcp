@@ -113,14 +113,25 @@ final readonly class McpServerComponentResolver
             /** @var ?OperationModifierInterface $operationModifier */
             $operationModifier = $operationModifierClass === '' ? null : $this->getService($operationModifierClass);
 
+            // HTTP transport services are resolved ONLY where the bridge
+            // actually uses them: http execution, or fetching a URL spec.
+            // A psr15 server with a local spec builds in a container that
+            // binds no PSR-18 client at all (#60)
+            $urlSpec = str_starts_with($openapi['spec_path'], 'http://') || str_starts_with($openapi['spec_path'], 'https://');
+            $needsHttpTransport = $executorMode === 'http' || $urlSpec;
+            /** @var ?ClientInterface $httpClient */
+            $httpClient = $needsHttpTransport ? $this->getService(ClientInterface::class) : null;
+            /** @var ?RequestFactoryInterface $requestFactory */
+            $requestFactory = $needsHttpTransport ? $this->getService(RequestFactoryInterface::class) : null;
+
             // Same construction path as a standalone consumer: spec
             // credentials and operation credentials keep separate scopes
             // inside the factory.
             $configurators[] = OpenApiBridgeFactory::create(
                 spec: $openapi['spec_path'],
                 baseUrl: $openapi['base_url'],
-                httpClient: $this->getService(ClientInterface::class),
-                requestFactory: $this->getService(RequestFactoryInterface::class),
+                httpClient: $httpClient,
+                requestFactory: $requestFactory,
                 streamFactory: $this->getService(StreamFactoryInterface::class),
                 operations: $openapi['operations'],
                 headers: $openapi['headers'],
@@ -136,8 +147,8 @@ final readonly class McpServerComponentResolver
                 maxResponseBytes: $openapi['max_response_bytes'] ?? null,
                 opaqueErrors: $openapi['opaque_errors'] ?? false,
                 multiSegmentPathParams: $openapi['multi_segment_path_params'] ?? [],
-                inProcessHandler: $executorMode === 'psr15' ? $this->getService($inProcessHandlerClass) : null,
-                serverRequestFactory: $executorMode === 'psr15' ? $this->getService(ServerRequestFactoryInterface::class) : null,
+                inProcessHandler: $inProcessHandlerClass !== '' ? $this->getService($inProcessHandlerClass) : null,
+                serverRequestFactory: $inProcessHandlerClass !== '' ? $this->getService(ServerRequestFactoryInterface::class) : null,
                 requestAttributes: $requestAttributesClass !== '' ? $this->getService($requestAttributesClass) : null,
                 inProcessScope: $inProcessScopeClass !== '' ? $this->getService($inProcessScopeClass) : null,
             );
