@@ -179,6 +179,31 @@ the allow-listed item route). Single dots are fine (`v1.2` is a valid
 slug) — a value that genuinely needs `..` cannot be bridged as a path
 argument.
 
+### Array-valued query parameters
+
+List/search operations take array filters. A `type: array` parameter in
+`in: query` becomes an array tool argument; `items`, `enum`, `minItems` and
+`maxItems` are kept in the input schema and checked again by the executor before
+the request is built. Items must be scalars; arrays in a path segment, object or
+nested-array items, a `style` other than `form` and `allowReserved: true` fail
+the server build.
+
+The wire format is configurable because applications disagree on it:
+
+```php
+'openapi' => [
+    // 'repeat' name=a&name=b (OpenAPI default) | 'brackets' name[]=a&name[]=b | 'comma' name=a,b
+    // empty = per parameter from its declared `explode` (false => comma, else repeat)
+    'array_query_style' => 'brackets',
+    // operationId => parameter => style; wins over array_query_style
+    'array_query_params' => ['getCreators' => ['platforms' => 'comma']],
+],
+```
+
+PHP applications that read `?platforms[]=a&platforms[]=b` need `brackets`: PHP's
+`parse_str` keeps only the last value of a plain repeated key. An empty array
+sends nothing (an empty filter constrains nothing); `minItems` rejects it first.
+
 ### Multi-segment path arguments are opt-in, per parameter
 
 Some upstreams identify a resource by a nested path and accept it

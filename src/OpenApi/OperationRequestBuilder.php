@@ -49,6 +49,11 @@ final readonly class OperationRequestBuilder
     private string $baseUrl;
 
     /**
+     * @var array<string, array<string, string>> operationId => parameter name => validated style
+     */
+    private array $arrayStyleOverrides;
+
+    /**
      * Narrowed from the raw constructor argument: the value comes from
      * application params, where nothing enforces the shape.
      *
@@ -63,9 +68,10 @@ final readonly class OperationRequestBuilder
      *                                 'brackets' (name[]=a&name[]=b, what PHP's parse_str reads as an array)
      *                                 or 'comma' (name=a,b). Null derives it from the parameter's own
      *                                 declared explode (false -> comma, else repeat).
-     * @param array<string, array<string, string>> $arrayQueryParams per-operation, per-parameter
+     * @param array<array-key, mixed> $arrayQueryParams per-operation, per-parameter
      *                                 style overrides: ['getCreators' => ['platforms' => 'brackets']];
-     *                                 wins over $arrayQueryStyle, which wins over the declared explode
+     *                                 wins over $arrayQueryStyle, which wins over the declared explode.
+     *                                 It arrives from params, so its shape is validated here, not trusted
      * @param array<array-key, mixed> $multiSegmentPathParams path parameter name => how many
      *                           "/"-separated segments its values may carry. Absent (the
      *                           default for every parameter) means one segment, i.e. no
@@ -81,7 +87,7 @@ final readonly class OperationRequestBuilder
         private ?DelegatedHeaderProviderInterface $delegatedHeaderProvider = null,
         array $multiSegmentPathParams = [],
         private ?string $arrayQueryStyle = null,
-        private array $arrayQueryParams = [],
+        array $arrayQueryParams = [],
     ) {
         if ($this->arrayQueryStyle !== null && !in_array($this->arrayQueryStyle, self::ARRAY_STYLES, strict: true)) {
             throw new InvalidArgumentException(sprintf(
@@ -91,7 +97,9 @@ final readonly class OperationRequestBuilder
             ));
         }
 
-        foreach ($this->arrayQueryParams as $operationId => $styles) {
+        $styleOverrides = [];
+
+        foreach ($arrayQueryParams as $operationId => $styles) {
             if (!is_array($styles)) {
                 throw new InvalidArgumentException(sprintf(
                     'Array query style overrides for operation "%s" must be a parameter-name => style map',
@@ -110,8 +118,12 @@ final readonly class OperationRequestBuilder
                         is_string($style) ? '"' . $style . '"' : get_debug_type($style),
                     ));
                 }
+
+                $styleOverrides[(string) $operationId][(string) $parameterName] = $style;
             }
         }
+
+        $this->arrayStyleOverrides = $styleOverrides;
 
         $segmentLimits = [];
 
@@ -292,7 +304,7 @@ final readonly class OperationRequestBuilder
                 // validated here so a direct-executor caller cannot smuggle
                 // an oversized or non-scalar-items array past the SDK's own
                 // input-schema validation
-                $arrayPairs[] = $this->arrayQueryPairs($operation, $parameter, $arguments[$name], $served);
+                $arrayPairs[] = $this->arrayQueryPairs($operation, $parameter, array_values($arguments[$name]), $served);
 
                 continue;
             }
@@ -401,7 +413,7 @@ final readonly class OperationRequestBuilder
      * default, then the parameter's own declared explode.
      *
      * @param array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool} $parameter
-     * @param array<int, mixed> $values
+     * @param list<mixed> $values
      */
     private function arrayQueryPairs(Operation $operation, array $parameter, array $values, string $served): string
     {
@@ -466,20 +478,10 @@ final readonly class OperationRequestBuilder
      */
     private function arrayQueryStyle(Operation $operation, array $parameter): string
     {
-        /** @var mixed $override */
-        $override = $this->arrayQueryParams[$operation->operationId][$parameter['name']] ?? null;
+        $override = $this->arrayStyleOverrides[$operation->operationId][$parameter['name']] ?? null;
+        $declared = $parameter['explode'] === false ? self::ARRAY_STYLE_COMMA : self::ARRAY_STYLE_REPEAT;
 
-        if (is_string($override)) {
-            return $override;
-        }
-
-        if ($this->arrayQueryStyle !== null) {
-            return $this->arrayQueryStyle;
-        }
-
-        // declared serialization: form + explode=false is comma-separated;
-        // the OpenAPI default (explode=true) repeats the key
-        return $parameter['explode'] === false ? self::ARRAY_STYLE_COMMA : self::ARRAY_STYLE_REPEAT;
+        return $override ?? $this->arrayQueryStyle ?? $declared;
     }
 
     private function segmentRuleViolation(string $served, string $name, int $maxSegments): string

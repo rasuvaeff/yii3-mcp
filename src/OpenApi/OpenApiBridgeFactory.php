@@ -60,6 +60,11 @@ final readonly class OpenApiBridgeFactory
      *                                the container then needs no HTTP transport services at all
      * @param ?RequestFactoryInterface $requestFactory PSR-17 request factory, same nullability rules
      *                                as $httpClient
+     * @param ?string $arrayQueryStyle default serialization of array-valued query parameters:
+     *                                'repeat' (name=a&name=b), 'brackets' (name[]=a&name[]=b) or 'comma'
+     *                                (name=a,b); null derives it from the parameter's declared explode
+     * @param array<string, array<string, string>> $arrayQueryParams operationId => parameter name => style
+     *                                overrides; win over $arrayQueryStyle
      */
     public static function create(
         string|array $spec,
@@ -85,6 +90,8 @@ final readonly class OpenApiBridgeFactory
         ?ServerRequestFactoryInterface $serverRequestFactory = null,
         ?ExecutionRequestAttributesInterface $requestAttributes = null,
         ?InProcessScopeInterface $inProcessScope = null,
+        ?string $arrayQueryStyle = null,
+        array $arrayQueryParams = [],
     ): OpenApiServerConfigurator {
         // psr15 mode is selected by the handler alone: everything else about
         // the call (URI, headers, body, caps, error mapping) is identical,

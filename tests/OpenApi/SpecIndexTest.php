@@ -603,7 +603,7 @@ final class SpecIndexTest
             'object items' => ['type' => 'array', 'items' => ['type' => 'object']],
             'nested arrays' => ['type' => 'array', 'items' => ['type' => 'array', 'items' => ['type' => 'string']]],
             'missing items' => ['type' => 'array'],
-        ] as $case => $schema) {
+        ] as $schema) {
             $caught = null;
 
             try {

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.1.0 — 2026-10-07
+
+- The OpenAPI bridge supports array-typed query parameters (#58): a
+  `type: array` parameter in `in: query` with scalar items is advertised as an
+  array argument (`items`, `enum`, `minItems`, `maxItems` preserved) and
+  re-validated by the executor before the request is built, so a direct caller
+  cannot bypass the SDK's schema check. Both executors share the logic
+  (`OperationRequestBuilder`). Wire format: new `openapi.array_query_style`
+  (`repeat` | `brackets` | `comma`, empty = per parameter from its declared
+  `explode`) and `openapi.array_query_params`
+  (`operationId => parameter => style`); `OpenApiBridgeFactory::create()` takes
+  `arrayQueryStyle` and `arrayQueryParams`. Arrays outside a query parameter,
+  object or nested-array items, `style` other than `form` and
+  `allowReserved: true` still fail the server build. An unknown style fails the
+  build too. Previously any array query parameter failed with "must use a scalar
+  schema". Backward compatible: nothing changes for operations without
+  array parameters.
+
 ## 3.0.1 — 2026-10-07
 
 - Fixed the `psr15` executor still requiring a PSR-18 `ClientInterface` (and

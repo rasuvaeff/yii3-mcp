@@ -89,6 +89,9 @@ final readonly class OperationContractValidator
      * (`?platforms=a&platforms=b`); arrays anywhere else (a path segment, in
      * particular) still fail closed — the same guards as for scalars, plus
      * the items schema: scalar items only, no nested arrays or objects.
+     *
+     * @param array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool} $parameter
+     * @param array<array-key, mixed> $schema
      */
     private function validateArrayQueryParameter(Operation $operation, array $parameter, array $schema): void
     {

@@ -1051,6 +1051,14 @@ output schemas - из success response (см. ниже).
         // (GitLab "group/project"); пустой список по умолчанию = каждый path
         // argument односегментный, ровно как раньше
         'multi_segment_path_params' => ['id' => 3],
+        // query-параметры-массивы (`type: array` в спеке): как они пишутся в
+        // запрос — 'repeat' (name=a&name=b, умолчание OpenAPI), 'brackets'
+        // (name[]=a&name[]=b, PHP читает это как массив) или 'comma'
+        // (name=a,b); пусто = по каждому параметру из его `explode`
+        // (false => comma, иначе repeat)
+        'array_query_style' => 'brackets',
+        // переопределение для конкретной операции и параметра
+        'array_query_params' => ['getCreators' => ['platforms' => 'comma']],
         // как исполняются bridged operations: 'http' (по умолчанию) шлёт
         // настоящий PSR-18 request на base_url; 'psr15' запускает собственный
         // request handler приложения in-process — см. "In-process исполнение"
@@ -1109,6 +1117,24 @@ allow-listed route - с credentials бриджа; пустое значение 
 уровень выше (`/users/` - обычно collection route, а не allow-listed item
 route). Одиночные точки допустимы (`v1.2` - валидный slug); значение, которому
 нужен `..` внутри, через path argument не пробросить.
+
+### Query-параметры-массивы
+
+Операции списков и поиска принимают массивы-фильтры (`regions`, `platforms`,
+`niches`). Параметр `type: array` в `in: query` пробрасывается как аргумент-массив:
+входная схема инструмента сохраняет `items`, `enum`, `minItems` и `maxItems` ровно
+как в спеке, а исполнитель проверяет их ещё раз перед отправкой. Элементы обязаны
+быть скалярами: объекты, вложенные массивы и массивы в сегменте пути роняют сборку
+сервера, как и `style`, отличный от `form`, и `allowReserved: true`.
+
+Формат на проводе - контракт приложения, поэтому настраивается. По умолчанию
+(`array_query_style` пуст) каждый параметр следует своему `explode`: `explode: false`
+пишется `name=a,b`, иначе ключ повторяется (`name=a&name=b`). PHP-приложения,
+читающие массивы как `name[]=a&name[]=b`, задают `brackets`: повтор простого ключа
+`parse_str` читает как ПОСЛЕДНЕЕ значение. `array_query_params` переопределяет стиль
+для одного параметра одной операции; неизвестный стиль роняет сборку сервера.
+Пустой массив ничего не отправляет, `minItems` отклоняет его до вызова. Те же
+опции есть у `OpenApiBridgeFactory::create()`: `arrayQueryStyle`, `arrayQueryParams`.
 
 Параметр, перечисленный в `multi_segment_path_params`, может нести указанное
 число сегментов через `"/"` - для upstream, который идентифицирует ресурс
