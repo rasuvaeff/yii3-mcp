@@ -4,8 +4,8 @@
 
 4.0 moves to `mcp/sdk` `~0.8.1` and serves the MCP revision `2026-07-28` —
 the stateless era: no `initialize`, no session, every request self-contained
-— next to the handshake era on the same endpoint. The 3.x line stays on
-`mcp/sdk` `~0.7.0` (branch `3.x`) for bug and security fixes. Rationale for
+— next to the handshake era on the same endpoint. 3.x is not maintained
+separately: fixes land in 4.x. Rationale for
 each change: `CHANGELOG.md`; the model: README, "Protocol revisions".
 
 ### Required: configuration

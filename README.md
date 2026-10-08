@@ -31,15 +31,9 @@ container.
 | Requirement | Version |
 |-------------|---------|
 | PHP | 8.3 – 8.5 |
-| `mcp/sdk` | `~0.8.1` (experimental until 1.0 — hence the tilde pin; the 3.x line stays on `~0.7.0`) |
+| `mcp/sdk` | `~0.8.1` (experimental until 1.0 — hence the tilde pin) |
 | MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
 | `ext-fileinfo` | required by the SDK |
-
-
-| Line | Branch | `mcp/sdk` | MCP revisions | Support |
-|---|---|---|---|---|
-| 4.x | `master` | `~0.8.1` | handshake + stateless 2026-07-28 | features and fixes |
-| 3.x | `3.x` | `~0.7.0` | handshake only | bug and security fixes |
 
 ## Protocol revisions
 
