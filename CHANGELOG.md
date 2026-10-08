@@ -5,8 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 4.0.1 — 2026-10-08
 
+- `clientInfo()` keeps the name of a client that sends no `version` (an
+  `Implementation` with an empty version); 4.0.0 returned `null`, while 3.x
+  `getClientInfo()` still exposed the name (#69).
 - Docs: 3.x is not maintained as a separate line (the `3.x` branch announced
   in 4.0.0 was dropped); fixes land in 4.x. `llms.txt` named the old
   `mcp/sdk` pin.
