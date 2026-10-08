@@ -25,13 +25,16 @@ use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 // Fail at config load, not at the first request: an unsupported revision here
 // would otherwise surface as an opaque SDK error deep in the server build.
 $protocolVersionParam = (string) ($params['rasuvaeff/yii3-mcp']['protocol_version'] ?? '');
+$handshakeVersion = ProtocolVersion::tryFrom($protocolVersionParam);
 $protocolVersion = $protocolVersionParam === ''
     ? null
-    : (ProtocolVersion::tryFrom($protocolVersionParam) ?? throw new InvalidArgumentException(sprintf(
-        'Unsupported MCP protocol version "%s"; supported: %s',
-        $protocolVersionParam,
-        implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::cases())),
-    )));
+    : ($handshakeVersion instanceof ProtocolVersion && !$handshakeVersion->isModern()
+        ? $handshakeVersion
+        : throw new InvalidArgumentException(sprintf(
+            'Unsupported MCP handshake protocol version "%s"; supported: %s (the stateless era is "modern_era")',
+            $protocolVersionParam,
+            implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::handshakeVersions())),
+        )));
 
 // Same fail-early contract for the result-JSON knob: a typo like "compct"
 // would otherwise silently serve pretty-printed results forever.
@@ -78,7 +81,8 @@ return [
             'paginationLimit' => $params['rasuvaeff/yii3-mcp']['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
             'protocolVersion' => $protocolVersion,
             'compactToolResults' => $compactToolResults,
-            'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? false),
+            'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
+            'headerValidation' => (bool) ($params['rasuvaeff/yii3-mcp']['header_validation'] ?? true),
         ],
     ],
     Server::class => [

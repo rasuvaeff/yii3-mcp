@@ -31,9 +31,37 @@ container.
 | Requirement | Version |
 |-------------|---------|
 | PHP | 8.3 – 8.5 |
-| `mcp/sdk` | `~0.7.0` (experimental until 1.0 — hence the tilde pin) |
-| MCP protocol | 2025-11-25 (the SDK's default; it advertises this in `initialize` regardless of what the client asks for) |
+| `mcp/sdk` | `~0.8.1` (experimental until 1.0 — hence the tilde pin; the 3.x line stays on `~0.7.0`) |
+| MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
 | `ext-fileinfo` | required by the SDK |
+
+
+## Protocol revisions
+
+One endpoint serves both protocol eras; each request is classified by the SDK.
+
+| Era | Revisions | Lifecycle | State |
+|---|---|---|---|
+| handshake | 2024-11-05 … 2025-11-25 | `initialize` → `Mcp-Session-Id` on every request | in the session store (`session.*`) |
+| stateless | 2026-07-28 | none: every request carries its own `_meta` (revision, client info, capabilities) and `Mcp-Method`/`Mcp-Name` headers | none — the SDK hands each request a throwaway session |
+
+- `initialize` negotiates: the client's revision when supported, otherwise
+  2025-11-25. `protocol_version` pins the handshake to one revision (handshake
+  revisions only).
+- `modern_era` (default `true`) serves the stateless era. Switched off, its
+  requests get `Unsupported protocol version` — and a client speaking only
+  2026-07-28 does not fall back to `initialize` by itself.
+- `header_validation` (default `true`) rejects a stateless request whose
+  standard headers contradict its body (`-32020`), so a proxy can route and
+  authorize on the headers alone.
+- Anything that keeps state "per session" means per request on the stateless
+  era. The package's own session-bound guards are era-aware: the tool-call
+  budget counts per client there, session ownership has nothing to bind (the
+  client id of each request is the identity), and
+  `clientInfo()` reads the request's `_meta`.
+- Not found is `-32602` for tools, prompts and completion refs on every
+  revision, and for resources from 2026-07-28 on (`-32002` before) — hidden
+  capabilities answer exactly the same.
 
 ## Installation
 
@@ -476,9 +504,14 @@ authorization in the visibility filter, not in an interceptor.
     // SDK's handlers AND this package's filtering ones, so they can never page
     // differently depending on whether visibility is configured.
     'pagination_limit' => 50,
-    // pins the revision advertised in initialize; empty keeps the SDK's default
-    // (2025-11-25). An unsupported value fails at config load, not at runtime.
+    // pins the initialize handshake to one revision, e.g. '2025-06-18'; empty
+    // negotiates (the client's revision when supported, else 2025-11-25).
+    // Handshake revisions only; anything else fails at config load.
     'protocol_version' => '',
+    // serve the stateless 2026-07-28 era too (see "Protocol revisions")
+    'modern_era' => true,
+    // stateless era: reject requests whose standard headers contradict the body
+    'header_validation' => true,
     // how array/object tool results are encoded into the text the agent
     // reads: 'pretty' (default, the SDK's own formatting) or 'compact' —
     // no indentation, ~3x fewer bytes; structuredContent is unaffected.

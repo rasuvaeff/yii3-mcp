@@ -29,9 +29,14 @@ composer require rasuvaeff/yii3-mcp
 - Capability names are unique across the whole server, enforced: any
   collision (attribute tools, configurators, OpenAPI bridge, prompts) fails
   the build with Exception\DuplicateCapabilityException.
-- Protocol revision served is 2025-11-25 (the SDK's default, `MessageInterface::PROTOCOL_VERSION`);
-  the SDK does NOT negotiate — it answers with its own version whatever the
-  client asks for. `Testing\McpTester` reads the same constant.
+- Two protocol eras on one endpoint. Handshake (2024-11-05 … 2025-11-25):
+  `initialize` NEGOTIATES (client's revision when supported, else 2025-11-25;
+  `protocol_version` pins one handshake revision), state in the session.
+  Stateless 2026-07-28 (`modern_era`, default true): no initialize, no session
+  (a throwaway one per request), `_meta` + `Mcp-Method`/`Mcp-Name` headers per
+  request, checked against the body when `header_validation` (default true).
+  Per-session state does nothing there — package guards are era-aware.
+  Not found = -32602 (resources: -32002 before 2026-07-28); hidden = missing.
 - `resources/subscribe` is advertised by the SDK whenever any resource exists and
   subscriptions ARE recorded per session. `Resource\ResourceUpdateNotifier` sends
   `notifications/resources/updated` to the CALLING session from inside the request

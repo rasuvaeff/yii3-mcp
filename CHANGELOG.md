@@ -38,7 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counted per client id over a fixed window in the container's PSR-16 cache
   (required then; anonymous callers share one budget; a cache outage rejects
   the call).
-- New param `modern_era` (default `false` for now) serves the stateless era.
+- **BC break:** the stateless 2026-07-28 era is served by default (`modern_era`,
+  default `true`; `McpServerFactory(modernEra:)`), so a `tool_call_budget`
+  needs a PSR-16 cache in the container. `header_validation` (default `true`)
+  rejects stateless requests whose standard headers contradict the body.
+- **BC break:** `initialize` negotiates the revision (SDK 0.8) instead of always
+  answering 2025-11-25; `protocol_version` pins a handshake revision only —
+  `2026-07-28` there fails at config load.
 - `Testing\McpTester` takes an optional protocol revision (fifth argument):
   a handshake revision is negotiated through `initialize`,
   `ProtocolVersion::V2026_07_28` speaks the stateless era (per-request `_meta`

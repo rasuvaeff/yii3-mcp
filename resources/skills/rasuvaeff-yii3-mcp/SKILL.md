@@ -3,11 +3,12 @@ name: rasuvaeff-yii3-mcp
 description: >-
   Expose Yii3 application services as MCP tools/resources over the official
   mcp/sdk — McpServerFactory, McpAction (PSR-15 Streamable HTTP),
-  SharedSecretMiddleware, tool-call interceptors (SessionBudgetInterceptor,
+  SharedSecretMiddleware, tool-call interceptors (ToolCallBudgetInterceptor,
   RateLimitInterceptor, ResponseSizeLimitInterceptor,
   CachingToolCallInterceptor, ArgumentMasker), tool visibility (name and
   tag: patterns), OpenAPI bridge (tool_names, OperationModifierInterface,
-  dry_run), Testing\McpTester + SchemaSnapshot. Use when writing, reviewing
+  dry_run), both protocol eras (handshake and stateless 2026-07-28),
+  Testing\McpTester + McpErrorException + SchemaSnapshot. Use when writing, reviewing
   or debugging MCP server code in a project that has this package installed.
 ---
 
@@ -16,7 +17,15 @@ description: >-
 MCP server integration for Yii3: tool classes are listed in params, resolved
 through the DI container, served over PSR-15 Streamable HTTP or stdio.
 Namespace `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
-sessions) come from `mcp/sdk` (`~0.7.0`, minor = breaking) — never invent them.
+sessions) come from `mcp/sdk` (`~0.8.1` on 4.x, `~0.7.0` on 3.x; minor =
+breaking) — never invent them.
+
+One endpoint serves two protocol eras (`modern_era`, default on): the
+handshake era (`initialize`, `Mcp-Session-Id`, state in the session) and the
+stateless 2026-07-28 era (no initialize, no session — the SDK hands every
+request a THROWAWAY session; `_meta` and `Mcp-Method`/`Mcp-Name` headers per
+request). Anything that keeps state "per session" does nothing on the
+stateless era: read the era with care, never assume a session persists.
 
 ## Safety rules — verify these on every change
 
@@ -25,17 +34,23 @@ sessions) come from `mcp/sdk` (`~0.7.0`, minor = breaking) — never invent them
    request gets an explanatory 503 (fail-closed) — never "fix" that into a
    pass-through, and never put the raw secret in logs or responses.
 
-2. **Tool visibility is fail-closed on both paths.** A hidden tool is omitted
-   from `tools/list` AND rejected on `tools/call` ("not available in this
-   session") before interceptors or the tool run. Same for hidden
-   prompts/resources — reported as not found. Don't filter only the list.
+2. **Tool visibility is fail-closed on both paths, and hidden ≡ missing.** A
+   hidden tool is omitted from `tools/list` AND answered on `tools/call`
+   with exactly the JSON-RPC error a missing tool gets (`-32602`,
+   `Tool not found: "x".`), before argument validation, interceptors or the
+   tool run. Same for hidden prompts, resources and completion refs. Compare
+   whole envelopes (code + message + data), never only the text — a
+   different code alone is an existence oracle.
 
-3. **Set a session budget against agent loops.** Params
-   `'session' => ['budget' => N]` (default 0 = unlimited) makes
-   `SessionBudgetInterceptor` fail a session's calls past N. It is anti-loop,
-   NOT a client quota — a new session resets the counter; for real quotas
-   implement `ToolCallLimiterInterface` + `RateLimitInterceptor` (limiter
-   failure is fail-closed, never silently unlimited).
+3. **Set a tool-call budget against agent loops.** Params
+   `'tool_call_budget' => ['calls' => N, 'window' => 3600]` (calls 0 =
+   unlimited) makes `ToolCallBudgetInterceptor` reject calls past N: per
+   session on the handshake era, per client id and fixed window on the
+   stateless era (counted in the container's PSR-16 cache — required then;
+   anonymous callers share one budget; a cache outage rejects). The 3.x key
+   `session.budget` fails the build. It is anti-loop, NOT a client quota; for
+   real quotas implement `ToolCallLimiterInterface` + `RateLimitInterceptor`
+   (limiter failure is fail-closed, never silently unlimited).
 
 4. **Mask arguments before logging/tracing/auditing.** Never log
    `ToolCallContext::$arguments` raw — pass them through `ArgumentMasker`
@@ -51,7 +66,7 @@ sessions) come from `mcp/sdk` (`~0.7.0`, minor = breaking) — never invent them
    the SDK's in-memory store silently loses sessions between FPM workers.
 
 7. **Caching must never bypass RBAC/audit.** The interceptor chain order is
-   fixed: session budget → configured `interceptors` (RBAC, audit, …) →
+   fixed: tool-call budget → configured `interceptors` (RBAC, audit, …) →
    `CachingToolCallInterceptor` → `ResponseSizeLimitInterceptor`. A cache hit
    still runs every configured interceptor — never reorder caching to wrap
    around them. The cache key always includes the resolved client id;
@@ -90,7 +105,12 @@ $server = $factory->create([OrderTools::class]);
 ```
 
 Testing without HTTP: `Testing\McpTester` (`callTool`, `listTools`, ...);
-schema drift gate: `Testing\SchemaSnapshot::verify($tester, $file)` in CI.
+a fifth argument picks the revision — `ProtocolVersion::V2026_07_28` drives
+the stateless era (test both eras for anything session- or identity-related);
+JSON-RPC errors throw `Testing\McpErrorException` (`errorCode`,
+`errorMessage`, `errorData`). Interceptor contexts expose
+`clientInfo(): ?Mcp\Schema\Implementation` for both eras. Schema drift gate:
+`Testing\SchemaSnapshot::verify($tester, $file)` in CI.
 
 ## Full API
 

@@ -57,8 +57,9 @@ final readonly class McpServerFactory
      * @param string $instructions free-form "how to use this server" text served in `initialize`; '' omits it
      * @param int $paginationLimit page size for every list method; applied to the SDK's handlers AND this
      *                             package's filtering ones, which must never page differently
-     * @param ProtocolVersion|null $protocolVersion pins the revision advertised in `initialize`;
-     *                                              null keeps the SDK's own default
+     * @param ProtocolVersion|null $protocolVersion pins the `initialize` handshake to exactly this
+     *                                              (handshake-era) revision; null negotiates —
+     *                                              the client's revision when supported
      * @param SubscriptionManagerInterface|null $subscriptionManager backs resources/subscribe; pass the SAME
      *                                                               instance {@see ResourceUpdateNotifier} reads
      * @param bool $compactToolResults encode array/object tool results as compact JSON text
@@ -67,6 +68,8 @@ final readonly class McpServerFactory
      *                                 produced for array results
      * @param bool $modernEra also serve the stateless 2026-07-28 era on the same endpoint;
      *                        false answers its requests with "unsupported protocol version"
+     * @param bool $headerValidation reject a stateless-era request whose standard headers
+     *                               (Mcp-Method, Mcp-Name, Mcp-Param-*) contradict its body (-32020)
      */
     public function __construct(
         private ContainerInterface $container,
@@ -79,7 +82,8 @@ final readonly class McpServerFactory
         private ?ProtocolVersion $protocolVersion = null,
         private ?SubscriptionManagerInterface $subscriptionManager = null,
         private bool $compactToolResults = false,
-        private bool $modernEra = false,
+        private bool $modernEra = true,
+        private bool $headerValidation = true,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -125,6 +129,8 @@ final readonly class McpServerFactory
         if (!$this->modernEra) {
             $builder->withoutModernEra();
         }
+
+        $builder->setHeaderValidator($this->headerValidation);
 
         if ($this->instructions !== '') {
             $builder->setInstructions($this->instructions);

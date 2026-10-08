@@ -584,6 +584,34 @@ final class ConfigWiringTest
      * An application still setting the 3.x key must fail loudly: ignoring it
      * would switch its anti-loop guard off without a word.
      */
+    public function statelessEraAndHeaderValidationAreOnByDefault(): void
+    {
+        $mcp = $this->params()['rasuvaeff/yii3-mcp'];
+
+        Assert::true($mcp['modern_era']);
+        Assert::true($mcp['header_validation']);
+    }
+
+    /**
+     * protocol_version pins the initialize handshake; the stateless revision
+     * has no initialize, so pinning it would advertise a revision the
+     * handshake can never reach.
+     */
+    public function statelessRevisionIsNotAHandshakePin(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['protocol_version'] = '2026-07-28';
+
+        try {
+            $this->di($params);
+            $error = 'accepted';
+        } catch (\InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        }
+
+        Assert::string($error)->contains('Unsupported MCP handshake protocol version "2026-07-28"');
+    }
+
     public function movedSessionBudgetKeyFailsTheBuild(): void
     {
         $params = $this->params();
@@ -600,6 +628,7 @@ final class ConfigWiringTest
     {
         $params = $this->params();
         $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 2;
+        $params['rasuvaeff/yii3-mcp']['modern_era'] = false;
 
         Assert::same($this->buildFailure($params), 'built');
 
@@ -757,6 +786,8 @@ final class ConfigWiringTest
         $container = new SimpleContainer([
             GreetingTool::class => new GreetingTool(prefix: 'Hi'),
             RecordingInterceptor::class => $recording,
+            // the stateless era (on by default) counts the budget in PSR-16
+            CacheInterface::class => new FakeCache(),
         ]);
         $factory = new McpServerFactory(
             container: $container,

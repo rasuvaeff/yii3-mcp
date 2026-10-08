@@ -62,8 +62,13 @@ return [
         ],
         // also serve the stateless 2026-07-28 era (no initialize, no session)
         // on the same endpoint; false answers its requests with "unsupported
-        // protocol version"
-        'modern_era' => false,
+        // protocol version" — and a client speaking only that revision does
+        // not fall back to initialize on its own
+        'modern_era' => true,
+        // stateless era: reject a request whose standard headers (Mcp-Method,
+        // Mcp-Name, Mcp-Param-*) contradict its body (-32020) — what lets a
+        // proxy route and authorize on the headers without parsing the body
+        'header_validation' => true,
         // how array/object tool results are encoded into the text content the
         // agent reads: 'pretty' (default, the SDK's own formatting) or
         // 'compact' — no indentation, JSON_UNESCAPED_SLASHES |
@@ -258,10 +263,11 @@ return [
         // Applies to the SDK's handlers and to this package's filtering ones
         // alike, so paging can never differ between them.
         'pagination_limit' => 50,
-        // pins the MCP revision advertised in initialize, e.g. '2025-06-18'.
-        // Empty keeps the SDK's own default (2025-11-25 under the ~0.7.0 pin).
-        // The SDK does NOT negotiate: it answers with this revision whatever
-        // the client asked for. An unsupported value fails the server build.
+        // pins the initialize handshake to exactly this revision, e.g.
+        // '2025-06-18'. Empty negotiates: the client's requested revision when
+        // supported, otherwise the newest handshake revision (2025-11-25).
+        // Handshake revisions only — the stateless 2026-07-28 era has no
+        // initialize (see modern_era); it and unknown values fail the build.
         'protocol_version' => '',
         // MCP Apps (io.modelcontextprotocol/ui): interactive HTML applications
         // the client renders in a sandboxed iframe. 'enable' => true announces

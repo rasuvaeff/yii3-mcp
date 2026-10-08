@@ -228,13 +228,18 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   Enabling it would advertise a capability the server never honours — the exact
   mistake `resources/subscribe` used to make here. Revisit only if the SDK grows
   the listener.
-- **The served protocol revision comes from the SDK and is NOT negotiated.**
-  `MessageInterface::PROTOCOL_VERSION` (2025-11-25 under the `~0.7.0` pin) is
-  what `initialize` answers with, whatever the client requested. Do not
-  hardcode a revision anywhere — `Testing\McpTester` reads that constant, so
-  the test client and the server can never silently disagree again (they did:
-  the tester claimed 2025-06-18 while the server answered 2025-11-25, and both
-  READMEs documented the client's number). Re-read it on any SDK pin bump.
+- **Two eras on one endpoint, and `initialize` negotiates (since SDK 0.8).**
+  Handshake era: the client's revision when supported, else the newest
+  handshake one (`MessageInterface::PROTOCOL_VERSION`); `protocol_version`
+  pins one HANDSHAKE revision (`config/di.php` rejects 2026-07-28 — it has no
+  initialize). Stateless era (`modern_era`, default on): the SDK classifies
+  each request by `params._meta`; there is no session, the SDK builds a
+  throwaway one per request. Do not hardcode a revision anywhere —
+  `Testing\McpTester` defaults to that constant (they disagreed once: the
+  tester claimed 2025-06-18 while the server answered 2025-11-25) and takes a
+  revision for era-specific tests. Anything session-bound must be tested on
+  both eras; that is how the 0.8 bump found the budget, ownership and
+  `getClientInfo()` holes.
 - **`completion/complete` does not go through the reference handler, so
   visibility has to be applied to it separately.** The SDK's
   `CompletionCompleteHandler` reads the registry directly; before
@@ -542,5 +547,8 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 - Update `README.md` AND `README.ru.md` — the README is bilingual, every
   change lands in both files in the same commit (and `examples/` if usage
   changed); update `CHANGELOG.md` when releasing.
+- Keep `resources/skills/rasuvaeff-yii3-mcp/SKILL.md` current in the same
+  commit: it ships to consumers' agents (`llm/skills`) and states the safety
+  rules they follow — a stale rule there is followed, not ignored.
 - Re-run `composer build`; if the change affects public API or release safety,
   also run `make release-check`. Paste the output.

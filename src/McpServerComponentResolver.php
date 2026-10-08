@@ -198,7 +198,7 @@ final readonly class McpServerComponentResolver
             /** @var string $serverName */
             $serverName = $this->params['server_name'];
             /** @var bool $modernEra */
-            $modernEra = $this->params['modern_era'] ?? false;
+            $modernEra = $this->params['modern_era'] ?? true;
             $interceptors[] = new ToolCallBudgetInterceptor(
                 budget: $calls,
                 // the stateless era has no session to count in; only then is
