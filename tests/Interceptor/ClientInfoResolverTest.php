@@ -55,9 +55,22 @@ final class ClientInfoResolverTest
         Assert::null(ClientInfoResolver::fromSession(new FakeSession([RequestMeta::class => $meta])));
     }
 
+    /**
+     * The spec requires a version, but real clients omit it: the name must
+     * still come through, with an empty version.
+     */
+    public function aClientWithoutVersionKeepsItsName(): void
+    {
+        $info = ClientInfoResolver::fromSession(new FakeSession(['client_info' => ['name' => 'no-version']]));
+
+        Assert::same($info?->name, 'no-version');
+        Assert::same($info?->version, '');
+    }
+
     public function malformedHandshakeClientInfoIsNull(): void
     {
-        Assert::null(ClientInfoResolver::fromSession(new FakeSession(['client_info' => ['name' => 'no-version']])));
+        Assert::null(ClientInfoResolver::fromSession(new FakeSession(['client_info' => ['version' => '1.0']])));
+        Assert::null(ClientInfoResolver::fromSession(new FakeSession(['client_info' => ['name' => 42, 'version' => '1.0']])));
         Assert::null(ClientInfoResolver::fromSession(new FakeSession(['client_info' => 'corrupted'])));
     }
 

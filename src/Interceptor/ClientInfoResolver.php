@@ -39,15 +39,16 @@ final readonly class ClientInfoResolver
         }
 
         $name = self::optionalString($info, 'name');
-        $version = self::optionalString($info, 'version');
 
-        if ($name === null || $version === null) {
+        if ($name === null) {
             return null;
         }
 
+        // the spec requires a version, but real clients omit it — losing the
+        // name over it would blind every consumer that reports the client
         return new Implementation(
             name: $name,
-            version: $version,
+            version: self::optionalString($info, 'version') ?? '',
             description: self::optionalString($info, 'description'),
             websiteUrl: self::optionalString($info, 'websiteUrl'),
             title: self::optionalString($info, 'title'),
