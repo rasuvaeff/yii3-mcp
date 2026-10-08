@@ -117,6 +117,11 @@ for one process) for stateless listen streams, and notifies the calling
 handshake session if subscribed. Without a bus stateless subscribers get
 nothing.
 
+Interceptors get `$context->requestContext` (SDK `RequestContext`): ask the
+user before a call with `getClientGateway()->elicit()`, join the caller's
+trace with `getTraceContext()`. Caching hints (`cache_policy`) stay `private`
+for anything a visibility filter makes per caller — the build enforces it.
+
 Testing without HTTP: `Testing\McpTester` (`callTool`, `listTools`, ...);
 a fifth argument picks the revision — `ProtocolVersion::V2026_07_28` drives
 the stateless era (test both eras for anything session- or identity-related);

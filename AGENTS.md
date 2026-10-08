@@ -164,6 +164,13 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   on a retry (`RequestEra::isRetry()` — the arguments do not show the
   answers). More than one ask needs `request_state.key`.
   `tests/MultiRoundTripTest` drives it end to end through the tester.
+- **`cache_policy` `public` is refused on per-caller answers.** With any
+  visibility filter, `tools/list`/`prompts/list`/`resources/list`/
+  `resources/templates/list`/`resources/read` depend on the caller; a
+  `public` SEP-2549 hint would let a shared proxy serve one caller's view to
+  another, so `McpServerFactory::create()` throws. `CachePolicyParams` fails
+  config load on a method that carries no hint (a typo would be a hint never
+  sent) — do not loosen either into a warning.
 - **Neither budget counter is concurrency-safe** — a plain `get()`/`set()`
   read-modify-write, no compare-and-swap, because neither the SDK's
   `SessionInterface` nor PSR-16 exposes one. N concurrent requests can

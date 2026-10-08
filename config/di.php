@@ -14,6 +14,7 @@ use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Yii3Mcp\CachePolicyParams;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
 use Rasuvaeff\Yii3Mcp\McpAction;
@@ -75,6 +76,11 @@ $notificationBusDefinition = match ($notificationBus) {
     ],
 };
 
+/** @var array<array-key, mixed> $cachePolicyParams */
+$cachePolicyParams = $params['rasuvaeff/yii3-mcp']['cache_policy'] ?? [];
+// parsed at config load: a typo in a method name would be a hint never sent
+$cachePolicy = CachePolicyParams::parse($cachePolicyParams);
+
 // Session store default is FPM-safe (file-based): the MCP Streamable HTTP
 // session spans several requests, so the SDK's in-memory default would lose
 // it between FPM workers. Rebind to Psr16SessionStore for multi-host setups.
@@ -111,6 +117,7 @@ return [
             'compactToolResults' => $compactToolResults,
             'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
             'headerValidation' => (bool) ($params['rasuvaeff/yii3-mcp']['header_validation'] ?? true),
+            'cachePolicy' => $cachePolicy,
             'requestStateKey' => (string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? ''),
             'requestStateTtl' => (int) ($params['rasuvaeff/yii3-mcp']['request_state']['ttl'] ?? 600),
             'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
@@ -165,7 +172,7 @@ return [
         },
     ],
     McpDoctor::class => [
-        'definition' => static function (ContainerInterface $container) use ($params): McpDoctor {
+        'definition' => static function (ContainerInterface $container) use ($params, $notificationBus): McpDoctor {
             /** @var array{dir?: string} $session */
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
             /** @var string $serverName */
@@ -196,6 +203,10 @@ return [
                 appDefinitions: $apps['definitions'] ?? [],
                 openApiInProcess: ($openapi['executor'] ?? 'http') === 'psr15',
                 openApiInProcessHandler: $openapi['handler'] ?? '',
+                modernEra: (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
+                toolCallBudgetEnabled: (int) ($params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] ?? 0) > 0,
+                notificationBus: $notificationBus,
+                requestStateKeyBytes: strlen((string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? '')),
             );
         },
     ],

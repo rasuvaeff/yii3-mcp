@@ -13,8 +13,11 @@ use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpErrorException;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ConfirmingInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ElicitingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
+use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -29,6 +32,7 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 #[Test]
 #[Covers(McpServerFactory::class)]
 #[Covers(McpTester::class)]
+#[Covers(\Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler::class)]
 final class MultiRoundTripTest
 {
     private const string KEY = 'a-request-state-signing-key-of-32+-bytes';
@@ -120,6 +124,45 @@ final class MultiRoundTripTest
     }
 
     /**
+     * An interceptor can ask too (B-12) — the way to confirm a call to a tool
+     * whose handler the application does not own (an OpenAPI-bridged one).
+     * Everything outside it runs once per round: the recording interceptor
+     * placed before it sees both rounds.
+     */
+    public function anInterceptorCanAskBeforeTheCall(): void
+    {
+        $recording = new RecordingInterceptor();
+        $confirming = new ConfirmingInterceptor();
+        $tester = $this->tester(interceptors: [$recording, $confirming]);
+
+        $first = $tester->callTool('greet', ['name' => 'Yii']);
+        $second = $tester->request('tools/call', [
+            'name' => 'greet',
+            'arguments' => ['name' => 'Yii'],
+            'inputResponses' => ['confirm-reveal' => ['action' => 'accept', 'content' => ['confirm' => true]]],
+        ]);
+
+        Assert::same($first['resultType'] ?? null, 'input_required');
+        Assert::same($second['content'][0]['text'] ?? null, 'Hello, Yii!');
+        Assert::same(count(array_filter($recording->entries, static fn(string $entry): bool => str_contains($entry, 'before'))), 2);
+    }
+
+    /**
+     * The caller's W3C trace context reaches interceptors (B-7) — what lets a
+     * telemetry interceptor join the agent's trace.
+     */
+    public function theCallersTraceContextReachesInterceptors(): void
+    {
+        $confirming = new ConfirmingInterceptor();
+        $tester = $this->tester(interceptors: [$confirming]);
+        $traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+
+        $tester->request('tools/call', ['name' => 'greet', 'arguments' => ['name' => 'Yii'], '_meta' => ['traceparent' => $traceparent]]);
+
+        Assert::same($confirming->traces[0]['traceparent'] ?? null, $traceparent);
+    }
+
+    /**
      * @param array<string, array<string, mixed>> $answers
      *
      * @return array<array-key, mixed>
@@ -142,10 +185,13 @@ final class MultiRoundTripTest
     {
         $factory = new Psr17Factory();
         $server = (new McpServerFactory(
-            container: new SimpleContainer([ElicitingTool::class => $tool ?? new ElicitingTool()]),
+            container: new SimpleContainer([
+                ElicitingTool::class => $tool ?? new ElicitingTool(),
+                GreetingTool::class => new GreetingTool(prefix: 'Hello'),
+            ]),
             sessionStore: new InMemorySessionStore(),
             requestStateKey: $requestStateKey,
-        ))->create([ElicitingTool::class], [], $interceptors);
+        ))->create([ElicitingTool::class, GreetingTool::class], [], $interceptors);
 
         return new McpTester(
             server: $server,

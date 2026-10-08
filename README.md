@@ -391,7 +391,11 @@ every PSR service required by enabled entry points/features, session storage
 (including **confidentiality**: a session directory readable by group/others
 fails the check, not just an unwritable one), the OpenAPI spec, the MCP Apps
 configuration (every declarative definition is parsed, so a malformed one is
-reported even when the server build check is skipped) and a real server build. Missing services are reported by
+reported even when the server build check is skipped), the protocol eras
+(what the stateless era changes for this configuration: a single
+`endpoint_secret` makes every stateless caller share one tool-call budget, no
+`notifications.bus` leaves listen streams empty, no `request_state.key` limits
+a call to one ask; a too-short key fails) and a real server build. Missing services are reported by
 their exact interface. Exit codes are stable for scripting: `0` healthy,
 `2` config error, `3` storage error, `4` upstream error — the category of the
 **first** failing check (checks run root-causes-first, so a broken config
@@ -589,6 +593,32 @@ filter asked for. Bind a custom `Mcp\Server\Resource\SubscriptionManagerInterfac
 and both the subscribe handler and the notifier follow it; the bus is bound
 once, so `McpServerFactory` and the notifier always share it.
 
+### Caching hints (stateless era)
+
+Stateless answers to `server/discover`, `tools/list`, `prompts/list`,
+`resources/list`, `resources/templates/list` and `resources/read` carry
+SEP-2549 caching hints. The default is the SDK's: nothing fresh
+(`ttlMs: 0`), nothing shared (`private`).
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache_policy' => [
+        'ttl_ms' => 0,
+        'scope' => 'private',
+        'methods' => [
+            // the tool list changes only with a deploy
+            'tools/list' => ['ttl_ms' => 300000, 'scope' => 'private'],
+        ],
+    ],
+],
+```
+
+`public` lets a **shared** cache (a proxy) serve one caller's answer to
+another — an operator decision. With any visibility filter configured, a
+`public` hint on a list or `resources/read` fails the build: those answers are
+per caller. A method that carries no hint, a misspelled one, or an unknown
+scope fails at config load instead of being ignored.
+
 ## Framework-agnostic usage
 
 Despite the package name, the code has no `yiisoft/*` runtime dependency —
@@ -656,6 +686,15 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     }
 }
 ```
+
+`$context->requestContext` is the SDK's `RequestContext` for the call (null
+outside a server request): `getClientGateway()` lets an interceptor ask the
+user before the call — the way to confirm a costly operation on a tool whose
+handler the application does not own, such as an OpenAPI-bridged one — and
+`getTraceContext()` carries the caller's W3C `traceparent`/`tracestate`/
+`baggage` (stateless era). On the stateless era an ask ends the request and
+the whole chain runs again on the retry: interceptors outside the asking one
+run once per round (see "Server-initiated communication").
 
 ```php
 // config/params.php — resolved through the container, first = outermost

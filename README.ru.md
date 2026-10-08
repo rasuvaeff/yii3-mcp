@@ -388,7 +388,11 @@ capabilities.
 (включая **конфиденциальность**: session directory, читаемая group/others,
 проваливает проверку — не только незаписываемая), OpenAPI spec, конфигурацию
 MCP Apps (каждое декларативное определение парсится, поэтому битое будет
-показано даже когда проверка server build пропущена) и реальный server build. Отсутствующий service выводится с точным
+показано даже когда проверка server build пропущена), эры протокола (что
+stateless-эра меняет для этой конфигурации: с одним `endpoint_secret` все
+stateless-вызовы делят один tool-call budget, без `notifications.bus`
+listen-потоки пусты, без `request_state.key` вызов может спросить только
+один раз; слишком короткий ключ — fail) и реальный server build. Отсутствующий service выводится с точным
 именем interface. Exit codes стабильны для скриптов: `0` — здоров,
 `2` — config error, `3` — storage error, `4` — upstream error; берётся
 категория **первой** упавшей проверки (проверки идут от корневых причин, так
@@ -584,6 +588,32 @@ public function cancel(string $orderId, RequestContext $context): string
 subscribe, и нотификатор; шина привязывается один раз, поэтому
 `McpServerFactory` и нотификатор всегда делят один экземпляр.
 
+### Подсказки кеширования (stateless-эра)
+
+Stateless-ответы на `server/discover`, `tools/list`, `prompts/list`,
+`resources/list`, `resources/templates/list` и `resources/read` несут
+подсказки кеширования SEP-2549. По умолчанию — как в SDK: ничего не свежо
+(`ttlMs: 0`), ничего не разделяется (`private`).
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache_policy' => [
+        'ttl_ms' => 0,
+        'scope' => 'private',
+        'methods' => [
+            // список tools меняется только с выкладкой
+            'tools/list' => ['ttl_ms' => 300000, 'scope' => 'private'],
+        ],
+    ],
+],
+```
+
+`public` позволяет **общему** кешу (proxy) отдать ответ одного вызывающего
+другому — это решение оператора. Если настроен любой visibility-фильтр,
+`public` на списке или `resources/read` валит сборку: такие ответы зависят от
+вызывающего. Метод без подсказки, опечатка в имени или неизвестный scope
+падают на загрузке конфига, а не игнорируются.
+
 ## Framework-agnostic usage
 
 Несмотря на название пакета, код не имеет ни одной `yiisoft/*` runtime
@@ -651,6 +681,15 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     }
 }
 ```
+
+`$context->requestContext` — это `RequestContext` SDK для вызова (null вне
+запроса к серверу): `getClientGateway()` позволяет interceptor спросить
+пользователя до вызова — способ подтвердить дорогую операцию на tool, чьим
+хендлером приложение не владеет (например, bridged через OpenAPI), — а
+`getTraceContext()` несёт W3C `traceparent`/`tracestate`/`baggage` вызывающего
+(stateless-эра). В stateless-эре вопрос завершает запрос, и на повторе вся
+цепочка выполняется заново: interceptors снаружи спрашивающего выполняются
+на каждом раунде (см. «Server-initiated communication»).
 
 ```php
 // config/params.php - resolved through the container, first = outermost

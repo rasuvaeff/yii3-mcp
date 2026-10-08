@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use Mcp\Schema\Implementation;
+use Mcp\Server\RequestContext;
 use Mcp\Server\Session\SessionInterface;
 
 /**
@@ -22,6 +23,9 @@ final readonly class ResourceReadContext
      * @param array<string, mixed> $variables RFC 6570 variables extracted from the template URI
      * @param ?string $uriTemplate the matched template (e.g. `note://{id}`); null for a static resource
      * @param ?string $clientId identity from the endpoint secret; null when the transport carries none (e.g. stdio)
+     * @param RequestContext|null $requestContext the SDK's request scope: getClientGateway() to ask the
+     *                                           user (elicit) or notify, getTraceContext() for the
+     *                                           caller's W3C trace; null outside a server request
      */
     public function __construct(
         public string $uri,
@@ -29,6 +33,7 @@ final readonly class ResourceReadContext
         public ?string $uriTemplate = null,
         public ?SessionInterface $session = null,
         public ?string $clientId = null,
+        public ?RequestContext $requestContext = null,
     ) {}
 
     /**

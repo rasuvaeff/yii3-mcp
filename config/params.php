@@ -81,6 +81,18 @@ return [
         // from earlier rounds travel in a signed requestState. 'key' signs it
         // — at least 32 bytes, from the environment, never committed. Empty
         // = none: one ask per call works, a second fails the call.
+        // stateless era: SEP-2549 caching hints on cacheable answers
+        // (server/discover, tools/list, prompts/list, resources/list,
+        // resources/templates/list, resources/read). ttl_ms 0 + private = the
+        // SDK default, nothing fresh, nothing shared. 'public' lets a SHARED
+        // cache serve one caller's answer to another — and fails the build on
+        // a list or read a visibility filter makes per caller. Per method:
+        // 'methods' => ['tools/list' => ['ttl_ms' => 300000, 'scope' => 'private']].
+        'cache_policy' => [
+            'ttl_ms' => 0,
+            'scope' => 'private',
+            'methods' => [],
+        ],
         'request_state' => [
             'key' => '',
             'ttl' => 600,

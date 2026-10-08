@@ -791,3 +791,19 @@ tools last).
 - Testing: McpTester(..., ProtocolVersion::V2026_07_28, new ClientCapabilities(elicitation: true));
   first callTool() returns the input_required result; answer with
   $tester->request('tools/call', ['name' => …, 'arguments' => …, 'inputResponses' => ['key' => ['action' => 'accept', 'content' => […]]]]).
+
+## Stateless-era extras
+
+- Interceptor contexts (`ToolCallContext`, `PromptGetContext`,
+  `ResourceReadContext`) carry `?Mcp\Server\RequestContext $requestContext`:
+  `->getClientGateway()->elicit(...)` asks the user before the call (works for
+  OpenAPI-bridged tools too; interceptors outside it run once per round),
+  `->getTraceContext()` = caller's traceparent/tracestate/baggage.
+- params 'cache_policy' => ['ttl_ms' => 0, 'scope' => 'private'|'public',
+  'methods' => ['tools/list' => ['ttl_ms' => 300000, 'scope' => 'private']]]
+  (cacheable: server/discover, tools/list, prompts/list, resources/list,
+  resources/templates/list, resources/read; unknown method/scope = config-load
+  error; 'public' on a list/read + any visibility filter = build error).
+- `ResourceLink` content passes through result_json compact untouched.
+- mcp:doctor `protocol_eras` check; the stateless budget and a psr16 bus add
+  `Psr\SimpleCache\CacheInterface` to the required services.

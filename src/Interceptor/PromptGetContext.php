@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use Mcp\Schema\Implementation;
+use Mcp\Server\RequestContext;
 use Mcp\Server\Session\SessionInterface;
 
 /**
@@ -21,12 +22,16 @@ final readonly class PromptGetContext
     /**
      * @param array<string, mixed> $arguments
      * @param ?string $clientId identity from the endpoint secret; null when the transport carries none (e.g. stdio)
+     * @param RequestContext|null $requestContext the SDK's request scope: getClientGateway() to ask the
+     *                                           user (elicit) or notify, getTraceContext() for the
+     *                                           caller's W3C trace; null outside a server request
      */
     public function __construct(
         public string $promptName,
         public array $arguments,
         public ?SessionInterface $session = null,
         public ?string $clientId = null,
+        public ?RequestContext $requestContext = null,
     ) {}
 
     /**

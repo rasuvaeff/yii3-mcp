@@ -19,6 +19,7 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\NotificationBusInterface;
+use Mcp\Server\Wire\CachePolicy;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -79,6 +80,9 @@ final readonly class McpServerFactory
      * @param string $requestStateKey signs the `requestState` a multi round-trip call carries between rounds
      *                                (at least 32 bytes; '' = none: a handler asking more than once per call fails)
      * @param int $requestStateTtl seconds a minted requestState stays valid
+     * @param CachePolicy|null $cachePolicy SEP-2549 caching hints on stateless-era answers; null = the SDK
+     *                                      default (nothing fresh, nothing shared). A `public` hint on a list
+     *                                      or read a visibility filter makes per-caller fails the build.
      */
     public function __construct(
         private ContainerInterface $container,
@@ -98,6 +102,7 @@ final readonly class McpServerFactory
         #[\SensitiveParameter]
         private string $requestStateKey = '',
         private int $requestStateTtl = 600,
+        private ?CachePolicy $cachePolicy = null,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -159,6 +164,10 @@ final readonly class McpServerFactory
             $builder->setRequestState($this->requestStateKey, $this->requestStateTtl);
         }
 
+        if ($this->cachePolicy instanceof CachePolicy) {
+            $builder->setCachePolicy($this->cachePolicy);
+        }
+
         if ($this->instructions !== '') {
             $builder->setInstructions($this->instructions);
         }
@@ -213,6 +222,19 @@ final readonly class McpServerFactory
         $anyVisibility = $toolVisibility instanceof ToolVisibilityInterface
             || $promptVisibility instanceof PromptVisibilityInterface
             || $resourceVisibility instanceof ResourceVisibilityInterface;
+
+        // a visibility filter makes lists and reads per caller: a shared cache
+        // keeping one caller's view would serve it to the next
+        $publicPerCaller = $anyVisibility && $this->cachePolicy instanceof CachePolicy
+            ? CachePolicyParams::publiclyCachedCallerSpecificMethods($this->cachePolicy)
+            : [];
+
+        if ($publicPerCaller !== []) {
+            throw new \LogicException(sprintf(
+                'cache_policy marks %s as "public" while a visibility filter makes them per caller; use "private"',
+                implode(', ', $publicPerCaller),
+            ));
+        }
 
         $referenceHandler = null;
 

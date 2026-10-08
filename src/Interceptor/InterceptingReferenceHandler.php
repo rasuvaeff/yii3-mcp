@@ -129,6 +129,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
             arguments: $this->cleaned($arguments),
             session: $session,
             clientId: $clientId,
+            requestContext: $this->requestContext($arguments, $session),
         );
 
         $next = fn(): mixed => $this->inner->handle($reference, $arguments);
@@ -172,6 +173,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
             arguments: $this->cleaned($arguments),
             session: $session,
             clientId: $clientId,
+            requestContext: $this->requestContext($arguments, $session),
         );
 
         $next = fn(): mixed => $this->inner->handle($reference, $arguments);
@@ -214,6 +216,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
             uriTemplate: $reference instanceof ResourceTemplateReference ? $reference->resourceTemplate->uriTemplate : null,
             session: $session,
             clientId: $clientId,
+            requestContext: $this->requestContext($arguments, $session),
         );
 
         $next = fn(): mixed => $this->inner->handle($reference, $arguments);
@@ -246,12 +249,24 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
      */
     private function protocolVersion(array $arguments, ?SessionInterface $session): ProtocolVersion
     {
+        return $this->requestContext($arguments, $session)?->getProtocolVersion() ?? ProtocolVersion::latestHandshake();
+    }
+
+    /**
+     * The same request scope the SDK hands a handler declaring a
+     * RequestContext parameter — built from the session and request the SDK
+     * passes to the reference handler.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function requestContext(array $arguments, ?SessionInterface $session): ?RequestContext
+    {
         /** @var mixed $request */
         $request = $arguments['_request'] ?? null;
 
         return $session instanceof SessionInterface && $request instanceof Request
-            ? (new RequestContext($session, $request))->getProtocolVersion()
-            : ProtocolVersion::latestHandshake();
+            ? new RequestContext($session, $request)
+            : null;
     }
 
     /**

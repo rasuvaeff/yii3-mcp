@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Mcp\Capability\Registry\ToolReference;
+use Mcp\Schema\Content\ResourceLink;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Result\CallToolResult;
@@ -92,6 +93,22 @@ final class CompactToolResultFormatterTest
         $result = $this->format([$first, $second]);
 
         Assert::same($result->content, [$first, $second]);
+    }
+
+    /**
+     * A tool may answer with links to resources instead of their bodies
+     * (SDK 0.8 ResourceLink) — they pass through as content, untouched, and
+     * are not mistaken for structured data.
+     */
+    public function resourceLinksPassThroughAsContent(): void
+    {
+        $first = new ResourceLink(uri: 'app://creators/alice', name: 'alice');
+        $second = new ResourceLink(uri: 'app://creators/bob', name: 'bob');
+
+        $result = $this->format([$first, $second], ProtocolVersion::V2026_07_28);
+
+        Assert::same($result->content, [$first, $second]);
+        Assert::null($result->structuredContent);
     }
 
     public function mixedArrayFormatsOnlyTheNonContentItems(): void

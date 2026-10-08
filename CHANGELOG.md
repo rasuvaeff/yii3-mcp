@@ -55,6 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requestStateTtl:)`) sign the state that carries earlier answers. Every round
   counts against the tool-call budget. `CachingToolCallInterceptor` never
   stores an ask and never serves a later round.
+- Interceptor contexts carry `?RequestContext $requestContext` (last
+  constructor argument): an interceptor can ask the user before the call
+  (`getClientGateway()->elicit()`, OpenAPI-bridged tools included) and read the
+  caller's W3C trace context (`getTraceContext()`).
+- New `cache_policy` params (`McpServerFactory(cachePolicy:)`): SEP-2549
+  caching hints on stateless answers, validated at config load; `public` on a
+  list or read that a visibility filter makes per caller fails the build.
+- `mcp:doctor` reports a `protocol_eras` check (shared stateless budget under a
+  single secret, missing bus or request-state key, too-short key) and requires
+  a PSR-16 cache for the stateless budget and the `psr16` bus.
 - `Testing\McpTester` takes `ClientCapabilities` (sixth argument) to test tools
   that elicit.
 - **BC break:** `initialize` negotiates the revision (SDK 0.8) instead of always
