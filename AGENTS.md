@@ -456,8 +456,8 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   regression guard. CSP domains themselves are passed through verbatim — the
   host enforces the policy and `definitions` is application-owned config, not
   client input.
-- **`mcp/sdk` is pinned `~0.8.1` (tilde, not caret); the 3.x line stays on
-  `~0.7.0` (branch `3.x`).** The SDK is experimental
+- **`mcp/sdk` is pinned `~0.8.1` (tilde, not caret).** There is no separately
+  maintained 3.x line. The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect
   API drift. After SDK 1.0 → `^1.0` and a major of this package. The 0.6.0 →

@@ -17,8 +17,7 @@ description: >-
 MCP server integration for Yii3: tool classes are listed in params, resolved
 through the DI container, served over PSR-15 Streamable HTTP or stdio.
 Namespace `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
-sessions) come from `mcp/sdk` (`~0.8.1` on 4.x, `~0.7.0` on 3.x; minor =
-breaking) — never invent them.
+sessions) come from `mcp/sdk` (`~0.8.1`; minor = breaking) — never invent them.
 
 One endpoint serves two protocol eras (`modern_era`, default on): the
 handshake era (`initialize`, `Mcp-Session-Id`, state in the session) and the

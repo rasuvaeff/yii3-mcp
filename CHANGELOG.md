@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Docs: 3.x is not maintained as a separate line (the `3.x` branch announced
+  in 4.0.0 was dropped); fixes land in 4.x. `llms.txt` named the old
+  `mcp/sdk` pin.
+
 ## 4.0.0 — 2026-10-08
 
 Serves the MCP revision `2026-07-28` — the stateless era — next to the
