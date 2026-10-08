@@ -45,4 +45,14 @@ final readonly class ResourceReadContext
     {
         return ClientInfoResolver::fromSession($this->session);
     }
+
+    /**
+     * Whether the call came over the stateless 2026-07-28 era — where
+     * `$session` is a throwaway built for this one request: its id names
+     * nothing and nothing stored in it survives the call.
+     */
+    public function isStateless(): bool
+    {
+        return RequestEra::isModern($this->session);
+    }
 }

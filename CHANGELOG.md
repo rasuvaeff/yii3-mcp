@@ -57,6 +57,9 @@ stays on `mcp/sdk` `~0.7.0`.
 - Interceptor contexts carry `?RequestContext $requestContext`: an interceptor
   can ask the user before the call (`getClientGateway()->elicit()`,
   OpenAPI-bridged tools included) and read the caller's W3C trace context.
+- Interceptor contexts expose `isStateless()`: on the stateless era the
+  session is a per-request throwaway, so its id must not be logged as a
+  session and nothing kept there survives.
 - `cache_policy` params (`McpServerFactory(cachePolicy:)`): SEP-2549 caching
   hints on stateless answers, validated at config load; `public` on a list or
   read a visibility filter makes per caller fails the build.

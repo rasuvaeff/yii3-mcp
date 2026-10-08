@@ -687,6 +687,9 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 }
 ```
 
+`$context->isStateless()` отличает stateless-эру: там `$context->session` —
+одноразовая сессия этого запроса, её id ничего не называет (не пишите его в
+логи как session) и ничего в ней не переживает вызов.
 `$context->requestContext` — это `RequestContext` SDK для вызова (null вне
 запроса к серверу): `getClientGateway()` позволяет interceptor спросить
 пользователя до вызова — способ подтвердить дорогую операцию на tool, чьим

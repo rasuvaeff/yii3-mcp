@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
+use Mcp\Schema\ClientCapabilities;
+use Mcp\Server\Stateless\RequestMeta;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadContext;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Testo\Assert;
@@ -38,5 +40,14 @@ final class ResourceReadContextTest
         $context = new ResourceReadContext(uri: 'app://x', session: $session);
 
         Assert::null($context->clientInfo());
+    }
+
+    public function statelessIsReadFromTheRequestMeta(): void
+    {
+        $meta = new RequestMeta('2026-07-28', new ClientCapabilities());
+
+        Assert::true((new ResourceReadContext(uri: 'app://x', variables: [], session: new FakeSession([RequestMeta::class => $meta])))->isStateless());
+        Assert::false((new ResourceReadContext(uri: 'app://x', variables: [], session: new FakeSession()))->isStateless());
+        Assert::false((new ResourceReadContext(uri: 'app://x', variables: []))->isStateless());
     }
 }

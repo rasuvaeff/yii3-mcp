@@ -799,6 +799,8 @@ tools last).
   `->getClientGateway()->elicit(...)` asks the user before the call (works for
   OpenAPI-bridged tools too; interceptors outside it run once per round),
   `->getTraceContext()` = caller's traceparent/tracestate/baggage.
+- `$context->isStateless()`: true on the 2026-07-28 era, where `$context->session`
+  is a per-request throwaway — its id names nothing, nothing in it survives.
 - params 'cache_policy' => ['ttl_ms' => 0, 'scope' => 'private'|'public',
   'methods' => ['tools/list' => ['ttl_ms' => 300000, 'scope' => 'private']]]
   (cacheable: server/discover, tools/list, prompts/list, resources/list,

@@ -117,6 +117,8 @@ for one process) for stateless listen streams, and notifies the calling
 handshake session if subscribed. Without a bus stateless subscribers get
 nothing.
 
+`$context->isStateless()` marks the stateless era: never log
+`$context->session` ids or keep state in the session there.
 Interceptors get `$context->requestContext` (SDK `RequestContext`): ask the
 user before a call with `getClientGateway()->elicit()`, join the caller's
 trace with `getTraceContext()`. Caching hints (`cache_policy`) stay `private`

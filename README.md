@@ -692,6 +692,9 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 }
 ```
 
+`$context->isStateless()` tells the stateless era apart: there
+`$context->session` is a throwaway built for the one request, so its id names
+nothing (do not log it as a session) and nothing stored in it survives.
 `$context->requestContext` is the SDK's `RequestContext` for the call (null
 outside a server request): `getClientGateway()` lets an interceptor ask the
 user before the call — the way to confirm a costly operation on a tool whose
