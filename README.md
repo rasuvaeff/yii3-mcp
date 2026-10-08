@@ -36,6 +36,11 @@ container.
 | `ext-fileinfo` | required by the SDK |
 
 
+| Line | Branch | `mcp/sdk` | MCP revisions | Support |
+|---|---|---|---|---|
+| 4.x | `master` | `~0.8.1` | handshake + stateless 2026-07-28 | features and fixes |
+| 3.x | `3.x` | `~0.7.0` | handshake only | bug and security fixes |
+
 ## Protocol revisions
 
 One endpoint serves both protocol eras; each request is classified by the SDK.
