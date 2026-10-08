@@ -5,80 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 4.0.0 — 2026-10-08
 
-- **BC break:** requires `mcp/sdk` `~0.8.1` (MCP revision `2026-07-28`
-  support lands in later steps of this release; the modern era is not served
-  yet). The 3.x line stays on `mcp/sdk` `~0.7.0`.
-- **BC break:** `ToolCallContext`, `PromptGetContext` and `ResourceReadContext`
-  replace `getClientInfo(): array` with `clientInfo(): ?Mcp\Schema\Implementation`,
-  which reads the client from `initialize` (handshake era) or from the
-  request's `_meta` (modern era) — on the modern era the old method would have
-  returned `[]` silently.
-- **BC break:** calling a tool hidden by `ToolVisibilityInterface` answers the
-  same JSON-RPC error as a missing tool (`-32602`, `Tool not found: "…"`),
-  checked before argument validation, instead of a tool-error result
-  (`not available in this session`); an invalid call no longer reveals the
-  hidden tool's schema.
-- **BC break:** a hidden prompt or resource ref in `completion/complete`
-  answers `-32602` like a missing one (it answered `-32002`, which SDK 0.8 no
-  longer uses for a missing ref — the code told hidden from missing).
-- `result_json: compact` takes `structuredContent` from the SDK's own
-  extraction for the request's protocol revision: a list result is no longer
-  sent as `structuredContent` to pre-2026-07-28 clients (strict clients
-  rejected the whole call), and an `InputRequiredResult` passes through.
-- `allowed_hosts` no longer adds `ProtocolVersionMiddleware` to the transport
-  stack: SDK 0.8 applies it to handshake-era traffic itself, and in the custom
-  stack it rejected every modern-era request.
-- **BC break:** `Interceptor\SessionBudgetInterceptor` is now
-  `Interceptor\ToolCallBudgetInterceptor`, and the `session.budget` param is
-  `tool_call_budget.calls` (+ `tool_call_budget.window`); `session.budget`
-  fails the build. On the stateless 2026-07-28 era — which hands every request
-  a throwaway session, so a session counter never ran out — the budget is
-  counted per client id over a fixed window in the container's PSR-16 cache
-  (required then; anonymous callers share one budget; a cache outage rejects
-  the call).
-- **BC break:** the stateless 2026-07-28 era is served by default (`modern_era`,
-  default `true`; `McpServerFactory(modernEra:)`), so a `tool_call_budget`
-  needs a PSR-16 cache in the container. `header_validation` (default `true`)
+Serves the MCP revision `2026-07-28` — the stateless era — next to the
+handshake era on one endpoint. Upgrade steps: `UPGRADE.md`. The 3.x line
+stays on `mcp/sdk` `~0.7.0`.
+
+### Breaking
+
+- Requires `mcp/sdk` `~0.8.1`.
+- The stateless era is served by default (`modern_era`, default `true`;
+  `McpServerFactory(modernEra:)`). `header_validation` (default `true`)
   rejects stateless requests whose standard headers contradict the body.
-- **BC break:** `Resource\ResourceUpdateNotifier::notify()` is now
-  `notify(string $uri, ?RequestContext $context = null): void`. It publishes to
-  the notification bus — new params `notifications.bus` (`''` | `psr16` |
-  `memory`) and `notifications.subscription_lifetime` — so every stateless
-  `subscriptions/listen` stream whose filter names the URI gets the update,
-  from any process (no request needed); with a handshake-era context it still
-  notifies the calling session if subscribed.
-- Multi round-trip calls on the stateless era: a handler's `elicit()` ends the
-  request with `input_required` and runs again on the retry; new params
-  `request_state.key`/`ttl` (`McpServerFactory(requestStateKey:,
-  requestStateTtl:)`) sign the state that carries earlier answers. Every round
-  counts against the tool-call budget. `CachingToolCallInterceptor` never
-  stores an ask and never serves a later round.
-- Interceptor contexts carry `?RequestContext $requestContext` (last
-  constructor argument): an interceptor can ask the user before the call
-  (`getClientGateway()->elicit()`, OpenAPI-bridged tools included) and read the
-  caller's W3C trace context (`getTraceContext()`).
-- New `cache_policy` params (`McpServerFactory(cachePolicy:)`): SEP-2549
-  caching hints on stateless answers, validated at config load; `public` on a
-  list or read that a visibility filter makes per caller fails the build.
-- `mcp:doctor` reports a `protocol_eras` check (shared stateless budget under a
-  single secret, missing bus or request-state key, too-short key) and requires
-  a PSR-16 cache for the stateless budget and the `psr16` bus.
-- `Testing\McpTester` takes `ClientCapabilities` (sixth argument) to test tools
-  that elicit.
-- **BC break:** `initialize` negotiates the revision (SDK 0.8) instead of always
-  answering 2025-11-25; `protocol_version` pins a handshake revision only —
-  `2026-07-28` there fails at config load.
-- `Testing\McpTester` takes an optional protocol revision (fifth argument):
-  a handshake revision is negotiated through `initialize`,
-  `ProtocolVersion::V2026_07_28` speaks the stateless era (per-request `_meta`
-  envelope and standard headers, built by the SDK's client classes).
-- `McpServerFactory` takes `modernEra` (last argument) to serve the stateless
-  2026-07-28 era on the same endpoint.
+- `initialize` negotiates the revision (SDK 0.8) instead of always answering
+  2025-11-25; `protocol_version` pins a handshake revision only — `2026-07-28`
+  there fails at config load.
+- `Interceptor\SessionBudgetInterceptor` is now
+  `Interceptor\ToolCallBudgetInterceptor`, and `session.budget` is
+  `tool_call_budget.calls` (+ `.window`); the old key fails the build. On the
+  stateless era — which hands every request a throwaway session, so a session
+  counter never ran out — the budget counts per client id over a fixed window
+  in the container's PSR-16 cache (required then; anonymous callers share one
+  budget; a cache outage rejects the call).
+- `ToolCallContext`, `PromptGetContext` and `ResourceReadContext` replace
+  `getClientInfo(): array` with `clientInfo(): ?Mcp\Schema\Implementation`,
+  reading `initialize` (handshake) or the request's `_meta` (stateless) — on
+  the stateless era the old method returned `[]` silently.
+- `Resource\ResourceUpdateNotifier::notify()` is
+  `notify(string $uri, ?RequestContext $context = null): void`: it publishes to
+  the notification bus (new `notifications.bus`: `''` | `psr16` | `memory`;
+  `notifications.subscription_lifetime`), reaching every stateless
+  `subscriptions/listen` stream whose filter names the URI from any process,
+  and still notifies a subscribed calling handshake session.
+- A tool hidden by `ToolVisibilityInterface` answers the same JSON-RPC error as
+  a missing one (`-32602`, `Tool not found: "…"`), checked before argument
+  validation — it was a tool-error result, and an invalid call revealed the
+  hidden schema. A hidden prompt or resource ref in `completion/complete`
+  answers `-32602` too: it answered `-32002`, which SDK 0.8 no longer uses for
+  a missing ref, so the code told hidden from missing.
 - `Testing\McpTester` throws `Testing\McpErrorException` (a
   `RuntimeException`, same message) carrying `errorCode`, `errorMessage` and
   `errorData`.
+
+### Added
+
+- Multi round-trip calls on the stateless era: a handler's `elicit()` ends the
+  request with `input_required` and runs again on the retry;
+  `request_state.key`/`ttl` (`McpServerFactory(requestStateKey:,
+  requestStateTtl:)`) sign the state carrying earlier answers. Every round
+  counts against the tool-call budget.
+- Interceptor contexts carry `?RequestContext $requestContext`: an interceptor
+  can ask the user before the call (`getClientGateway()->elicit()`,
+  OpenAPI-bridged tools included) and read the caller's W3C trace context.
+- `cache_policy` params (`McpServerFactory(cachePolicy:)`): SEP-2549 caching
+  hints on stateless answers, validated at config load; `public` on a list or
+  read a visibility filter makes per caller fails the build.
+- `Testing\McpTester` takes a protocol revision (fifth argument;
+  `ProtocolVersion::V2026_07_28` speaks the stateless era with the SDK's own
+  client envelope and headers) and `ClientCapabilities` (sixth).
+- `mcp:doctor`: a `protocol_eras` check (shared stateless budget under a single
+  secret, missing bus or request-state key, too-short key); the stateless
+  budget and the `psr16` bus require a PSR-16 cache.
+
+### Fixed
+
+- `allowed_hosts` no longer adds `ProtocolVersionMiddleware` to the transport
+  stack, which rejected every stateless request.
+- `result_json: compact` takes `structuredContent` from the SDK's extraction
+  for the request's revision: a list is no longer sent as `structuredContent`
+  to pre-2026-07-28 clients (strict clients rejected the whole call).
+- `CachingToolCallInterceptor` never stores an `input_required` ask and never
+  serves a later round of a multi round-trip call.
 
 ## 3.1.1 — 2026-10-07
 
