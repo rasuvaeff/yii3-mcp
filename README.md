@@ -522,10 +522,8 @@ authorization in the visibility filter, not in an interceptor.
 
 ### Resource subscriptions
 
-The SDK advertises `resources.subscribe` whenever the server has any resource
-and records `resources/subscribe` per session. Nothing emits
-`notifications/resources/updated` on its own — but the tool that *causes* the
-change can, inside the same request, through `Resource\ResourceUpdateNotifier`:
+Subscribers are reached differently on the two protocol eras, and
+`Resource\ResourceUpdateNotifier` covers both from one call:
 
 ```php
 public function __construct(private ResourceUpdateNotifier $notifier) {}
@@ -534,22 +532,36 @@ public function __construct(private ResourceUpdateNotifier $notifier) {}
 public function cancel(string $orderId, RequestContext $context): string
 {
     $this->orders->cancel($orderId);
-    $this->notifier->notify($context, 'app://orders/' . $orderId);
+    $this->notifier->notify('app://orders/' . $orderId, $context);
 
     return 'cancelled';
 }
 ```
 
-`notify()` returns whether the caller was subscribed; a session that never
-subscribed is never sent anything, so an unsolicited notification cannot appear
-on the wire. Bind a custom `Mcp\Server\Resource\SubscriptionManagerInterface`
-and both the subscribe handler and the notifier follow it — the default binding
-is the SDK's session-backed manager.
+| Era | Subscription | Who is reached |
+|---|---|---|
+| stateless 2026-07-28 | a `subscriptions/listen` stream, fed from the notification bus | every listener whose filter names the URI, from any process sharing the bus — `$context` is optional, so a queue worker or console command can notify too |
+| handshake | `resources/subscribe`, recorded in the caller's session | only the calling session, from inside the request that changed the resource — no process holds the other sessions' connections |
 
-**Only the calling session is reached.** Other sessions subscribed to the same
-URI are not: that would need a connection this process does not hold. Under
-PHP-FPM nothing outlives the request, so out-of-band push remains impossible —
-clients that need to observe changes they did not cause must poll.
+```php
+'rasuvaeff/yii3-mcp' => [
+    'notifications' => [
+        // '' = none (listen streams carry nothing), 'psr16' = through the
+        // container's PSR-16 cache (PHP-FPM: publisher and listener are
+        // different workers), 'memory' = one process (stdio, persistent runtimes)
+        'bus' => 'psr16',
+        // seconds a listen stream is held open; under PHP-FPM it holds a worker
+        // that long — keep it below max_execution_time
+        'subscription_lifetime' => 30,
+    ],
+],
+```
+
+An unsolicited notification never reaches the wire: the session path checks
+the subscription first, and a listen stream carries only the URIs its own
+filter asked for. Bind a custom `Mcp\Server\Resource\SubscriptionManagerInterface`
+and both the subscribe handler and the notifier follow it; the bus is bound
+once, so `McpServerFactory` and the notifier always share it.
 
 ## Framework-agnostic usage
 
@@ -1609,7 +1621,7 @@ build (the SDK rejects a duplicate extension id).
 | `OpenApi\OperationModifierInterface` | per-operation customization hook, applied after the `tool_names` rename |
 | `OpenApi\Operation` | read-only operation context passed to `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
-| `Resource\ResourceUpdateNotifier` | sends `notifications/resources/updated` to the calling session from inside the request that changed the resource; a session that never subscribed is never notified |
+| `Resource\ResourceUpdateNotifier` | `notify($uri, ?$context)`: publishes `notifications/resources/updated` to the notification bus (stateless listen streams) and to the calling handshake session if subscribed; never unsolicited |
 | `Apps\McpAppsConfigurator` | announces the MCP Apps extension and registers declarative `ui://` app resources (`apps` params) |
 | `Apps\AppDefinition` | one declarative app: `ui://` URI, name, HTML (string or `Closure(): string`) and its `UiResourceContentMeta` |
 

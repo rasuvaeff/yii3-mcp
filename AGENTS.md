@@ -211,12 +211,17 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   running them inside `new Fiber(...)` and asserting the suspend value — that is
   exactly what the transport would flush. Do not "fix" the tester by parsing
   output buffers.
-- **`Resource\ResourceUpdateNotifier` reaches only the CALLING session, by
-  construction.** It checks `SubscriptionManagerInterface::isSubscribed()` first,
-  so an unsolicited `notifications/resources/updated` can never appear on the
-  wire, and it sends through the request's own `ClientGateway`. Notifying other
-  subscribers would need a connection this process does not hold — under FPM
-  nothing outlives the request. `config/di.php` binds the manager so the SDK's
+- **`Resource\ResourceUpdateNotifier` has two delivery paths, one per era,
+  and the SDK joins them nowhere.** The notification bus (SDK 0.8) feeds ONLY
+  stateless `subscriptions/listen` streams; handshake sessions still get an
+  update only through their own `ClientGateway`, i.e. only the CALLING session,
+  after `SubscriptionManagerInterface::isSubscribed()` (so nothing unsolicited
+  reaches the wire). `notify($uri, ?$context)` publishes to the bus whenever
+  one is bound — without a context too (queue worker) — and skips the gateway
+  for a stateless context (its session is a throwaway). The bus is bound in
+  `config/di.php` only when `notifications.bus` is set, and BOTH
+  `McpServerFactory` and the notifier take it as an optional dependency: a
+  memory bus split into two instances would publish where nobody reads. `config/di.php` binds the manager so the SDK's
   subscribe handler and the notifier read the same state; a consumer swapping the
   binding must get both sides, which is why `McpServerFactory` forwards it to
   `Builder::setResourceSubscriptionManager()` instead of letting them diverge.

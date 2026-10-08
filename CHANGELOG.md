@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default `true`; `McpServerFactory(modernEra:)`), so a `tool_call_budget`
   needs a PSR-16 cache in the container. `header_validation` (default `true`)
   rejects stateless requests whose standard headers contradict the body.
+- **BC break:** `Resource\ResourceUpdateNotifier::notify()` is now
+  `notify(string $uri, ?RequestContext $context = null): void`. It publishes to
+  the notification bus — new params `notifications.bus` (`''` | `psr16` |
+  `memory`) and `notifications.subscription_lifetime` — so every stateless
+  `subscriptions/listen` stream whose filter names the URI gets the update,
+  from any process (no request needed); with a handshake-era context it still
+  notifies the calling session if subscribed.
 - **BC break:** `initialize` negotiates the revision (SDK 0.8) instead of always
   answering 2025-11-25; `protocol_version` pins a handshake revision only —
   `2026-07-28` there fails at config load.

@@ -18,6 +18,7 @@ use Mcp\Server\Handler\Request\CompletionCompleteHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
+use Mcp\Server\Subscription\NotificationBusInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -70,6 +71,11 @@ final readonly class McpServerFactory
      *                        false answers its requests with "unsupported protocol version"
      * @param bool $headerValidation reject a stateless-era request whose standard headers
      *                               (Mcp-Method, Mcp-Name, Mcp-Param-*) contradict its body (-32020)
+     * @param NotificationBusInterface|null $notificationBus feeds stateless `subscriptions/listen` streams; pass
+     *                                                      the SAME instance {@see ResourceUpdateNotifier} publishes to;
+     *                                                      null = streams acknowledge and carry nothing
+     * @param float $subscriptionLifetime seconds a listen stream is held open (0 = until the client or runtime
+     *                                    ends it); under PHP-FPM keep it below max_execution_time
      */
     public function __construct(
         private ContainerInterface $container,
@@ -84,6 +90,8 @@ final readonly class McpServerFactory
         private bool $compactToolResults = false,
         private bool $modernEra = true,
         private bool $headerValidation = true,
+        private ?NotificationBusInterface $notificationBus = null,
+        private float $subscriptionLifetime = self::DEFAULT_SUBSCRIPTION_LIFETIME,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -95,6 +103,9 @@ final readonly class McpServerFactory
      * and the SDK's pagination cannot drift apart silently.
      */
     public const int DEFAULT_PAGINATION_LIMIT = 50;
+
+    /** The SDK's own ceiling for a subscriptions/listen stream, in seconds */
+    public const float DEFAULT_SUBSCRIPTION_LIFETIME = 30.0;
 
     /** Result-JSON knob values for the `result_json` param ({@see self::__construct()}) */
     public const string RESULT_JSON_PRETTY = 'pretty';
@@ -130,7 +141,13 @@ final readonly class McpServerFactory
             $builder->withoutModernEra();
         }
 
-        $builder->setHeaderValidator($this->headerValidation);
+        $builder
+            ->setHeaderValidator($this->headerValidation)
+            ->setSubscriptionLifetime($this->subscriptionLifetime);
+
+        if ($this->notificationBus instanceof NotificationBusInterface) {
+            $builder->setNotificationBus($this->notificationBus);
+        }
 
         if ($this->instructions !== '') {
             $builder->setInstructions($this->instructions);

@@ -104,6 +104,12 @@ $server = $factory->create([OrderTools::class]);
 // SharedSecretMiddleware(secret: ..., responseFactory: $psr17) -> McpAction(server: ..., ...)
 ```
 
+Resource updates: `ResourceUpdateNotifier::notify($uri, ?$context)` publishes
+to the notification bus (`notifications.bus`: `psr16` under PHP-FPM, `memory`
+for one process) for stateless listen streams, and notifies the calling
+handshake session if subscribed. Without a bus stateless subscribers get
+nothing.
+
 Testing without HTTP: `Testing\McpTester` (`callTool`, `listTools`, ...);
 a fifth argument picks the revision — `ProtocolVersion::V2026_07_28` drives
 the stateless era (test both eras for anything session- or identity-related);

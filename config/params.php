@@ -69,6 +69,19 @@ return [
         // Mcp-Name, Mcp-Param-*) contradict its body (-32020) — what lets a
         // proxy route and authorize on the headers without parsing the body
         'header_validation' => true,
+        // stateless era: what feeds subscriptions/listen streams (resource
+        // updates from Resource\ResourceUpdateNotifier). '' = no bus: streams
+        // acknowledge and carry nothing. 'psr16' = through the container's
+        // PSR-16 cache — the PHP-FPM choice, where the publishing request and
+        // the listening one are different workers. 'memory' = one process
+        // (stdio, persistent runtimes). An unknown value fails the build.
+        'notifications' => [
+            'bus' => '',
+            // seconds a listen stream is held open (0 = until the client or
+            // the runtime ends it); under PHP-FPM a stream holds a worker for
+            // this long — keep it below max_execution_time
+            'subscription_lifetime' => 30,
+        ],
         // how array/object tool results are encoded into the text content the
         // agent reads: 'pretty' (default, the SDK's own formatting) or
         // 'compact' — no indentation, JSON_UNESCAPED_SLASHES |

@@ -7,6 +7,10 @@ use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
+use Mcp\Server\Subscription\InMemoryNotificationBus;
+use Mcp\Server\Subscription\NotificationBusInterface;
+use Mcp\Server\Subscription\Psr16NotificationBus;
+use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
@@ -48,6 +52,29 @@ $compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETT
         McpServerFactory::RESULT_JSON_COMPACT,
     ));
 
+// Same for the notification bus: an unknown kind would otherwise leave
+// stateless listen streams silently empty.
+$notificationBus = (string) ($params['rasuvaeff/yii3-mcp']['notifications']['bus'] ?? '');
+
+if (!in_array($notificationBus, ['', 'psr16', 'memory'], true)) {
+    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, memory', $notificationBus));
+}
+
+// Bound only when configured: McpServerFactory and ResourceUpdateNotifier take
+// it as an optional dependency, and must share ONE instance — a memory bus the
+// notifier publishes to must be the one listen streams read.
+$notificationBusDefinition = match ($notificationBus) {
+    '' => [],
+    'memory' => [NotificationBusInterface::class => static fn(): NotificationBusInterface => new InMemoryNotificationBus()],
+    'psr16' => [
+        NotificationBusInterface::class => static fn(CacheInterface $cache): NotificationBusInterface => new Psr16NotificationBus(
+            cache: $cache,
+            // per application, short: PSR-16 guarantees 64-character keys
+            prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
+        ),
+    ],
+};
+
 // Session store default is FPM-safe (file-based): the MCP Streamable HTTP
 // session spans several requests, so the SDK's in-memory default would lose
 // it between FPM workers. Rebind to Psr16SessionStore for multi-host setups.
@@ -73,6 +100,7 @@ return [
     // backs resources/subscribe AND is what Resource\ResourceUpdateNotifier
     // reads, so both sides of a subscription agree by construction
     SubscriptionManagerInterface::class => SessionSubscriptionManager::class,
+    ...$notificationBusDefinition,
     McpServerFactory::class => [
         '__construct()' => [
             'name' => $params['rasuvaeff/yii3-mcp']['server_name'],
@@ -83,6 +111,7 @@ return [
             'compactToolResults' => $compactToolResults,
             'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
             'headerValidation' => (bool) ($params['rasuvaeff/yii3-mcp']['header_validation'] ?? true),
+            'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
         ],
     ],
     Server::class => [

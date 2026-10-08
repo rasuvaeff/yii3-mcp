@@ -37,12 +37,10 @@ composer require rasuvaeff/yii3-mcp
   request, checked against the body when `header_validation` (default true).
   Per-session state does nothing there — package guards are era-aware.
   Not found = -32602 (resources: -32002 before 2026-07-28); hidden = missing.
-- `resources/subscribe` is advertised by the SDK whenever any resource exists and
-  subscriptions ARE recorded per session. `Resource\ResourceUpdateNotifier` sends
-  `notifications/resources/updated` to the CALLING session from inside the request
-  that changed the resource (needs the tool's `RequestContext`); an unsubscribed
-  session gets nothing. Other sessions cannot be reached — under FPM no process
-  outlives the request, so out-of-band push stays impossible.
+- Resource updates: `Resource\ResourceUpdateNotifier::notify($uri, ?$context)`
+  publishes to the notification bus (stateless listen streams, any process)
+  and notifies the calling handshake session if subscribed. Other handshake
+  sessions cannot be reached — no process holds their connections.
 - Server-wide params knobs: `instructions` (text served in initialize, '' omits),
   `pagination_limit` (default 50; applied to BOTH the SDK's list handlers and this
   package's filtering ones so they never page differently), `protocol_version`
@@ -476,7 +474,7 @@ public function __construct(private ResourceUpdateNotifier $notifier) {}
 public function cancel(string $orderId, RequestContext $context): string
 {
     $this->orders->cancel($orderId);
-    $this->notifier->notify($context, 'app://orders/' . $orderId);  // true if subscribed
+    $this->notifier->notify('app://orders/' . $orderId, $context);  // void; $context optional
 
     return 'cancelled';
 }
@@ -484,9 +482,13 @@ public function cancel(string $orderId, RequestContext $context): string
 
 - Requires the SDK's request-scoped `RequestContext` (a method parameter; the SDK
   keeps it out of the generated input schema).
-- Checks the subscription first: an unsolicited `notifications/resources/updated`
-  never reaches a client that did not subscribe. Returns whether it was sent.
-- Reaches ONLY the calling session. `SubscriptionManagerInterface` is bound in
+- Publishes to the notification bus when one is bound (params
+  'notifications' => ['bus' => ''|'psr16'|'memory', 'subscription_lifetime' => 30]):
+  every stateless subscriptions/listen stream whose filter names the URI gets
+  it, from any process — no $context needed (queue worker, console).
+- With a handshake-era $context: checks the session subscription first (never
+  unsolicited) and notifies the CALLING session only.
+- Handshake sessions: reaches ONLY the calling session. `SubscriptionManagerInterface` is bound in
   `config/di.php` (default `SessionSubscriptionManager`) and shared with the SDK's
   subscribe/unsubscribe handlers — swap the binding and both sides follow.
 - Sends by suspending the handler Fiber; outside a Fiber `ClientGateway::notify()`

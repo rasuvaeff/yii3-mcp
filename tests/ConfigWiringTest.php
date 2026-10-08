@@ -9,12 +9,16 @@ use LogicException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Schema\JsonRpc\MessageInterface;
+use Mcp\Schema\Notification\ResourceUpdatedNotification;
 use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
+use Mcp\Server\Subscription\InMemoryNotificationBus;
+use Mcp\Server\Subscription\NotificationBusInterface;
+use Mcp\Server\Subscription\Psr16NotificationBus;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
@@ -610,6 +614,74 @@ final class ConfigWiringTest
         }
 
         Assert::string($error)->contains('Unsupported MCP handshake protocol version "2026-07-28"');
+    }
+
+    public function noNotificationBusIsBoundByDefault(): void
+    {
+        Assert::false(array_key_exists(NotificationBusInterface::class, $this->di()));
+    }
+
+    /**
+     * One binding, so McpServerFactory and ResourceUpdateNotifier share the
+     * instance — a memory bus the notifier publishes to must be the one the
+     * listen streams read.
+     */
+    public function memoryBusIsOneSharedInMemoryBus(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'memory';
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[NotificationBusInterface::class];
+
+        Assert::instanceOf($definition(), InMemoryNotificationBus::class);
+    }
+
+    /**
+     * The PHP-FPM choice: publisher and listener are different workers, so
+     * the bus lives in PSR-16; its keys are per application.
+     */
+    public function psr16BusStoresInTheContainersCache(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'psr16';
+        $cache = new FakeCache();
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[NotificationBusInterface::class];
+        $bus = $definition($cache);
+
+        Assert::instanceOf($bus, Psr16NotificationBus::class);
+        $bus->publish(new ResourceUpdatedNotification('app://x'));
+        Assert::true($cache->values !== []);
+
+        foreach (array_keys($cache->values) as $key) {
+            Assert::true(str_starts_with($key, 'mcp.n.'));
+            Assert::true(strlen($key) <= 64);
+        }
+    }
+
+    public function unknownNotificationBusFailsAtConfigLoad(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'redis';
+
+        try {
+            $this->di($params);
+            $error = 'accepted';
+        } catch (\InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        }
+
+        Assert::string($error)->contains('Unsupported notifications.bus "redis"');
+    }
+
+    public function subscriptionLifetimeReachesTheFactory(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] = 5;
+
+        Assert::same($this->di($params)[McpServerFactory::class]['__construct()']['subscriptionLifetime'], 5.0);
     }
 
     public function movedSessionBudgetKeyFailsTheBuild(): void

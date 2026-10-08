@@ -517,11 +517,8 @@ interceptor.
 
 ### Подписки на ресурсы
 
-SDK анонсирует `resources.subscribe`, как только у сервера есть хоть один
-ресурс, и записывает `resources/subscribe` в сессию. Сам по себе
-`notifications/resources/updated` никто не шлёт — но тулза, которая *вызвала*
-изменение, может сделать это в рамках того же запроса через
-`Resource\ResourceUpdateNotifier`:
+Подписчики двух эр протокола достигаются по-разному, и
+`Resource\ResourceUpdateNotifier` покрывает обе одним вызовом:
 
 ```php
 public function __construct(private ResourceUpdateNotifier $notifier) {}
@@ -530,22 +527,36 @@ public function __construct(private ResourceUpdateNotifier $notifier) {}
 public function cancel(string $orderId, RequestContext $context): string
 {
     $this->orders->cancel($orderId);
-    $this->notifier->notify($context, 'app://orders/' . $orderId);
+    $this->notifier->notify('app://orders/' . $orderId, $context);
 
     return 'cancelled';
 }
 ```
 
-`notify()` возвращает, был ли вызывающий подписан; сессии, которая не
-подписывалась, не отправляется ничего — незапрошенное уведомление на провод не
-попадёт. Свой `Mcp\Server\Resource\SubscriptionManagerInterface` подхватят
-обе стороны — и обработчик subscribe, и нотификатор; по умолчанию биндится
-session-backed менеджер SDK.
+| Эра | Подписка | Кого достигает |
+|---|---|---|
+| stateless 2026-07-28 | поток `subscriptions/listen`, который читает notification bus | каждого слушателя, чей фильтр называет URI, из любого процесса с общей шиной — `$context` необязателен, уведомлять может и queue worker, и консольная команда |
+| handshake | `resources/subscribe`, записан в сессии вызывающего | только вызывающую сессию, изнутри запроса, изменившего ресурс — соединений других сессий нет ни у одного процесса |
 
-**Достижима только вызывающая сессия.** Другие сессии, подписанные на тот же
-URI, — нет: для этого нужно соединение, которого у процесса нет. Под PHP-FPM
-ничего не переживает запрос, поэтому внеполосный push по-прежнему невозможен —
-клиентам, которым нужно видеть чужие изменения, остаётся опрос.
+```php
+'rasuvaeff/yii3-mcp' => [
+    'notifications' => [
+        // '' = нет (listen-потоки ничего не несут), 'psr16' = через PSR-16 cache
+        // контейнера (PHP-FPM: публикующий и слушающий — разные воркеры),
+        // 'memory' = один процесс (stdio, постоянный рантайм)
+        'bus' => 'psr16',
+        // сколько секунд держится listen-поток; под PHP-FPM он столько же
+        // держит воркер — держите ниже max_execution_time
+        'subscription_lifetime' => 30,
+    ],
+],
+```
+
+Незапрошенное уведомление на провод не попадёт: путь через сессию сначала
+проверяет подписку, а listen-поток несёт только URI из собственного фильтра.
+Свой `Mcp\Server\Resource\SubscriptionManagerInterface` подхватят и обработчик
+subscribe, и нотификатор; шина привязывается один раз, поэтому
+`McpServerFactory` и нотификатор всегда делят один экземпляр.
 
 ## Framework-agnostic usage
 
@@ -1594,7 +1605,7 @@ public function refresh(): string { /* … */ }
 | `OpenApi\OperationModifierInterface` | hook кастомизации на уровне operation, применяется после `tool_names` rename |
 | `OpenApi\Operation` | read-only контекст operation, передаваемый в `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
-| `Resource\ResourceUpdateNotifier` | шлёт `notifications/resources/updated` вызывающей сессии изнутри запроса, изменившего ресурс; неподписанной сессии не отправляется ничего |
+| `Resource\ResourceUpdateNotifier` | `notify($uri, ?$context)`: публикует `notifications/resources/updated` в notification bus (stateless listen-потоки) и вызывающей handshake-сессии, если она подписана; без незапрошенных уведомлений |
 | `Apps\McpAppsConfigurator` | анонсирует extension MCP Apps и регистрирует декларативные `ui://` app-ресурсы (params `apps`) |
 | `Apps\AppDefinition` | одно декларативное приложение: `ui://` URI, имя, HTML (строка или `Closure(): string`) и его `UiResourceContentMeta` |
 
