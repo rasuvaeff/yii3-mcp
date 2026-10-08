@@ -1615,6 +1615,19 @@ $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // любой raw JSON-RPC method
 ```
 
+Пятый аргумент задаёт ревизию протокола. Handshake-ревизия
+(`ProtocolVersion::V2025_06_18`, …) согласуется через `initialize`;
+`ProtocolVersion::V2026_07_28` говорит на stateless-эре — без `initialize` и
+session id, каждый запрос несёт свой `_meta`-конверт и заголовки
+`Mcp-Method`/`Mcp-Name`/`Mcp-Param-*`, собранные клиентскими классами самого
+SDK (`initialize()` там вызывает `server/discover`). Сервер должен обслуживать
+эту эру (`McpServerFactory(modernEra: true)`):
+
+```php
+$modern = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+$modern->callTool('order.status', ['orderId' => '42']);
+```
+
 JSON-RPC error бросается как `Testing\McpErrorException` с полным конвертом —
 `errorCode`, `errorMessage`, `errorData`, — поэтому тест может проверить код, а
 не только текст (`-32602` для неизвестной или скрытой capability).

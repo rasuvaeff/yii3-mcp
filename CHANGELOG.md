@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `allowed_hosts` no longer adds `ProtocolVersionMiddleware` to the transport
   stack: SDK 0.8 applies it to handshake-era traffic itself, and in the custom
   stack it rejected every modern-era request.
+- `Testing\McpTester` takes an optional protocol revision (fifth argument):
+  a handshake revision is negotiated through `initialize`,
+  `ProtocolVersion::V2026_07_28` speaks the stateless era (per-request `_meta`
+  envelope and standard headers, built by the SDK's client classes).
+- `McpServerFactory` takes `modernEra` (last argument) to serve the stateless
+  2026-07-28 era on the same endpoint.
 - `Testing\McpTester` throws `Testing\McpErrorException` (a
   `RuntimeException`, same message) carrying `errorCode`, `errorMessage` and
   `errorData`.

@@ -110,6 +110,10 @@ $tester->callTool('greet', ['name' => 'Yii']);   // decoded result envelope
 $tester->listTools(); $tester->listResources(); $tester->listResourceTemplates(); $tester->listPrompts();
 // list* methods follow nextCursor and return every page
 $tester->readResource('app://x'); $tester->request('custom/method');
+// 5th arg = protocol revision: null/handshake revision => initialize;
+// ProtocolVersion::V2026_07_28 => stateless era (no initialize/session, _meta +
+// Mcp-Method/Mcp-Name headers per request; initialize() = server/discover);
+// the server needs McpServerFactory(modernEra: true).
 // JSON-RPC error => Testing\McpErrorException (a RuntimeException):
 //   ->errorCode (int), ->errorMessage, ->errorData
 

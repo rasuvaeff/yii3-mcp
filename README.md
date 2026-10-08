@@ -1630,6 +1630,19 @@ $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // any raw JSON-RPC method
 ```
 
+Pass a revision as the fifth argument to test a specific protocol era. A
+handshake revision (`ProtocolVersion::V2025_06_18`, …) is negotiated through
+`initialize`; `ProtocolVersion::V2026_07_28` speaks the stateless era — no
+`initialize`, no session id, every request carries its own `_meta` envelope
+and the `Mcp-Method`/`Mcp-Name`/`Mcp-Param-*` headers, built by the SDK's own
+client classes (`initialize()` asks `server/discover` there). The server must
+serve that era (`McpServerFactory(modernEra: true)`):
+
+```php
+$modern = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+$modern->callTool('order.status', ['orderId' => '42']);
+```
+
 A JSON-RPC error is thrown as `Testing\McpErrorException` with the whole
 envelope — `errorCode`, `errorMessage`, `errorData` — so a test can assert the
 code, not only the text (`-32602` for an unknown or hidden capability).

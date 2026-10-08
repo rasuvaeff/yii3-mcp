@@ -65,6 +65,8 @@ final readonly class McpServerFactory
      *                                 instead of the SDK's pretty-printed one (~3x fewer bytes in
      *                                 the text an agent reads); `structuredContent` keeps being
      *                                 produced for array results
+     * @param bool $modernEra also serve the stateless 2026-07-28 era on the same endpoint;
+     *                        false answers its requests with "unsupported protocol version"
      */
     public function __construct(
         private ContainerInterface $container,
@@ -77,6 +79,7 @@ final readonly class McpServerFactory
         private ?ProtocolVersion $protocolVersion = null,
         private ?SubscriptionManagerInterface $subscriptionManager = null,
         private bool $compactToolResults = false,
+        private bool $modernEra = false,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -117,8 +120,11 @@ final readonly class McpServerFactory
             ->setServerInfo(name: $this->name, version: $this->version)
             ->setContainer($this->container)
             ->setSession(sessionStore: $this->sessionStore)
-            ->setPaginationLimit($this->paginationLimit)
-            ->withoutModernEra();
+            ->setPaginationLimit($this->paginationLimit);
+
+        if (!$this->modernEra) {
+            $builder->withoutModernEra();
+        }
 
         if ($this->instructions !== '') {
             $builder->setInstructions($this->instructions);

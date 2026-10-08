@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Visibility;
 
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
@@ -47,8 +48,9 @@ final class HiddenIsMissingTest
         array $missingParams,
         string $hiddenName,
         string $missingName,
+        ?ProtocolVersion $protocolVersion,
     ): void {
-        $tester = $this->tester();
+        $tester = $this->tester($protocolVersion);
 
         $hidden = $this->error($tester, $method, $hiddenParams);
         $missing = $this->error($tester, $method, $missingParams);
@@ -56,7 +58,23 @@ final class HiddenIsMissingTest
         Assert::same(str_replace($hiddenName, $missingName, $hidden), $missing);
     }
 
+    /**
+     * Every case on the handshake era and on the stateless 2026-07-28 era,
+     * where visibility sees a fresh per-request session.
+     */
     public static function capabilityProvider(): iterable
+    {
+        foreach (['handshake' => null, '2026-07-28' => ProtocolVersion::V2026_07_28] as $era => $version) {
+            foreach (self::cases() as $name => $case) {
+                yield $era . ' ' . $name => [...$case, $version];
+            }
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, array<string, mixed>, array<string, mixed>, string, string}>
+     */
+    private static function cases(): iterable
     {
         yield 'tools/call' => [
             'tools/call',
@@ -124,7 +142,7 @@ final class HiddenIsMissingTest
         return 'answered';
     }
 
-    private function tester(): McpTester
+    private function tester(?ProtocolVersion $protocolVersion): McpTester
     {
         $factory = new Psr17Factory();
         $server = (new McpServerFactory(
@@ -135,6 +153,7 @@ final class HiddenIsMissingTest
             sessionStore: new InMemorySessionStore(),
             name: 'hidden-is-missing-suite',
             version: '1.0.0',
+            modernEra: true,
         ))->create(
             toolClasses: [GreetingTool::class, CompletionTool::class],
             toolVisibility: new DenyListVisibility(hidden: ['greet']),
@@ -145,6 +164,6 @@ final class HiddenIsMissingTest
             ),
         );
 
-        return new McpTester($server, $factory, $factory, $factory);
+        return new McpTester($server, $factory, $factory, $factory, $protocolVersion);
     }
 }

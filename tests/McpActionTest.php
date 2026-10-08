@@ -112,6 +112,46 @@ final class McpActionTest
         Assert::same($action->handle($request)->getStatusCode(), 200);
     }
 
+    /**
+     * The widened stack must not carry the SDK's ProtocolVersionMiddleware:
+     * it runs before the era is classified and refuses every 2026-07-28
+     * request — with allowed_hosts set, modern clients got 400 while the same
+     * server without allowed_hosts served them.
+     */
+    public function allowedHostsKeepServingTheModernEra(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+            modernEra: true,
+        ))->create([]);
+        $action = new McpAction(
+            server: $server,
+            responseFactory: $factory,
+            streamFactory: $factory,
+            allowedHosts: ['app.example.com'],
+        );
+
+        $request = $this->request([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'server/discover',
+            'params' => ['_meta' => [
+                'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                'io.modelcontextprotocol/clientCapabilities' => new \stdClass(),
+            ]],
+        ])
+            ->withHeader('MCP-Protocol-Version', '2026-07-28')
+            ->withHeader('Mcp-Method', 'server/discover')
+            ->withUri(new \Nyholm\Psr7\Uri('https://app.example.com/mcp'), preserveHost: false);
+
+        $response = $action->handle($request);
+
+        Assert::same($response->getStatusCode(), 200);
+        Assert::true(isset($this->decode($response)['result']['supportedVersions']));
+    }
+
     public function localHostsStayAllowedWhenCustomHostsAreSet(): void
     {
         foreach (['localhost', '127.0.0.1', '[::1]'] as $localHost) {
