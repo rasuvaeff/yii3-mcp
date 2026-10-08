@@ -9,6 +9,7 @@ use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\Testing\McpErrorException;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
@@ -21,6 +22,7 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 
 #[Test]
 #[Covers(McpTester::class)]
+#[Covers(McpErrorException::class)]
 final class McpTesterTest
 {
     public function initializeReturnsServerInfo(): void
@@ -119,6 +121,22 @@ final class McpTesterTest
         Assert::notNull($caught);
         Assert::string($caught->getMessage())->contains('MCP error:');
         Assert::false(str_contains($caught->getMessage(), 'unknown error'));
+    }
+
+    public function jsonRpcErrorCarriesTheWholeEnvelope(): void
+    {
+        $tester = $this->tester();
+
+        try {
+            $tester->callTool('no-such-tool');
+            $caught = null;
+        } catch (McpErrorException $caught) {
+        }
+
+        Assert::instanceOf($caught, McpErrorException::class);
+        Assert::same($caught->errorCode, -32602);
+        Assert::same($caught->errorMessage, 'Tool not found: "no-such-tool".');
+        Assert::same($caught->getMessage(), 'MCP error: Tool not found: "no-such-tool".');
     }
 
     private function tester(bool $withDisabledTool = false, bool $withManyCapabilities = false, ?int $paginationLimit = null): McpTester

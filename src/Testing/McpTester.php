@@ -229,10 +229,14 @@ final class McpTester
         $decoded = json_decode($raw, associative: true, flags: JSON_THROW_ON_ERROR);
 
         if (isset($decoded['error']) && is_array($decoded['error'])) {
-            throw new RuntimeException(sprintf(
-                'MCP error: %s',
-                $this->stringOr($decoded['error']['message'] ?? null, 'unknown error'),
-            ));
+            /** @var mixed $code */
+            $code = $decoded['error']['code'] ?? null;
+
+            throw new McpErrorException(
+                errorCode: is_int($code) ? $code : 0,
+                errorMessage: $this->stringOr($decoded['error']['message'] ?? null, 'unknown error'),
+                errorData: $decoded['error']['data'] ?? null,
+            );
         }
 
         return $this->arrayOrEmpty($decoded['result'] ?? null);

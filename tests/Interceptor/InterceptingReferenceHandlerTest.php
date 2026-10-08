@@ -119,7 +119,7 @@ final class InterceptingReferenceHandlerTest
         Assert::notNull($context);
         Assert::same($context->toolName, 'greet');
         Assert::same($context->arguments, ['name' => 'Yii']);
-        Assert::same($context->getClientInfo()['name'] ?? null, 'mcp-tester');
+        Assert::same($context->clientInfo()?->name, 'mcp-tester');
     }
 
     public function armedClientIdentityReachesTheContextAndSession(): void
@@ -246,10 +246,8 @@ final class InterceptingReferenceHandlerTest
     {
         $tester = $this->tester([], new DenyListVisibility(hidden: ['greet']));
 
-        $result = $tester->callTool('greet', ['name' => 'Yii']);
-
-        Assert::true($result['isError']);
-        Assert::string($result['content'][0]['text'])->contains('"greet" is not available in this session');
+        // answered exactly like a missing tool (-32602, the SDK's own message)
+        Assert::same($this->callError($tester, 'greet'), 'MCP error: Tool not found: "greet".');
     }
 
     public function visibleToolPassesTheVisibilityCheck(): void
@@ -283,10 +281,19 @@ final class InterceptingReferenceHandlerTest
         $recording = new RecordingInterceptor();
         $tester = $this->tester([$recording], new DenyListVisibility(hidden: ['greet']));
 
-        $result = $tester->callTool('greet', ['name' => 'Yii']);
-
-        Assert::true($result['isError']);
+        Assert::same($this->callError($tester, 'greet'), 'MCP error: Tool not found: "greet".');
         Assert::same($recording->entries, []);
+    }
+
+    private function callError(McpTester $tester, string $tool): string
+    {
+        try {
+            $tester->callTool($tool, ['name' => 'Yii']);
+        } catch (\RuntimeException $e) {
+            return $e->getMessage();
+        }
+
+        return 'no error';
     }
 
     /**

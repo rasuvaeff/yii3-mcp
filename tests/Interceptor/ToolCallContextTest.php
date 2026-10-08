@@ -19,14 +19,15 @@ final class ToolCallContextTest
         $session = new FakeSession(['client_info' => ['name' => 'claude', 'version' => '2.0']]);
         $context = new ToolCallContext(toolName: 'x', arguments: [], session: $session);
 
-        Assert::same($context->getClientInfo(), ['name' => 'claude', 'version' => '2.0']);
+        Assert::same($context->clientInfo()?->name, 'claude');
+        Assert::same($context->clientInfo()?->version, '2.0');
     }
 
     public function clientInfoIsEmptyWithoutASession(): void
     {
         $context = new ToolCallContext(toolName: 'x', arguments: []);
 
-        Assert::same($context->getClientInfo(), []);
+        Assert::null($context->clientInfo());
     }
 
     public function clientInfoIsEmptyWhenSessionValueIsNotAnArray(): void
@@ -34,6 +35,6 @@ final class ToolCallContextTest
         $session = new FakeSession(['client_info' => 'corrupted']);
         $context = new ToolCallContext(toolName: 'x', arguments: [], session: $session);
 
-        Assert::same($context->getClientInfo(), []);
+        Assert::null($context->clientInfo());
     }
 }

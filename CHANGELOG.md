@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **BC break:** requires `mcp/sdk` `~0.8.1` (MCP revision `2026-07-28`
+  support lands in later steps of this release; the modern era is not served
+  yet). The 3.x line stays on `mcp/sdk` `~0.7.0`.
+- **BC break:** `ToolCallContext`, `PromptGetContext` and `ResourceReadContext`
+  replace `getClientInfo(): array` with `clientInfo(): ?Mcp\Schema\Implementation`,
+  which reads the client from `initialize` (handshake era) or from the
+  request's `_meta` (modern era) — on the modern era the old method would have
+  returned `[]` silently.
+- **BC break:** calling a tool hidden by `ToolVisibilityInterface` answers the
+  same JSON-RPC error as a missing tool (`-32602`, `Tool not found: "…"`),
+  checked before argument validation, instead of a tool-error result
+  (`not available in this session`); an invalid call no longer reveals the
+  hidden tool's schema.
+- **BC break:** a hidden prompt or resource ref in `completion/complete`
+  answers `-32602` like a missing one (it answered `-32002`, which SDK 0.8 no
+  longer uses for a missing ref — the code told hidden from missing).
+- `result_json: compact` takes `structuredContent` from the SDK's own
+  extraction for the request's protocol revision: a list result is no longer
+  sent as `structuredContent` to pre-2026-07-28 clients (strict clients
+  rejected the whole call), and an `InputRequiredResult` passes through.
+- `allowed_hosts` no longer adds `ProtocolVersionMiddleware` to the transport
+  stack: SDK 0.8 applies it to handshake-era traffic itself, and in the custom
+  stack it rejected every modern-era request.
+- `Testing\McpTester` throws `Testing\McpErrorException` (a
+  `RuntimeException`, same message) carrying `errorCode`, `errorMessage` and
+  `errorData`.
+
 ## 3.1.1 — 2026-10-07
 
 - `executor: psr15` fills the nested request's query params from its URL

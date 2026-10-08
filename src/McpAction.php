@@ -8,7 +8,6 @@ use Mcp\Server;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Transport\Http\Middleware\CorsMiddleware;
 use Mcp\Server\Transport\Http\Middleware\DnsRebindingProtectionMiddleware;
-use Mcp\Server\Transport\Http\Middleware\ProtocolVersionMiddleware;
 use Mcp\Server\Transport\StreamableHttpTransport;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -254,7 +253,10 @@ final readonly class McpAction implements RequestHandlerInterface
 
     /**
      * The SDK default stack with the host allow-list widened — same
-     * protections (CORS, DNS rebinding, protocol version), never fewer.
+     * protections (CORS, DNS rebinding), never fewer. The protocol-version
+     * check is NOT part of it: the transport applies it on its own to
+     * handshake-era traffic only, and placed here it would reject every
+     * modern-era (2026-07-28) request before the era is classified.
      *
      * @return list<\Psr\Http\Server\MiddlewareInterface>
      */
@@ -267,7 +269,6 @@ final readonly class McpAction implements RequestHandlerInterface
                 responseFactory: $this->responseFactory,
                 streamFactory: $this->streamFactory,
             ),
-            new ProtocolVersionMiddleware(),
         ];
     }
 }

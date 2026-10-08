@@ -257,10 +257,16 @@ final class McpServerFactoryTest
     {
         $server = $this->factory()->create([GreetingTool::class], [], [], new DenyListVisibility(hidden: ['greet']));
 
-        $result = $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+        $tester = $this->tester($server);
 
-        Assert::true($result['isError']);
-        Assert::string($result['content'][0]['text'])->contains('not available in this session');
+        try {
+            $tester->callTool('greet', ['name' => 'Yii']);
+            $error = 'no error';
+        } catch (\RuntimeException $e) {
+            $error = $e->getMessage();
+        }
+
+        Assert::same($error, 'MCP error: Tool not found: "greet".');
     }
 
     public function visibilityAndInterceptorsComposeInOneDecorator(): void

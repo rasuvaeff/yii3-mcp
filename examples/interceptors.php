@@ -60,7 +60,7 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     #[\Override]
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
-        $client = $context->getClientInfo()['name'] ?? 'unknown';
+        $client = $context->clientInfo()?->name ?? 'unknown';
         echo "trace: {$client} calls {$context->toolName}(" . json_encode($this->masker->mask($context->arguments)) . ")\n";
 
         $result = $next();

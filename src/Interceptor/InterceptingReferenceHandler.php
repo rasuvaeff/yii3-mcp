@@ -13,7 +13,11 @@ use Mcp\Capability\Registry\ToolReference;
 use Mcp\Exception\PromptNotFoundException;
 use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Result\InputRequiredResult;
+use Mcp\Server\RequestContext;
 use Mcp\Server\Session\SessionInterface;
 use Rasuvaeff\Yii3Mcp\CompactToolResultFormatter;
 use Rasuvaeff\Yii3Mcp\Exception\SessionOwnershipException;
@@ -144,8 +148,8 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         // formatter and structured-content extraction for a ready
         // CallToolResult. A handler that already returned one keeps it
         // untouched, exactly as the SDK would.
-        if ($this->compactToolResults && !$result instanceof CallToolResult) {
-            return CompactToolResultFormatter::format($result);
+        if ($this->compactToolResults && !$result instanceof CallToolResult && !$result instanceof InputRequiredResult) {
+            return CompactToolResultFormatter::format($result, $reference, $this->protocolVersion($arguments, $session));
         }
 
         return $result;
@@ -231,6 +235,23 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         $session = $arguments['_session'] ?? null;
 
         return $session instanceof SessionInterface ? $session : null;
+    }
+
+    /**
+     * The revision the SDK's CallToolHandler would format this result for;
+     * without a session or request (a direct call) — the newest handshake
+     * revision, the SDK's own fallback.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function protocolVersion(array $arguments, ?SessionInterface $session): ProtocolVersion
+    {
+        /** @var mixed $request */
+        $request = $arguments['_request'] ?? null;
+
+        return $session instanceof SessionInterface && $request instanceof Request
+            ? (new RequestContext($session, $request))->getProtocolVersion()
+            : ProtocolVersion::latestHandshake();
     }
 
     /**

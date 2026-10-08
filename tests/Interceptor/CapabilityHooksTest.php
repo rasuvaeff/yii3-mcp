@@ -78,7 +78,7 @@ final class CapabilityHooksTest
         Assert::notNull($context);
         Assert::same($context->promptName, 'greeting-style');
         Assert::same($context->arguments, []);
-        Assert::same($context->getClientInfo()['name'] ?? null, 'mcp-tester');
+        Assert::same($context->clientInfo()?->name, 'mcp-tester');
         Assert::notNull($context->session);
     }
 
@@ -145,7 +145,7 @@ final class CapabilityHooksTest
         Assert::same($context->uri, 'app://users/42');
         Assert::same($context->variables, ['id' => '42']);
         Assert::same($context->uriTemplate, 'app://users/{id}');
-        Assert::same($context->getClientInfo()['name'] ?? null, 'mcp-tester');
+        Assert::same($context->clientInfo()?->name, 'mcp-tester');
     }
 
     public function resourceInterceptorsRunInConfiguredOrderFirstOutermost(): void

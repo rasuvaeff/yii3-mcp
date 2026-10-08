@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
+use Mcp\Capability\Registry\ToolReference;
 use Mcp\Schema\Content\TextContent;
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Tool;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Yii3Mcp\CompactToolResultFormatter;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -19,7 +24,7 @@ final class CompactToolResultFormatterTest
 {
     public function arrayResultBecomesSingleCompactTextWithStructuredContent(): void
     {
-        $result = CompactToolResultFormatter::format(['items' => ['hammer', 'nails'], 'total' => 2]);
+        $result = $this->format(['items' => ['hammer', 'nails'], 'total' => 2]);
 
         Assert::same($this->texts($result->content), ['{"items":["hammer","nails"],"total":2}']);
         Assert::same($result->structuredContent, ['items' => ['hammer', 'nails'], 'total' => 2]);
@@ -28,22 +33,28 @@ final class CompactToolResultFormatterTest
 
     public function unicodeAndSlashesAreNotEscaped(): void
     {
-        $result = CompactToolResultFormatter::format(['город' => 'Санкт-Петербург/Москва']);
+        $result = $this->format(['город' => 'Санкт-Петербург/Москва']);
 
         Assert::same($result->content[0]->text, '{"город":"Санкт-Петербург/Москва"}');
     }
 
+    /**
+     * `[]` is a PHP list: no structuredContent before 2026-07-28 (only a JSON
+     * object is valid there), an empty list from 2026-07-28 on.
+     */
     public function emptyArrayResultKeepsTheSdkShape(): void
     {
-        $result = CompactToolResultFormatter::format([]);
+        $handshake = $this->format([]);
+        $modern = $this->format([], ProtocolVersion::V2026_07_28);
 
-        Assert::same($this->texts($result->content), ['[]']);
-        Assert::same($result->structuredContent, []);
+        Assert::same($this->texts($handshake->content), ['[]']);
+        Assert::null($handshake->structuredContent);
+        Assert::same($modern->structuredContent, []);
     }
 
     public function nullResultKeepsTheSdkSentinel(): void
     {
-        $result = CompactToolResultFormatter::format(null);
+        $result = $this->format(null);
 
         Assert::same($this->texts($result->content), ['(null)']);
         Assert::null($result->structuredContent);
@@ -51,23 +62,23 @@ final class CompactToolResultFormatterTest
 
     public function boolResultsKeepTheSdkSentinels(): void
     {
-        Assert::same($this->texts(CompactToolResultFormatter::format(toolExecutionResult: true)->content), ['true']);
-        Assert::same($this->texts(CompactToolResultFormatter::format(toolExecutionResult: false)->content), ['false']);
+        Assert::same($this->texts($this->format(result: true)->content), ['true']);
+        Assert::same($this->texts($this->format(result: false)->content), ['false']);
     }
 
     public function scalarResultsPassThroughAsStringContent(): void
     {
-        Assert::same($this->texts(CompactToolResultFormatter::format(42)->content), ['42']);
-        Assert::same($this->texts(CompactToolResultFormatter::format(1.5)->content), ['1.5']);
-        Assert::same($this->texts(CompactToolResultFormatter::format('plain')->content), ['plain']);
-        Assert::null(CompactToolResultFormatter::format('plain')->structuredContent);
+        Assert::same($this->texts($this->format(42)->content), ['42']);
+        Assert::same($this->texts($this->format(1.5)->content), ['1.5']);
+        Assert::same($this->texts($this->format('plain')->content), ['plain']);
+        Assert::null($this->format('plain')->structuredContent);
     }
 
     public function contentInstanceIsWrappedWithoutStructuredContent(): void
     {
         $content = new TextContent('already formatted');
 
-        $result = CompactToolResultFormatter::format($content);
+        $result = $this->format($content);
 
         Assert::same($result->content, [$content]);
         Assert::null($result->structuredContent);
@@ -78,7 +89,7 @@ final class CompactToolResultFormatterTest
         $first = new TextContent('one');
         $second = new TextContent('two');
 
-        $result = CompactToolResultFormatter::format([$first, $second]);
+        $result = $this->format([$first, $second]);
 
         Assert::same($result->content, [$first, $second]);
     }
@@ -87,11 +98,87 @@ final class CompactToolResultFormatterTest
     {
         $content = new TextContent('kept');
 
-        $result = CompactToolResultFormatter::format([$content, 2, ['k' => 'v']]);
+        $result = $this->format([$content, 2, ['k' => 'v']]);
 
         Assert::same($this->texts($result->content), ['kept', '2', '{"k":"v"}']);
         // the Content instance itself is passed through untouched, not re-created
         Assert::same($result->content[0], $content);
+    }
+
+    /**
+     * structuredContent is the SDK's own extraction for the given revision —
+     * the formatter only adds the compact text.
+     *
+     * @param array<string, mixed>|null $outputSchema
+     */
+    private function format(
+        mixed $result,
+        ProtocolVersion $version = ProtocolVersion::V2025_11_25,
+        ?array $outputSchema = null,
+    ): CallToolResult {
+        return CompactToolResultFormatter::format($result, $this->reference($outputSchema), $version);
+    }
+
+    /**
+     * @param array<string, mixed>|null $outputSchema
+     */
+    private function reference(?array $outputSchema = null): ToolReference
+    {
+        return new ToolReference(
+            new Tool(
+                name: 'probe',
+                title: null,
+                inputSchema: ['type' => 'object', 'properties' => new \stdClass()],
+                description: null,
+                annotations: null,
+                outputSchema: $outputSchema,
+            ),
+            static fn(): null => null,
+        );
+    }
+
+    /**
+     * Before 2026-07-28 structuredContent must be a JSON object, so a list
+     * result carries no structuredContent (strict clients reject the whole
+     * call otherwise); from 2026-07-28 on (SEP-2106) the list is sent.
+     */
+    public function listResultIsStructuredOnlyFromTheModernRevision(): void
+    {
+        $handshake = $this->format(['a', 'b'], ProtocolVersion::V2025_11_25);
+        $modern = $this->format(['a', 'b'], ProtocolVersion::V2026_07_28);
+
+        Assert::same($this->texts($handshake->content), ['["a","b"]']);
+        Assert::null($handshake->structuredContent);
+        Assert::same($this->texts($modern->content), ['["a","b"]']);
+        Assert::same($modern->structuredContent, ['a', 'b']);
+    }
+
+    /**
+     * The formatter must agree with the SDK's pretty path on structuredContent
+     * for every revision — a difference here is drift the next SDK bump would
+     * hide (the 0.7 formatter mirrored rules the 0.8 SDK changed).
+     */
+    #[DataProvider('structuredContentAgreesWithTheSdkProvider')]
+    public function structuredContentAgreesWithTheSdk(mixed $result, ProtocolVersion $version, ?array $outputSchema): void
+    {
+        $reference = $this->reference($outputSchema);
+
+        Assert::same(
+            CompactToolResultFormatter::format($result, $reference, $version)->structuredContent,
+            $reference->extractStructuredContent($result, $version),
+        );
+    }
+
+    public static function structuredContentAgreesWithTheSdkProvider(): iterable
+    {
+        foreach (ProtocolVersion::cases() as $version) {
+            yield $version->value . ' object' => [['k' => 'v'], $version, null];
+            yield $version->value . ' list' => [[1, 2], $version, null];
+            yield $version->value . ' empty' => [[], $version, null];
+            yield $version->value . ' scalar with schema' => [42, $version, ['type' => 'integer']];
+            yield $version->value . ' scalar without schema' => ['plain', $version, null];
+            yield $version->value . ' content inside' => [[new TextContent('x'), 1], $version, null];
+        }
     }
 
     /**
@@ -109,7 +196,7 @@ final class CompactToolResultFormatterTest
 
     public function objectResultBecomesCompactJsonWithRoundTripStructuredContent(): void
     {
-        $result = CompactToolResultFormatter::format((object) ['a' => 1, 'nested' => (object) ['b' => true]]);
+        $result = $this->format((object) ['a' => 1, 'nested' => (object) ['b' => true]]);
 
         Assert::same($result->content[0]->text, '{"a":1,"nested":{"b":true}}');
         Assert::same($result->structuredContent, ['a' => 1, 'nested' => ['b' => true]]);
@@ -124,13 +211,13 @@ final class CompactToolResultFormatterTest
      */
     public function structuredContentRoundTripStopsAtTheSdksDepthBudget(): void
     {
-        $within = CompactToolResultFormatter::format($this->nestedObject(511));
+        $within = $this->format($this->nestedObject(511));
 
         Assert::same($within->structuredContent, $this->nestedArray(511));
 
         Expect::exception(\JsonException::class);
 
-        CompactToolResultFormatter::format($this->nestedObject(512));
+        $this->format($this->nestedObject(512));
     }
 
     /**
@@ -178,11 +265,15 @@ final class CompactToolResultFormatterTest
      * the SDK's pretty-printed path alike, and JSON itself draws no int /
      * float distinction. The property must assert the encoding, not PHP's
      * decode-side typing.
+     *
+     * Stated under 2026-07-28, the revision where every array result is
+     * structured content; before it a list result carries none (see
+     * listResultIsStructuredOnlyFromTheModernRevision).
      */
     #[Property(runs: 200)]
     public function compactTextIsTheEncodingOfTheStructuredContent(array $result): void
     {
-        $formatted = CompactToolResultFormatter::format($result);
+        $formatted = $this->format($result, ProtocolVersion::V2026_07_28);
 
         /** @var string $text */
         $text = $formatted->content[0]->text;

@@ -19,14 +19,15 @@ final class ResourceReadContextTest
         $session = new FakeSession(['client_info' => ['name' => 'claude', 'version' => '2.0']]);
         $context = new ResourceReadContext(uri: 'app://x', session: $session);
 
-        Assert::same($context->getClientInfo(), ['name' => 'claude', 'version' => '2.0']);
+        Assert::same($context->clientInfo()?->name, 'claude');
+        Assert::same($context->clientInfo()?->version, '2.0');
     }
 
     public function clientInfoIsEmptyWithoutASession(): void
     {
         $context = new ResourceReadContext(uri: 'app://x');
 
-        Assert::same($context->getClientInfo(), []);
+        Assert::null($context->clientInfo());
         Assert::same($context->variables, []);
         Assert::null($context->uriTemplate);
     }
@@ -36,6 +37,6 @@ final class ResourceReadContextTest
         $session = new FakeSession(['client_info' => 'corrupted']);
         $context = new ResourceReadContext(uri: 'app://x', session: $session);
 
-        Assert::same($context->getClientInfo(), []);
+        Assert::null($context->clientInfo());
     }
 }

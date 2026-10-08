@@ -110,7 +110,8 @@ $tester->callTool('greet', ['name' => 'Yii']);   // decoded result envelope
 $tester->listTools(); $tester->listResources(); $tester->listResourceTemplates(); $tester->listPrompts();
 // list* methods follow nextCursor and return every page
 $tester->readResource('app://x'); $tester->request('custom/method');
-// JSON-RPC error => RuntimeException
+// JSON-RPC error => Testing\McpErrorException (a RuntimeException):
+//   ->errorCode (int), ->errorMessage, ->errorData
 
 // Schema contract canary (drift in served schemas fails the build):
 use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
@@ -569,7 +570,7 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName; $context->arguments (array<string, mixed>);
-        // $context->session (?SessionInterface); $context->getClientInfo();
+        // $context->session (?SessionInterface); $context->clientInfo(); // ?Mcp\Schema\Implementation
         // $context->clientId (?string — identity resolved from the endpoint
         // secret; null on stdio)
         return $next();   // don't call it to short-circuit
@@ -671,7 +672,8 @@ final readonly class MyVisibility implements ToolVisibilityInterface
 // params: 'tool_visibility' => MyVisibility::class  ('' = off, DI-resolved)
 // 'tool_visibility' and 'visibility' are mutually exclusive => LogicException at build.
 // Applies to tools/list (invisible tools omitted) AND tools/call (fail-closed:
-// calling a hidden tool => tool error "not available in this session";
+// calling a hidden tool => the same JSON-RPC error as a missing tool:
+// -32602 'Tool not found: "x".', before argument validation;
 // the call never reaches interceptors or the tool).
 // ConditionalToolInterface = build-time global; this = per-session.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors, $visibility).
@@ -687,7 +689,7 @@ final readonly class MyVisibility implements ToolVisibilityInterface
 
 ```php
 // Same seams for the other capabilities — SEPARATE interfaces and params:
-use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->getClientInfo()
+use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->clientInfo()
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadContext;     // ->uri, ->variables (RFC 6570), ->uriTemplate (null = static), ->session, ->clientId
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;

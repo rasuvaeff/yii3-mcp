@@ -21,18 +21,19 @@ ClientIdentityContext is @internal}`,
 `GuardedRegistry is @internal`,
 `ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `ReservedToolNamesAwareInterface`,
-`Testing\McpTester`, `Testing\SchemaSnapshot`,
+`Testing\McpTester`, `Testing\McpErrorException`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 PromptGetInterceptorInterface, PromptGetContext,
 ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
 SessionBudgetInterceptor, ResponseSizeLimitInterceptor,
 CachingToolCallInterceptor, InterceptingReferenceHandler, ArgumentMasker,
-ToolCallLimiterInterface, RateLimitInterceptor}`,
+ToolCallLimiterInterface, RateLimitInterceptor; ClientInfoResolver is
+@internal}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
 PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
 FilteredListResourcesHandler, FilteredListResourceTemplatesHandler,
-FilteredCompletionCompleteHandler are @internal}`,
+FilteredCallToolHandler, FilteredCompletionCompleteHandler are @internal}`,
 `OpenApi\{SpecIndex, ToolNameValidator, JsonPointerResolver,
 OutputSchemaProjector, OperationContractValidator are @internal;
 OpenApiBridgeFactory, OpenApiServerConfigurator,
@@ -91,9 +92,16 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   load-bearing: interceptors (RBAC/audit), the cache and the size limit must
   keep seeing the RAW handler result they were written against.
   `CompactToolResultFormatter` (@internal) must stay a branch-for-branch mirror
-  of the SDK's `ToolResultFormatter::format()` + structured-content extraction
-  (Content pass-through, mixed-array per-item formatting, scalar/null/bool
-  sentinels, `JSON_INVALID_UTF8_SUBSTITUTE`); re-diff it on every SDK pin bump.
+  of the SDK's `ToolResultFormatter::format()` TEXT branches (Content
+  pass-through, mixed-array per-item formatting, scalar/null/bool sentinels,
+  `JSON_INVALID_UTF8_SUBSTITUTE`); re-diff it on every SDK pin bump.
+  `structuredContent` is NOT mirrored but delegated to
+  `ToolReference::extractStructuredContent($result, $protocolVersion)`: since
+  SDK 0.8 the rule depends on the revision (a list is structured content only
+  from 2026-07-28 on; before it strict clients reject the whole call). The 0.7
+  copy of those rules drifted the moment 0.8 changed them —
+  `structuredContentAgreesWithTheSdk` compares the two per revision. A ready
+  `InputRequiredResult` (multi round-trip ask) passes through unformatted.
   Its property test compares the text with `json_encode(structuredContent)` at
   the ENCODING level on purpose: PHP decodes JSON numbers without a decimal
   point as ints, so `0.0` does not survive `json_decode(json_encode(0.0))` as a
@@ -221,9 +229,16 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   existence (hidden answered, missing errored). The decorator wraps the SDK
   handler rather than reimplementing provider resolution, and phrases its
   refusal with the SDK's own `PromptNotFoundException` /
-  `ResourceNotFoundException` message so a hidden ref stays byte-identical to
-  a missing one. A ref that does not resolve at all is passed through to the
-  inner handler — never phrase "unknown capability" in two places. If the SDK
+  `ResourceNotFoundException` message AND the SDK's code (`-32602` since 0.8;
+  answering the old `-32002` kept the text identical and still made the code
+  an existence oracle) so a hidden ref stays byte-identical to a missing one.
+  `tools/call` has the same problem one step earlier:
+  `Visibility\FilteredCallToolHandler` answers a hidden tool before the SDK
+  validates arguments against its schema (an invalid call would otherwise
+  reveal it) — the reference-handler check stays as defence in depth.
+  `tests/Visibility/HiddenIsMissingTest` compares whole error envelopes for
+  every capability method; keep new methods in it. A ref that does not
+  resolve at all is passed through to the inner handler — never phrase "unknown capability" in two places. If the SDK
   ever routes completion through the reference handler, drop the decorator
   instead of stacking two checks.
 - **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
@@ -398,7 +413,8 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   regression guard. CSP domains themselves are passed through verbatim — the
   host enforces the policy and `definitions` is application-owned config, not
   client input.
-- **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
+- **`mcp/sdk` is pinned `~0.8.1` (tilde, not caret); the 3.x line stays on
+  `~0.7.0` (branch `3.x`).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect
   API drift. After SDK 1.0 → `^1.0` and a major of this package. The 0.6.0 →

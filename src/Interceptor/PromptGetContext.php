@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
+use Mcp\Schema\Implementation;
 use Mcp\Server\Session\SessionInterface;
 
 /**
@@ -29,16 +30,12 @@ final readonly class PromptGetContext
     ) {}
 
     /**
-     * Client identity from the initialize handshake (name, version, …);
-     * empty before initialize or without a session.
-     *
-     * @return array<array-key, mixed>
+     * How the client named itself — from `initialize` in the handshake era,
+     * from the request's `_meta` in the modern (2026-07-28) era; null when
+     * it did not, or without a session.
      */
-    public function getClientInfo(): array
+    public function clientInfo(): ?Implementation
     {
-        /** @var mixed $info */
-        $info = $this->session?->get('client_info');
-
-        return is_array($info) ? $info : [];
+        return ClientInfoResolver::fromSession($this->session);
     }
 }

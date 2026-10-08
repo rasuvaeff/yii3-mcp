@@ -13,6 +13,7 @@ use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\CompletionCompleteHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
@@ -26,6 +27,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
+use Rasuvaeff\Yii3Mcp\Visibility\FilteredCallToolHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredCompletionCompleteHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListPromptsHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredListResourcesHandler;
@@ -115,7 +117,8 @@ final readonly class McpServerFactory
             ->setServerInfo(name: $this->name, version: $this->version)
             ->setContainer($this->container)
             ->setSession(sessionStore: $this->sessionStore)
-            ->setPaginationLimit($this->paginationLimit);
+            ->setPaginationLimit($this->paginationLimit)
+            ->withoutModernEra();
 
         if ($this->instructions !== '') {
             $builder->setInstructions($this->instructions);
@@ -172,11 +175,13 @@ final readonly class McpServerFactory
             || $promptVisibility instanceof PromptVisibilityInterface
             || $resourceVisibility instanceof ResourceVisibilityInterface;
 
+        $referenceHandler = null;
+
         if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility || $this->compactToolResults) {
             // the decorator wraps EVERY registration path: [class, method]
             // references, closures and explicit handler objects all execute
             // through the reference handler
-            $builder->setReferenceHandler(new InterceptingReferenceHandler(
+            $referenceHandler = new InterceptingReferenceHandler(
                 inner: new ReferenceHandler($this->container),
                 interceptors: $interceptorList,
                 visibility: $toolVisibility,
@@ -185,7 +190,8 @@ final readonly class McpServerFactory
                 promptVisibility: $promptVisibility,
                 resourceVisibility: $resourceVisibility,
                 compactToolResults: $this->compactToolResults,
-            ));
+            );
+            $builder->setReferenceHandler($referenceHandler);
         }
 
         // every server gets its own registry wrapped in the duplicate guard:
@@ -208,6 +214,18 @@ final readonly class McpServerFactory
                     pageSize: $this->paginationLimit,
                 );
                 $builder->addRequestHandler($listHandler);
+
+                // a hidden tool must answer exactly like a missing one,
+                // before the SDK validates arguments against its schema
+                if ($referenceHandler instanceof InterceptingReferenceHandler) {
+                    /** @var RequestHandlerInterface<mixed> $callHandler */
+                    $callHandler = new FilteredCallToolHandler(
+                        registry: $registry,
+                        inner: new CallToolHandler($registry, $referenceHandler, $this->logger ?? new NullLogger()),
+                        visibility: $toolVisibility,
+                    );
+                    $builder->addRequestHandler($callHandler);
+                }
             }
 
             if ($promptVisibility instanceof PromptVisibilityInterface) {

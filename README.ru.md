@@ -575,7 +575,7 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName, $context->arguments, $context->session,
-        // $context->getClientInfo() - who is calling what with which input
+        // $context->clientInfo() (?Implementation) - who is calling what with which input
         $this->logger->info('tools/call', ['tool' => $context->toolName]);
 
         return $next();   // skip $next() to short-circuit
@@ -900,8 +900,11 @@ final readonly class PlanBasedVisibility implements ToolVisibilityInterface
 Два вида конфигурации взаимоисключающие: оба одновременно дают build-time
 error. В обоих случаях filter работает согласованно в двух точках:
 `tools/list` исключает невидимые tools, а `tools/call` **fail-closed**
-отклоняет их. Клиент, угадавший скрытое имя, получит tool error; вызов не
-дойдёт ни до interceptor chain, ни до tool. Это ранний filter, а не замена ACL
+отклоняет их. Клиент, угадавший скрытое имя, получит ровно ту же JSON-RPC
+ошибку, что и для несуществующего tool (`-32602`, `Tool not found: "…"`;
+проверка идёт до валидации аргументов, поэтому неверный вызов тоже не
+раскрывает схему); вызов не дойдёт ни до interceptor chain, ни до tool. То же
+верно для скрытых prompts, resources и completion refs. Это ранний filter, а не замена ACL
 уровня приложения.
 
 ### Hooks для prompts и resources
@@ -1520,11 +1523,12 @@ public function refresh(): string { /* … */ }
 | `Exception\InvalidToolClassException` | configured tool class отсутствует или не имеет capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class отказывается от registration при build time через `shouldRegister()` |
 | `Testing\McpTester` | in-process test client: initialize/list всех paginated capabilities/callTool/readResource |
+| `Testing\McpErrorException` | JSON-RPC error в ответ `McpTester`: `errorCode`, `errorMessage`, `errorData` |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot всех capability schemas; drift ломает build |
 | `Prompts\MarkdownPromptsConfigurator` | directory `*.md` files как MCP prompts, vjik/my-prompts-mcp-compatible format |
 | `ServerConfiguratorInterface` | extension point для добавления capabilities в builder через params `configurators` |
 | `Interceptor\ToolCallInterceptorInterface` | оборачивает каждый tools/call: tracing, ACL, rate limits; params `interceptors` |
-| `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `getClientInfo()` |
+| `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, обе эры протокола) |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap: параметр `session.budget`, anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | ограничивает размер tool result (параметр `limits.tool_result_bytes`) - обрезает strings, отклоняет oversized arrays/objects |
 | `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); типизированный ключ включает обязательный application namespace, client id и, при delegated auth, `ExecutionIdentity` |
@@ -1610,6 +1614,10 @@ $tester->listPrompts();               // все prompt definitions
 $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // любой raw JSON-RPC method
 ```
+
+JSON-RPC error бросается как `Testing\McpErrorException` с полным конвертом —
+`errorCode`, `errorMessage`, `errorData`, — поэтому тест может проверить код, а
+не только текст (`-32602` для неизвестной или скрытой capability).
 
 ### Schema snapshot: защита от случайного изменения контракта
 

@@ -578,7 +578,7 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName, $context->arguments, $context->session,
-        // $context->getClientInfo() — who is calling what with which input
+        // $context->clientInfo() (?Implementation) — who is calling what with which input
         $this->logger->info('tools/call', ['tool' => $context->toolName]);
 
         return $next();   // skip $next() to short-circuit
@@ -901,8 +901,11 @@ final readonly class PlanBasedVisibility implements ToolVisibilityInterface
 The two kinds are mutually exclusive — configuring both is a build-time
 error. Either way the filter applies in two places, consistently:
 `tools/list` omits invisible tools, and `tools/call` **fail-closed** rejects
-them — a client that guesses a hidden name still gets a tool error, and the
-call never reaches the interceptor chain or the tool. This is an early
+them — a client that guesses a hidden name gets exactly the JSON-RPC error a
+missing tool gets (`-32602`, `Tool not found: "…"`, checked before the
+arguments are validated, so an invalid call does not reveal the schema
+either), and the call never reaches the interceptor chain or the tool. The
+same holds for hidden prompts, resources and completion refs. This is an early
 filter, not a replacement for application-level ACL.
 
 ### Hooks for prompts and resources
@@ -1535,11 +1538,12 @@ build (the SDK rejects a duplicate extension id).
 | `Exception\InvalidToolClassException` | configured tool class missing or without capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class opts out of registration at build time (`shouldRegister()`) |
 | `Testing\McpTester` | in-process test client: initialize/list all paginated capabilities/callTool/readResource |
+| `Testing\McpErrorException` | a JSON-RPC error answered to `McpTester`: `errorCode`, `errorMessage`, `errorData` |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
 | `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
-| `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
+| `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, both protocol eras) |
 | `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | caps tool result size (`limits.tool_result_bytes` param) — truncates strings, rejects oversized arrays/objects |
 | `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); typed key includes a mandatory application namespace, the client id and, with delegated auth, the `ExecutionIdentity` |
@@ -1625,6 +1629,10 @@ $tester->listPrompts();               // every prompt definition
 $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // any raw JSON-RPC method
 ```
+
+A JSON-RPC error is thrown as `Testing\McpErrorException` with the whole
+envelope — `errorCode`, `errorMessage`, `errorData` — so a test can assert the
+code, not only the text (`-32602` for an unknown or hidden capability).
 
 ### Schema snapshot: catch accidental contract drift
 
