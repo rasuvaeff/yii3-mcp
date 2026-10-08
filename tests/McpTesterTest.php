@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
+use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Server;
@@ -13,7 +14,9 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpErrorException;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ElicitingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\HeaderParamToolConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
 use RuntimeException;
 use Testo\Assert;
@@ -217,6 +220,60 @@ final class McpTesterTest
         $result = $this->tester(protocolVersion: ProtocolVersion::V2025_06_18)->initialize();
 
         Assert::same($result['protocolVersion'], '2025-06-18');
+    }
+
+    /**
+     * A tool argument annotated x-mcp-header must be mirrored as an
+     * Mcp-Param-* header; the tester learns which from tools/list, exactly as
+     * a conformant client does — and without it the server refuses the call.
+     */
+    public function modernEraMirrorsDeclaredHeaderParamsAfterListing(): void
+    {
+        $listed = $this->headerParamTester();
+        $listed->listTools();
+
+        Assert::same($listed->callTool('report.by-region', ['region' => 'emea'])['content'][0]['text'] ?? null, 'report for emea');
+
+        try {
+            $this->headerParamTester()->callTool('report.by-region', ['region' => 'emea']);
+            $caught = null;
+        } catch (McpErrorException $caught) {
+        }
+
+        Assert::instanceOf($caught, McpErrorException::class);
+    }
+
+    /**
+     * The declared capabilities reach the server on both eras — what a tool
+     * checks before asking the user.
+     */
+    public function declaredCapabilitiesReachTheServer(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([ElicitingTool::class => new ElicitingTool()]),
+            sessionStore: new InMemorySessionStore(),
+        ))->create([ElicitingTool::class]);
+        $ask = new ClientCapabilities(elicitation: true);
+
+        foreach ([null, ProtocolVersion::V2026_07_28] as $version) {
+            $declaring = new McpTester($server, $factory, $factory, $factory, $version, $ask);
+            $silent = new McpTester($server, $factory, $factory, $factory, $version);
+
+            Assert::same($declaring->callTool('client.can-ask')['content'][0]['text'] ?? null, 'yes');
+            Assert::same($silent->callTool('client.can-ask')['content'][0]['text'] ?? null, 'no');
+        }
+    }
+
+    private function headerParamTester(): McpTester
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+        ))->create([], [new HeaderParamToolConfigurator()]);
+
+        return new McpTester($server, $factory, $factory, $factory, ProtocolVersion::V2026_07_28);
     }
 
     private function tester(

@@ -19,6 +19,12 @@ final class ElicitingTool
 {
     public int $runs = 0;
 
+    #[McpTool(name: 'client.can-ask')]
+    public function canAsk(RequestContext $context): string
+    {
+        return $context->getClientGateway()->supportsElicitation() ? 'yes' : 'no';
+    }
+
     #[McpTool(name: 'order.delete')]
     public function delete(string $orderId, RequestContext $context): string
     {

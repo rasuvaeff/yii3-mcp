@@ -265,6 +265,72 @@ final class ToolCallBudgetInterceptorTest
         Assert::string($caught->getMessage())->contains('window must be at least 1 second');
     }
 
+    /**
+     * The stateless call is counted in the cache ONLY — falling through into
+     * the session counter as well would count it twice the moment a session
+     * survived.
+     */
+    public function statelessCallLeavesTheSessionAlone(): void
+    {
+        $context = $this->modernContext('alice');
+        $interceptor = new ToolCallBudgetInterceptor(budget: 5, cache: new FakeCache());
+
+        Assert::same($interceptor->intercept($context, static fn(): string => 'ran'), 'ran');
+        Assert::null($context->session?->get('rasuvaeff.yii3-mcp.tool-calls'));
+    }
+
+    public function missingCacheNamesTheReason(): void
+    {
+        Assert::same(
+            $this->modernError(new ToolCallBudgetInterceptor(budget: 5), 'alice'),
+            'Tool-call budget is unavailable: no cache is configured for the stateless protocol era',
+        );
+    }
+
+    public function oneSecondWindowIsAccepted(): void
+    {
+        $interceptor = new ToolCallBudgetInterceptor(budget: 1, cache: new FakeCache(), window: 1, clock: static fn(): int => 10);
+
+        Assert::same($this->modernCall($interceptor, 'alice'), 'ran');
+    }
+
+    /**
+     * The key format is part of the contract: a change silently resets every
+     * running budget, so it moves only with KEY_FORMAT_VERSION.
+     */
+    public function budgetKeyFormatIsStable(): void
+    {
+        $cache = new FakeCache();
+        $this->modernCall(new ToolCallBudgetInterceptor(budget: 1, cache: $cache, window: 60, namespace: 'app', clock: static fn(): int => 125), 'alice');
+
+        $expected = 'yii3-mcp.budget.' . substr(hash('sha256', json_encode([
+            'v' => 1,
+            'namespace' => 'app',
+            'client' => 'alice',
+            'window' => 60,
+            'bucket' => 2,
+        ], JSON_THROW_ON_ERROR)), 0, 45);
+
+        Assert::same(array_keys($cache->values), [$expected]);
+    }
+
+    /**
+     * Whatever sits under the key that is not a count (a foreign writer, a
+     * corrupted entry) reads as an unused budget — not as one already spent
+     * and not as credit.
+     */
+    public function aCorruptedCounterReadsAsUnused(): void
+    {
+        $cache = new FakeCache();
+        $interceptor = new ToolCallBudgetInterceptor(budget: 1, cache: $cache, clock: static fn(): int => 1000);
+        $this->modernCall($interceptor, 'alice');
+        $key = (string) array_key_first($cache->values);
+        $cache->values[$key] = 'corrupted';
+
+        Assert::same($this->modernCall($interceptor, 'alice'), 'ran');
+        Assert::same($this->modernCall($interceptor, 'alice'), 'rejected');
+    }
+
     private function modernCall(ToolCallBudgetInterceptor $interceptor, ?string $clientId): string
     {
         try {

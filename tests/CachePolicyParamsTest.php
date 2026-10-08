@@ -32,6 +32,16 @@ final class CachePolicyParamsTest
         Assert::null(CachePolicyParams::parse(['ttl_ms' => 0, 'scope' => 'private', 'methods' => []]));
     }
 
+    /**
+     * Only ALL defaults together mean "the SDK default": a TTL alone, or a
+     * public scope alone, is a policy.
+     */
+    public function anyNonDefaultSettingIsAPolicy(): void
+    {
+        Assert::same(CachePolicyParams::parse(['ttl_ms' => 60000])?->ttlFor('tools/list'), 60000);
+        Assert::same(CachePolicyParams::parse(['scope' => 'public'])?->scopeFor('tools/list'), CacheScope::Public);
+    }
+
     public function aDefaultAndPerMethodOverridesAreKept(): void
     {
         $policy = CachePolicyParams::parse([

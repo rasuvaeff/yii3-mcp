@@ -78,7 +78,7 @@ final class McpTester
     public function initialize(): array
     {
         if ($this->isModern()) {
-            return $this->result($this->post(['jsonrpc' => '2.0', 'id' => ++$this->requestId, 'method' => 'server/discover']));
+            return $this->request('server/discover');
         }
 
         $response = $this->post([
@@ -227,7 +227,7 @@ final class McpTester
 
     private function isModern(): bool
     {
-        return $this->protocolVersion instanceof ProtocolVersion && $this->protocolVersion->isModern();
+        return $this->protocolVersion?->isModern() === true;
     }
 
     private function notify(string $method): void
@@ -241,16 +241,17 @@ final class McpTester
     private function post(array $payload): ResponseInterface
     {
         $headers = [];
+        $version = $this->protocolVersion;
 
-        if ($this->protocolVersion instanceof ProtocolVersion && $this->isModern()) {
+        if ($version?->isModern() === true) {
             $payload = (new RequestEnvelope(
-                $this->protocolVersion,
+                $version,
                 $this->capabilities ?? new ClientCapabilities(),
                 new Implementation(name: self::CLIENT_NAME, version: self::CLIENT_VERSION),
             ))->stamp($payload);
             /** @var array<string, mixed> $serialized the message exactly as it goes on the wire */
             $serialized = json_decode(json_encode($payload, JSON_THROW_ON_ERROR), associative: true, flags: JSON_THROW_ON_ERROR);
-            $headers = (new HeaderFactory($this->toolCatalog))->forMessage($serialized, $this->protocolVersion);
+            $headers = (new HeaderFactory($this->toolCatalog))->forMessage($serialized, $version);
         }
 
         $request = $this->requestFactory
@@ -296,7 +297,7 @@ final class McpTester
             $code = $decoded['error']['code'] ?? null;
 
             throw new McpErrorException(
-                errorCode: is_int($code) ? $code : 0,
+                errorCode: is_int($code) ? $code : null,
                 errorMessage: $this->stringOr($decoded['error']['message'] ?? null, 'unknown error'),
                 errorData: $decoded['error']['data'] ?? null,
             );

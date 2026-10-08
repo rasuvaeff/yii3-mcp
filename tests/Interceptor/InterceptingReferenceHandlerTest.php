@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
+use Mcp\Capability\Registry\ElementReference;
+use Mcp\Capability\Registry\ReferenceHandlerInterface;
+use Mcp\Capability\Registry\ToolReference;
 use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -17,13 +23,16 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ListToolConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ReadyResultTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
@@ -294,6 +303,62 @@ final class InterceptingReferenceHandlerTest
         }
 
         return 'no error';
+    }
+
+    /**
+     * Compact results follow the request's revision: a list is structured
+     * content only from 2026-07-28 on — the same rule as the SDK's pretty path.
+     */
+    public function compactListResultIsStructuredOnlyOnTheStatelessEra(): void
+    {
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+            compactToolResults: true,
+        ))->create([], [new ListToolConfigurator()]);
+        $psr17 = new Psr17Factory();
+
+        $handshake = (new McpTester($server, $psr17, $psr17, $psr17))->callTool('ids');
+        $modern = (new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28))->callTool('ids');
+
+        Assert::same($handshake['content'][0]['text'] ?? null, '[1,2]');
+        Assert::false(array_key_exists('structuredContent', $handshake));
+        Assert::same($modern['structuredContent'] ?? null, [1, 2]);
+    }
+
+    /**
+     * Called outside a server request (no `_request` from the SDK) the
+     * formatter falls back to the newest handshake revision's rules.
+     */
+    #[DataProvider('outsideARequestProvider')]
+    public function compactResultOutsideARequestUsesHandshakeRules(array $arguments): void
+    {
+        $handler = new InterceptingReferenceHandler(
+            inner: new class implements ReferenceHandlerInterface {
+                #[\Override]
+                public function handle(ElementReference $reference, array $arguments): mixed
+                {
+                    return [1, 2];
+                }
+            },
+            interceptors: [],
+            compactToolResults: true,
+        );
+        $reference = new ToolReference(
+            new Tool(name: 'ids', title: null, inputSchema: ['type' => 'object', 'properties' => new \stdClass()], description: null, annotations: null),
+            static fn(): array => [1, 2],
+        );
+
+        $result = $handler->handle($reference, $arguments);
+
+        Assert::instanceOf($result, CallToolResult::class);
+        Assert::null($result instanceof CallToolResult ? $result->structuredContent : 'not a result');
+    }
+
+    public static function outsideARequestProvider(): iterable
+    {
+        yield 'no session, no request' => [[]];
+        yield 'a session, no request' => [['_session' => new FakeSession()]];
     }
 
     /**

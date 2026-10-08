@@ -61,13 +61,8 @@ final readonly class McpAction implements RequestHandlerInterface
     #[\Override]
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        // upstream middleware (body parsers etc.) may have consumed the
-        // stream already; the transport reads it again
-        $body = $request->getBody();
-
-        if ($body->isSeekable()) {
-            $body->rewind();
-        }
+        // a body already consumed by upstream middleware (body parsers) is
+        // fine: the SDK's transport rewinds a seekable body before reading
 
         /** @var mixed $clientId */
         $clientId = $request->getAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE);

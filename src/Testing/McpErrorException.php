@@ -15,8 +15,11 @@ use RuntimeException;
  */
 final class McpErrorException extends RuntimeException
 {
+    /**
+     * @param int|null $errorCode null when the server sent no integer code
+     */
     public function __construct(
-        public readonly int $errorCode,
+        public readonly ?int $errorCode,
         public readonly string $errorMessage,
         public readonly mixed $errorData = null,
     ) {

@@ -754,6 +754,35 @@ final class ConfigWiringTest
         Assert::same($second['content'][0]['text'], 'Hi, Yii!');
     }
 
+    /**
+     * Omitted keys fall back to what params.php documents: the stateless era
+     * on (so the budget counts per client in the cache) and a one-hour window.
+     */
+    public function omittedEraAndWindowKeysUseTheDocumentedDefaults(): void
+    {
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        unset($mcp['modern_era'], $mcp['tool_call_budget']['window']);
+        $mcp['tool_call_budget']['calls'] = 1;
+        $mcp['tools'] = [GreetingTool::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([
+            GreetingTool::class => new GreetingTool(prefix: 'Hi'),
+            CacheInterface::class => new FakeCache(),
+        ]);
+
+        /** @var Server $server */
+        $server = $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+        $tester->callTool('greet', ['name' => 'Yii']);
+        $second = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::string($second['content'][0]['text'] ?? '')->contains('budget of 1 per 3600 seconds is exhausted');
+    }
+
     public function promptsPathWiresTheMarkdownPromptsConfigurator(): void
     {
         $params = $this->params();

@@ -640,6 +640,14 @@ final class McpDoctorTest
         Assert::string($details)->contains('no request_state.key');
     }
 
+    public function aKeyOfExactlyTheMinimumLengthPasses(): void
+    {
+        $check = $this->check($this->doctor(requestStateKeyBytes: 32)->diagnose(), 'protocol_eras');
+
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::true(str_starts_with($check->details, 'Handshake and stateless 2026-07-28 eras; '));
+    }
+
     public function tooShortRequestStateKeyFails(): void
     {
         $check = $this->check($this->doctor(requestStateKeyBytes: 16)->diagnose(), 'protocol_eras');
