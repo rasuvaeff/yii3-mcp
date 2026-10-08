@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Resource;
 
 use Fiber;
+use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Notification\ResourceUpdatedNotification;
 use Mcp\Schema\Request\PingRequest;
 use Mcp\Server\RequestContext;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Session\SessionInterface;
+use Mcp\Server\Stateless\RequestMeta;
+use Mcp\Server\Subscription\InMemoryNotificationBus;
 use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Testo\Assert;
@@ -71,9 +74,74 @@ final class ResourceUpdateNotifierTest
         Assert::false($this->notified($session, 'app://counter'));
     }
 
-    public function notifyingReportsThatTheClientWasReached(): void
+    public function aSubscribedHandshakeSessionIsReached(): void
     {
         Assert::true($this->notified($this->subscribedSession('app://counter'), 'app://counter'));
+    }
+
+    /**
+     * Stateless listeners are reached through the bus: one publish, picked
+     * up by every subscriptions/listen stream reading forward from the
+     * cursor — whatever process holds it.
+     */
+    public function theBusCarriesTheUpdateToStatelessListeners(): void
+    {
+        $bus = new InMemoryNotificationBus();
+        $cursor = $bus->cursor();
+
+        (new ResourceUpdateNotifier(new SessionSubscriptionManager(), $bus))->notify('app://orders/42');
+
+        [$published] = $bus->since($cursor);
+
+        Assert::same(count($published), 1);
+        Assert::instanceOf($published[0], ResourceUpdatedNotification::class);
+        \assert($published[0] instanceof ResourceUpdatedNotification);
+        Assert::same($published[0]->uri, 'app://orders/42');
+    }
+
+    /**
+     * A stateless request's session is a throwaway: even if it claimed a
+     * subscription, nothing is sent on it — its listeners get the bus copy.
+     */
+    public function aStatelessCallingSessionIsNotNotifiedDirectly(): void
+    {
+        $session = $this->subscribedSession('app://counter');
+        $session->set(RequestMeta::class, new RequestMeta('2026-07-28', new ClientCapabilities()));
+
+        Assert::false($this->notified($session, 'app://counter'));
+    }
+
+    /**
+     * Both halves for a handshake call with a bus: the calling session on
+     * its stream, every stateless listener through the bus.
+     */
+    public function aHandshakeCallWithABusReachesBoth(): void
+    {
+        $bus = new InMemoryNotificationBus();
+        $cursor = $bus->cursor();
+        $notifier = new ResourceUpdateNotifier(new SessionSubscriptionManager(), $bus);
+        $context = $this->context($this->subscribedSession('app://counter'));
+
+        $fiber = new Fiber(static fn() => $notifier->notify('app://counter', $context));
+        $fiber->start();
+
+        Assert::true($fiber->isSuspended());
+        Assert::same(count($bus->since($cursor)[0]), 1);
+    }
+
+    /**
+     * Without a request at all — a queue worker, a console command — only the
+     * bus half applies, and it needs no session.
+     */
+    public function anOutOfBandUpdateNeedsNoRequest(): void
+    {
+        $bus = new InMemoryNotificationBus();
+        $cursor = $bus->cursor();
+
+        (new ResourceUpdateNotifier(new SessionSubscriptionManager(), $bus))->notify('app://counter');
+        (new ResourceUpdateNotifier(new SessionSubscriptionManager()))->notify('app://counter');
+
+        Assert::same(count($bus->since($cursor)[0]), 1);
     }
 
     private function subscribedSession(string $uri): SessionInterface
@@ -89,25 +157,25 @@ final class ResourceUpdateNotifierTest
      */
     private function send(SessionInterface $session, string $uri): ?array
     {
-        $fiber = new Fiber(fn(): bool => $this->notifier()->notify($this->context($session), $uri));
+        $fiber = new Fiber(fn() => $this->notifier()->notify($uri, $this->context($session)));
         /** @var mixed $suspended */
         $suspended = $fiber->start();
 
         return is_array($suspended) ? $suspended : null;
     }
 
+    /**
+     * Whether the calling session was sent anything: the gateway sends by
+     * suspending the Fiber.
+     */
     private function notified(SessionInterface $session, string $uri): bool
     {
         $notifier = $this->notifier();
         $context = $this->context($session);
-        $fiber = new Fiber(static fn(): bool => $notifier->notify($context, $uri));
+        $fiber = new Fiber(static fn() => $notifier->notify($uri, $context));
         $fiber->start();
 
-        if ($fiber->isSuspended()) {
-            $fiber->resume();
-        }
-
-        return $fiber->getReturn();
+        return $fiber->isSuspended();
     }
 
     private function notifier(): ResourceUpdateNotifier

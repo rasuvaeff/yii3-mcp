@@ -7,8 +7,8 @@
 | `conditional.php` | `ConditionalToolInterface`: the same class registered or skipped depending on `shouldRegister()` | no |
 | `prompts.php` | [`prompts/`](prompts/) directory of Markdown files served as MCP prompts: `prompts/list` + rendered `prompts/get` | no |
 | `openapi-bridge.php` | Allow-listed OpenAPI operations bridged as MCP tools via `OpenApiBridgeFactory::create()` (no Yii3 application) — `tool_names` rename, `OperationModifierInterface`, `readOnlyHint`/tags in `_meta`, `dryRunOperations` preview; the call becomes a real HTTP request (stubbed PSR-18 client) | no |
-| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`), the session budget guard rejecting the fourth call, and `ResponseSizeLimitInterceptor` truncating an oversized result | no |
-| `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed rejected on call | no |
+| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`), the tool-call budget guard rejecting the fourth call, and `ResponseSizeLimitInterceptor` truncating an oversized result | no |
+| `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed: a call answers the same `-32602` as a missing tool | no |
 | `capability-hooks.php` | prompts/get + resources/read interceptor chains (`CallOutcome`, template variables, client-visible rejection) and prompt visibility hiding a prompt as not-found | no |
 | `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |
 | `server-initiated.php` | Official `ToolAnnotations`; `RequestContext` stays out of input schema while giving the tool progress/elicitation through `ClientGateway` | no |

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
+use Mcp\Schema\Result\InputRequiredResult;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
 use Throwable;
@@ -80,7 +81,10 @@ final readonly class CachingToolCallInterceptor implements ToolCallInterceptorIn
     {
         $ttl = $this->ttlSeconds[$context->toolName] ?? null;
 
-        if ($ttl === null) {
+        // a round of a multi round-trip call carries answers the arguments do
+        // not show: serving it from (or storing it into) the cache would hand
+        // one round's outcome to another — or skip the ask altogether
+        if ($ttl === null || RequestEra::isRetry($context->session)) {
             return $next();
         }
 
@@ -99,6 +103,12 @@ final readonly class CachingToolCallInterceptor implements ToolCallInterceptorIn
 
         /** @var mixed $result */
         $result = $next();
+
+        // an ask is not an outcome: cached, it would come back on the retry
+        // that carries its answer, forever
+        if ($result instanceof InputRequiredResult) {
+            return $result;
+        }
 
         try {
             $this->cache->set($key, ['v' => $result], $ttl);

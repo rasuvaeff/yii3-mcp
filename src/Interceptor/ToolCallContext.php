@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
+use Mcp\Schema\Implementation;
+use Mcp\Server\RequestContext;
 use Mcp\Server\Session\SessionInterface;
 
 /**
@@ -20,25 +22,35 @@ final readonly class ToolCallContext
     /**
      * @param array<string, mixed> $arguments
      * @param ?string $clientId identity from the endpoint secret; null when the transport carries none (e.g. stdio)
+     * @param RequestContext|null $requestContext the SDK's request scope: getClientGateway() to ask the
+     *                                           user (elicit) or notify, getTraceContext() for the
+     *                                           caller's W3C trace; null outside a server request
      */
     public function __construct(
         public string $toolName,
         public array $arguments,
         public ?SessionInterface $session = null,
         public ?string $clientId = null,
+        public ?RequestContext $requestContext = null,
     ) {}
 
     /**
-     * Client identity from the initialize handshake (name, version, …);
-     * empty before initialize or without a session.
-     *
-     * @return array<array-key, mixed>
+     * How the client named itself — from `initialize` in the handshake era,
+     * from the request's `_meta` in the modern (2026-07-28) era; null when
+     * it did not, or without a session.
      */
-    public function getClientInfo(): array
+    public function clientInfo(): ?Implementation
     {
-        /** @var mixed $info */
-        $info = $this->session?->get('client_info');
+        return ClientInfoResolver::fromSession($this->session);
+    }
 
-        return is_array($info) ? $info : [];
+    /**
+     * Whether the call came over the stateless 2026-07-28 era — where
+     * `$session` is a throwaway built for this one request: its id names
+     * nothing and nothing stored in it survives the call.
+     */
+    public function isStateless(): bool
+    {
+        return RequestEra::isModern($this->session);
     }
 }

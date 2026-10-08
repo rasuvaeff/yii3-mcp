@@ -31,9 +31,42 @@ container.
 | Requirement | Version |
 |-------------|---------|
 | PHP | 8.3 – 8.5 |
-| `mcp/sdk` | `~0.7.0` (experimental until 1.0 — hence the tilde pin) |
-| MCP protocol | 2025-11-25 (the SDK's default; it advertises this in `initialize` regardless of what the client asks for) |
+| `mcp/sdk` | `~0.8.1` (experimental until 1.0 — hence the tilde pin; the 3.x line stays on `~0.7.0`) |
+| MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
 | `ext-fileinfo` | required by the SDK |
+
+
+| Line | Branch | `mcp/sdk` | MCP revisions | Support |
+|---|---|---|---|---|
+| 4.x | `master` | `~0.8.1` | handshake + stateless 2026-07-28 | features and fixes |
+| 3.x | `3.x` | `~0.7.0` | handshake only | bug and security fixes |
+
+## Protocol revisions
+
+One endpoint serves both protocol eras; each request is classified by the SDK.
+
+| Era | Revisions | Lifecycle | State |
+|---|---|---|---|
+| handshake | 2024-11-05 … 2025-11-25 | `initialize` → `Mcp-Session-Id` on every request | in the session store (`session.*`) |
+| stateless | 2026-07-28 | none: every request carries its own `_meta` (revision, client info, capabilities) and `Mcp-Method`/`Mcp-Name` headers | none — the SDK hands each request a throwaway session |
+
+- `initialize` negotiates: the client's revision when supported, otherwise
+  2025-11-25. `protocol_version` pins the handshake to one revision (handshake
+  revisions only).
+- `modern_era` (default `true`) serves the stateless era. Switched off, its
+  requests get `Unsupported protocol version` — and a client speaking only
+  2026-07-28 does not fall back to `initialize` by itself.
+- `header_validation` (default `true`) rejects a stateless request whose
+  standard headers contradict its body (`-32020`), so a proxy can route and
+  authorize on the headers alone.
+- Anything that keeps state "per session" means per request on the stateless
+  era. The package's own session-bound guards are era-aware: the tool-call
+  budget counts per client there, session ownership has nothing to bind (the
+  client id of each request is the identity), and
+  `clientInfo()` reads the request's `_meta`.
+- Not found is `-32602` for tools, prompts and completion refs on every
+  revision, and for resources from 2026-07-28 on (`-32002` before) — hidden
+  capabilities answer exactly the same.
 
 ## Installation
 
@@ -204,6 +237,32 @@ every MCP client supports every server-initiated capability. Keep
 `RequestContext` as a method parameter rather than a constructor dependency:
 it belongs to one request/session.
 
+On the stateless 2026-07-28 era there is nobody to ask while the request is
+open, so an ask works differently — and the same handler serves both eras
+unchanged:
+
+- `elicit()`/`elicitUrl()` end the request with `resultType: input_required`;
+  the client re-sends the call with the answer and the SDK **runs the handler
+  again from the top**, where the ask now returns it. Anything a handler does
+  before its last ask happens once per round — keep side effects after it.
+- More than one ask per call carries earlier answers between rounds in a
+  signed `requestState`: set `request_state.key` (at least 32 bytes, from the
+  environment). Without it the first ask works and a second fails the call.
+- Every round is a `tools/call`: interceptors run each round and the
+  tool-call budget counts each one (one ask costs two). The answers are not
+  signed, so a budget skipping "retries" could be bypassed by any client.
+- The result cache never stores an ask or serves a later round.
+- `sample()`/`listRoots()` throw on 2026-07-28, which removed them (Sampling,
+  Roots and Logging are deprecated by SEP-2577).
+- `progress()`/`log()` stream over SSE when the client accepts
+  `text/event-stream`.
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'request_state' => ['key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '', 'ttl' => 600],
+],
+```
+
 To gate a capability class (feature flag, environment check), implement
 `ConditionalToolInterface` — the instance is resolved through the container
 at build time and skipped when `shouldRegister()` returns `false`:
@@ -337,7 +396,11 @@ every PSR service required by enabled entry points/features, session storage
 (including **confidentiality**: a session directory readable by group/others
 fails the check, not just an unwritable one), the OpenAPI spec, the MCP Apps
 configuration (every declarative definition is parsed, so a malformed one is
-reported even when the server build check is skipped) and a real server build. Missing services are reported by
+reported even when the server build check is skipped), the protocol eras
+(what the stateless era changes for this configuration: a single
+`endpoint_secret` makes every stateless caller share one tool-call budget, no
+`notifications.bus` leaves listen streams empty, no `request_state.key` limits
+a call to one ask; a too-short key fails) and a real server build. Missing services are reported by
 their exact interface. Exit codes are stable for scripting: `0` healthy,
 `2` config error, `3` storage error, `4` upstream error — the category of the
 **first** failing check (checks run root-causes-first, so a broken config
@@ -476,9 +539,14 @@ authorization in the visibility filter, not in an interceptor.
     // SDK's handlers AND this package's filtering ones, so they can never page
     // differently depending on whether visibility is configured.
     'pagination_limit' => 50,
-    // pins the revision advertised in initialize; empty keeps the SDK's default
-    // (2025-11-25). An unsupported value fails at config load, not at runtime.
+    // pins the initialize handshake to one revision, e.g. '2025-06-18'; empty
+    // negotiates (the client's revision when supported, else 2025-11-25).
+    // Handshake revisions only; anything else fails at config load.
     'protocol_version' => '',
+    // serve the stateless 2026-07-28 era too (see "Protocol revisions")
+    'modern_era' => true,
+    // stateless era: reject requests whose standard headers contradict the body
+    'header_validation' => true,
     // how array/object tool results are encoded into the text the agent
     // reads: 'pretty' (default, the SDK's own formatting) or 'compact' —
     // no indentation, ~3x fewer bytes; structuredContent is unaffected.
@@ -489,10 +557,8 @@ authorization in the visibility filter, not in an interceptor.
 
 ### Resource subscriptions
 
-The SDK advertises `resources.subscribe` whenever the server has any resource
-and records `resources/subscribe` per session. Nothing emits
-`notifications/resources/updated` on its own — but the tool that *causes* the
-change can, inside the same request, through `Resource\ResourceUpdateNotifier`:
+Subscribers are reached differently on the two protocol eras, and
+`Resource\ResourceUpdateNotifier` covers both from one call:
 
 ```php
 public function __construct(private ResourceUpdateNotifier $notifier) {}
@@ -501,22 +567,62 @@ public function __construct(private ResourceUpdateNotifier $notifier) {}
 public function cancel(string $orderId, RequestContext $context): string
 {
     $this->orders->cancel($orderId);
-    $this->notifier->notify($context, 'app://orders/' . $orderId);
+    $this->notifier->notify('app://orders/' . $orderId, $context);
 
     return 'cancelled';
 }
 ```
 
-`notify()` returns whether the caller was subscribed; a session that never
-subscribed is never sent anything, so an unsolicited notification cannot appear
-on the wire. Bind a custom `Mcp\Server\Resource\SubscriptionManagerInterface`
-and both the subscribe handler and the notifier follow it — the default binding
-is the SDK's session-backed manager.
+| Era | Subscription | Who is reached |
+|---|---|---|
+| stateless 2026-07-28 | a `subscriptions/listen` stream, fed from the notification bus | every listener whose filter names the URI, from any process sharing the bus — `$context` is optional, so a queue worker or console command can notify too |
+| handshake | `resources/subscribe`, recorded in the caller's session | only the calling session, from inside the request that changed the resource — no process holds the other sessions' connections |
 
-**Only the calling session is reached.** Other sessions subscribed to the same
-URI are not: that would need a connection this process does not hold. Under
-PHP-FPM nothing outlives the request, so out-of-band push remains impossible —
-clients that need to observe changes they did not cause must poll.
+```php
+'rasuvaeff/yii3-mcp' => [
+    'notifications' => [
+        // '' = none (listen streams carry nothing), 'psr16' = through the
+        // container's PSR-16 cache (PHP-FPM: publisher and listener are
+        // different workers), 'memory' = one process (stdio, persistent runtimes)
+        'bus' => 'psr16',
+        // seconds a listen stream is held open; under PHP-FPM it holds a worker
+        // that long — keep it below max_execution_time
+        'subscription_lifetime' => 30,
+    ],
+],
+```
+
+An unsolicited notification never reaches the wire: the session path checks
+the subscription first, and a listen stream carries only the URIs its own
+filter asked for. Bind a custom `Mcp\Server\Resource\SubscriptionManagerInterface`
+and both the subscribe handler and the notifier follow it; the bus is bound
+once, so `McpServerFactory` and the notifier always share it.
+
+### Caching hints (stateless era)
+
+Stateless answers to `server/discover`, `tools/list`, `prompts/list`,
+`resources/list`, `resources/templates/list` and `resources/read` carry
+SEP-2549 caching hints. The default is the SDK's: nothing fresh
+(`ttlMs: 0`), nothing shared (`private`).
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache_policy' => [
+        'ttl_ms' => 0,
+        'scope' => 'private',
+        'methods' => [
+            // the tool list changes only with a deploy
+            'tools/list' => ['ttl_ms' => 300000, 'scope' => 'private'],
+        ],
+    ],
+],
+```
+
+`public` lets a **shared** cache (a proxy) serve one caller's answer to
+another — an operator decision. With any visibility filter configured, a
+`public` hint on a list or `resources/read` fails the build: those answers are
+per caller. A method that carries no hint, a misspelled one, or an unknown
+scope fails at config load instead of being ignored.
 
 ## Framework-agnostic usage
 
@@ -578,13 +684,25 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName, $context->arguments, $context->session,
-        // $context->getClientInfo() — who is calling what with which input
+        // $context->clientInfo() (?Implementation) — who is calling what with which input
         $this->logger->info('tools/call', ['tool' => $context->toolName]);
 
         return $next();   // skip $next() to short-circuit
     }
 }
 ```
+
+`$context->isStateless()` tells the stateless era apart: there
+`$context->session` is a throwaway built for the one request, so its id names
+nothing (do not log it as a session) and nothing stored in it survives.
+`$context->requestContext` is the SDK's `RequestContext` for the call (null
+outside a server request): `getClientGateway()` lets an interceptor ask the
+user before the call — the way to confirm a costly operation on a tool whose
+handler the application does not own, such as an OpenAPI-bridged one — and
+`getTraceContext()` carries the caller's W3C `traceparent`/`tracestate`/
+`baggage` (stateless era). On the stateless era an ask ends the request and
+the whole chain runs again on the retry: interceptors outside the asking one
+run once per round (see "Server-initiated communication").
 
 ```php
 // config/params.php — resolved through the container, first = outermost
@@ -621,22 +739,38 @@ $this->logger->info('tools/call', ['tool' => $context->toolName, 'arguments' => 
 It is one shared helper so every consumer (audit trail, telemetry, your own
 interceptors) masks with identical semantics instead of drifting apart.
 
-### Session budget: stop agent loops
+### Tool-call budget: stop agent loops
 
-A hard cap on `tools/call` per MCP session (from `initialize` until the TTL
-expires). An agent stuck in a loop burns the budget and gets an explanatory
-tool error instead of hammering the application:
+A hard cap on `tools/call` in a row. An agent stuck in a loop burns the budget
+and gets an explanatory tool error instead of hammering the application:
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    'session' => ['budget' => 50],   // 0 = unlimited (default)
+    'tool_call_budget' => [
+        'calls' => 50,     // 0 = unlimited (default)
+        'window' => 3600,  // seconds, stateless era only
+    ],
 ],
 ```
 
-This is loop protection **inside one session**, not a client quota: a
-re-initialize starts a fresh counter. Client quotas belong to an
+"In a row" depends on the protocol era:
+
+| Era | Counted per | Reset by |
+|---|---|---|
+| handshake (`initialize`) | MCP session, in the session itself | a new session (re-initialize) or the session TTL |
+| stateless 2026-07-28 | client id, in the container's PSR-16 cache | the fixed window turning (`floor(now / window)`) |
+
+The stateless era has no session to count in — a session counter would start
+at zero on every request — so with `modern_era` on, a budget requires a
+`Psr\SimpleCache\CacheInterface` in the container (a missing one fails the
+build). Without `SharedSecretMiddleware` there is no client id, and every
+anonymous stateless caller shares **one** budget. A cache outage rejects the
+call (fail-closed).
+
+This is loop protection, not a client quota. Client quotas belong to an
 application-level rate limiter. The budget guard is always the outermost
-interceptor, so it rejects before any other interceptor does work.
+interceptor, so it rejects before any other interceptor does work. 3.x's
+`session.budget` fails the build with a pointer to the new key.
 
 ### Result size limit and caching
 
@@ -735,7 +869,7 @@ cached unless `openapi.identity_provider` resolves that user — "idempotent
 read" is not the same as "same answer for everyone". Bridged operations are
 covered by the identity provider; hand-written tools are yours to judge.
 
-Interceptor order is fixed: session budget (outermost) → configured
+Interceptor order is fixed: tool-call budget (outermost) → configured
 `interceptors` → caching → result size limit (innermost, closest to the
 actual tool call). Configured interceptors (RBAC, audit) always run, even on
 a cache hit — caching cannot be used to bypass them. The size limit only
@@ -901,8 +1035,11 @@ final readonly class PlanBasedVisibility implements ToolVisibilityInterface
 The two kinds are mutually exclusive — configuring both is a build-time
 error. Either way the filter applies in two places, consistently:
 `tools/list` omits invisible tools, and `tools/call` **fail-closed** rejects
-them — a client that guesses a hidden name still gets a tool error, and the
-call never reaches the interceptor chain or the tool. This is an early
+them — a client that guesses a hidden name gets exactly the JSON-RPC error a
+missing tool gets (`-32602`, `Tool not found: "…"`, checked before the
+arguments are validated, so an invalid call does not reveal the schema
+either), and the call never reaches the interceptor chain or the tool. The
+same holds for hidden prompts, resources and completion refs. This is an early
 filter, not a replacement for application-level ACL.
 
 ### Hooks for prompts and resources
@@ -1535,12 +1672,13 @@ build (the SDK rejects a duplicate extension id).
 | `Exception\InvalidToolClassException` | configured tool class missing or without capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class opts out of registration at build time (`shouldRegister()`) |
 | `Testing\McpTester` | in-process test client: initialize/list all paginated capabilities/callTool/readResource |
+| `Testing\McpErrorException` | a JSON-RPC error answered to `McpTester`: `errorCode`, `errorMessage`, `errorData` |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
 | `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
 | `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
-| `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `getClientInfo()` |
-| `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
+| `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, both protocol eras) |
+| `Interceptor\ToolCallBudgetInterceptor` | tools/call cap per session (handshake era) or per client id and window (stateless era): `tool_call_budget` param — anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | caps tool result size (`limits.tool_result_bytes` param) — truncates strings, rejects oversized arrays/objects |
 | `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); typed key includes a mandatory application namespace, the client id and, with delegated auth, the `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
@@ -1556,7 +1694,7 @@ build (the SDK rejects a duplicate extension id).
 | `OpenApi\OperationModifierInterface` | per-operation customization hook, applied after the `tool_names` rename |
 | `OpenApi\Operation` | read-only operation context passed to `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
-| `Resource\ResourceUpdateNotifier` | sends `notifications/resources/updated` to the calling session from inside the request that changed the resource; a session that never subscribed is never notified |
+| `Resource\ResourceUpdateNotifier` | `notify($uri, ?$context)`: publishes `notifications/resources/updated` to the notification bus (stateless listen streams) and to the calling handshake session if subscribed; never unsolicited |
 | `Apps\McpAppsConfigurator` | announces the MCP Apps extension and registers declarative `ui://` app resources (`apps` params) |
 | `Apps\AppDefinition` | one declarative app: `ui://` URI, name, HTML (string or `Closure(): string`) and its `UiResourceContentMeta` |
 
@@ -1600,7 +1738,7 @@ See [examples/](examples/) — every script runs offline.
 | [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
 | [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools, with `tool_names` and `OperationModifierInterface` | no |
-| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + session budget guard + result size limit | no |
+| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + tool-call budget guard + result size limit | no |
 | [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
 | [`server-initiated.php`](examples/server-initiated.php) | Official `ToolAnnotations` and a schema-safe `RequestContext` parameter for progress/elicitation | no |
@@ -1625,6 +1763,26 @@ $tester->listPrompts();               // every prompt definition
 $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // any raw JSON-RPC method
 ```
+
+Pass a revision as the fifth argument to test a specific protocol era, and
+`ClientCapabilities` as the sixth to test a tool that asks the user
+(`new ClientCapabilities(elicitation: true)`; the first call returns the
+`input_required` result, answer with `request('tools/call', [... 'inputResponses' => [...]])`). A
+handshake revision (`ProtocolVersion::V2025_06_18`, …) is negotiated through
+`initialize`; `ProtocolVersion::V2026_07_28` speaks the stateless era — no
+`initialize`, no session id, every request carries its own `_meta` envelope
+and the `Mcp-Method`/`Mcp-Name`/`Mcp-Param-*` headers, built by the SDK's own
+client classes (`initialize()` asks `server/discover` there). The server must
+serve that era (`McpServerFactory(modernEra: true)`):
+
+```php
+$modern = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+$modern->callTool('order.status', ['orderId' => '42']);
+```
+
+A JSON-RPC error is thrown as `Testing\McpErrorException` with the whole
+envelope — `errorCode`, `errorMessage`, `errorData` — so a test can assert the
+code, not only the text (`-32602` for an unknown or hidden capability).
 
 ### Schema snapshot: catch accidental contract drift
 

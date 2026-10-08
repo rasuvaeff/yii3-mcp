@@ -49,9 +49,60 @@ return [
             // to 0600 — session JSON must not be readable by other OS users
             'dir' => '',
             'ttl' => 3600,
-            // max tools/call per session (0 = unlimited); anti-loop guard,
-            // NOT a client quota — a new session starts a fresh counter
-            'budget' => 0,
+        ],
+        // anti-loop guard, NOT a client quota: max tools/call (0 = unlimited)
+        // per session on the handshake era, per client id and window on the
+        // stateless 2026-07-28 era (which has no session; counted in the
+        // container's PSR-16 cache, required then — a missing one fails the
+        // build). Without SharedSecretMiddleware every anonymous stateless
+        // caller shares one budget.
+        'tool_call_budget' => [
+            'calls' => 0,
+            'window' => 3600,
+        ],
+        // also serve the stateless 2026-07-28 era (no initialize, no session)
+        // on the same endpoint; false answers its requests with "unsupported
+        // protocol version" — and a client speaking only that revision does
+        // not fall back to initialize on its own
+        'modern_era' => true,
+        // stateless era: reject a request whose standard headers (Mcp-Method,
+        // Mcp-Name, Mcp-Param-*) contradict its body (-32020) — what lets a
+        // proxy route and authorize on the headers without parsing the body
+        'header_validation' => true,
+        // stateless era: what feeds subscriptions/listen streams (resource
+        // updates from Resource\ResourceUpdateNotifier). '' = no bus: streams
+        // acknowledge and carry nothing. 'psr16' = through the container's
+        // PSR-16 cache — the PHP-FPM choice, where the publishing request and
+        // the listening one are different workers. 'memory' = one process
+        // (stdio, persistent runtimes). An unknown value fails the build.
+        // multi round-trip calls (a handler asking the user mid-call through
+        // ClientGateway::elicit()): on the stateless era each ask ends the
+        // request and the client re-sends the call with the answer; answers
+        // from earlier rounds travel in a signed requestState. 'key' signs it
+        // — at least 32 bytes, from the environment, never committed. Empty
+        // = none: one ask per call works, a second fails the call.
+        // stateless era: SEP-2549 caching hints on cacheable answers
+        // (server/discover, tools/list, prompts/list, resources/list,
+        // resources/templates/list, resources/read). ttl_ms 0 + private = the
+        // SDK default, nothing fresh, nothing shared. 'public' lets a SHARED
+        // cache serve one caller's answer to another — and fails the build on
+        // a list or read a visibility filter makes per caller. Per method:
+        // 'methods' => ['tools/list' => ['ttl_ms' => 300000, 'scope' => 'private']].
+        'cache_policy' => [
+            'ttl_ms' => 0,
+            'scope' => 'private',
+            'methods' => [],
+        ],
+        'request_state' => [
+            'key' => '',
+            'ttl' => 600,
+        ],
+        'notifications' => [
+            'bus' => '',
+            // seconds a listen stream is held open (0 = until the client or
+            // the runtime ends it); under PHP-FPM a stream holds a worker for
+            // this long — keep it below max_execution_time
+            'subscription_lifetime' => 30,
         ],
         // how array/object tool results are encoded into the text content the
         // agent reads: 'pretty' (default, the SDK's own formatting) or
@@ -247,10 +298,11 @@ return [
         // Applies to the SDK's handlers and to this package's filtering ones
         // alike, so paging can never differ between them.
         'pagination_limit' => 50,
-        // pins the MCP revision advertised in initialize, e.g. '2025-06-18'.
-        // Empty keeps the SDK's own default (2025-11-25 under the ~0.7.0 pin).
-        // The SDK does NOT negotiate: it answers with this revision whatever
-        // the client asked for. An unsupported value fails the server build.
+        // pins the initialize handshake to exactly this revision, e.g.
+        // '2025-06-18'. Empty negotiates: the client's requested revision when
+        // supported, otherwise the newest handshake revision (2025-11-25).
+        // Handshake revisions only — the stateless 2026-07-28 era has no
+        // initialize (see modern_era); it and unknown values fail the build.
         'protocol_version' => '',
         // MCP Apps (io.modelcontextprotocol/ui): interactive HTML applications
         // the client renders in a sandboxed iframe. 'enable' => true announces

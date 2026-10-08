@@ -1,5 +1,82 @@
 # Upgrade guide
 
+## 3.x → 4.0.0
+
+4.0 moves to `mcp/sdk` `~0.8.1` and serves the MCP revision `2026-07-28` —
+the stateless era: no `initialize`, no session, every request self-contained
+— next to the handshake era on the same endpoint. The 3.x line stays on
+`mcp/sdk` `~0.7.0` (branch `3.x`) for bug and security fixes. Rationale for
+each change: `CHANGELOG.md`; the model: README, "Protocol revisions".
+
+### Required: configuration
+
+| 3.x | 4.0 | If you do nothing |
+|---|---|---|
+| `'session' => ['budget' => N]` | `'tool_call_budget' => ['calls' => N, 'window' => 3600]` | the build fails, naming the new key |
+| — | `'modern_era' => true` (default) | the stateless era is served |
+| a budget, no PSR-16 cache in the container | bind `Psr\SimpleCache\CacheInterface`, or `'modern_era' => false` | the build fails: the stateless era has no session to count calls in, so the budget counts per client id in PSR-16 |
+| `'protocol_version' => '2026-07-28'` | a handshake revision, or `''` | config load fails; `initialize` now negotiates the client's revision anyway |
+
+With a single `endpoint_secret` every caller is client `"default"`: on the
+stateless era they share ONE tool-call budget. Use `client_secrets` for
+per-client budgets. `./yii mcp:doctor` reports this (`protocol_eras`).
+
+### Required: code
+
+```php
+// interceptors: getClientInfo(): array → clientInfo(): ?Mcp\Schema\Implementation
+$name = $context->getClientInfo()['name'] ?? 'unknown';   // 3.x
+$name = $context->clientInfo()?->name ?? 'unknown';      // 4.0 — both eras
+
+// the budget interceptor was renamed
+new SessionBudgetInterceptor(budget: 50);                 // 3.x
+new ToolCallBudgetInterceptor(budget: 50, cache: $cache); // 4.0
+
+// resource updates: argument order, no return value
+$sent = $notifier->notify($context, $uri);                // 3.x
+$notifier->notify($uri, $context);                        // 4.0; $context optional
+```
+
+On the stateless era `getClientInfo()` would have returned `[]` silently,
+and `SessionBudgetInterceptor` would have counted from zero on every call —
+which is why they are replaced rather than kept.
+
+### Review: anything that keeps state "per session"
+
+On the stateless era the SDK hands every request a **throwaway** session. A
+custom interceptor, visibility filter or tool that stores something in
+`$session` and reads it on a later call sees nothing there. The package's own
+guards are era-aware; check yours, and test them on both eras:
+`new McpTester($server, $f, $f, $f, ProtocolVersion::V2026_07_28)`.
+
+Tools that ask the user (`ClientGateway::elicit()`) run **again from the top**
+on the stateless era once the answer arrives: move side effects after the
+last ask. More than one ask per call needs `request_state.key` (≥ 32 bytes,
+from the environment). `sample()`/`listRoots()` throw on `2026-07-28`.
+
+### Behaviour visible to clients and tests
+
+| What | 3.x | 4.0 |
+|---|---|---|
+| calling a hidden tool | tool error `not available in this session` | JSON-RPC `-32602 Tool not found: "x".`, as for a missing tool |
+| missing tool / prompt / completion ref | `-32601` / `-32002` / `-32002` | `-32602` (resources: `-32002` before 2026-07-28, `-32602` from it) |
+| list result with `result_json: compact` | sent as `structuredContent` | `structuredContent` only on 2026-07-28 (older revisions require an object) |
+| `initialize` | always answered 2025-11-25 | answers the client's revision when supported |
+| `McpTester` JSON-RPC error | `RuntimeException` | `Testing\McpErrorException` (still a `RuntimeException`, same message) with `errorCode`/`errorData` |
+
+### Optional: new stateless-era settings
+
+`notifications.bus` (`psr16` under PHP-FPM) to deliver resource updates to
+`subscriptions/listen` streams; `cache_policy` for SEP-2549 caching hints;
+`header_validation` (on); `request_state`. Interceptors can now ask the user
+before a call and read the caller's trace through `$context->requestContext`.
+
+### Bridges
+
+`yii3-mcp-rbac-bridge`, `yii3-mcp-audit-log-bridge` and
+`yii3-mcp-telemetry-bridge` releases that allow `rasuvaeff/yii3-mcp` `^4.0`
+are required alongside it.
+
 ## 2.x → 3.0.0
 
 No manual steps. The only contract change is

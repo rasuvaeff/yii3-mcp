@@ -9,7 +9,7 @@ use Mcp\Exception\ToolCallException;
 /**
  * Delegates per-client/per-tool limits to the application's rate limiter via
  * {@see ToolCallLimiterInterface}. Complements (does not replace)
- * {@see SessionBudgetInterceptor}: the budget is an in-session anti-loop
+ * {@see ToolCallBudgetInterceptor}: the budget is an anti-loop
  * guard, this is the client quota keyed by the identity that
  * {@see \Rasuvaeff\Yii3Mcp\Identity\SecretResolverInterface} resolved.
  *

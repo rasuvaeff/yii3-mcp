@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget;
 
 /**
- * The model {@see \Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor} is
+ * The model {@see \Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor} is
  * checked against: a session's consumed calls, plus how many downstream calls
  * actually ran. Immutable — the state machine threads it through the sequence
  * and replays it during shrinking.

@@ -66,7 +66,7 @@ final readonly class FilteredCompletionCompleteHandler implements RequestHandler
 
         return $notFound === null
             ? $this->inner->handle($request, $session)
-            : Error::forResourceNotFound($notFound, $request->getId());
+            : Error::forInvalidParams($notFound, $request->getId());
     }
 
     /**

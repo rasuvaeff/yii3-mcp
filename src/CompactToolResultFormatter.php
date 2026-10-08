@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp;
 
+use Mcp\Capability\Registry\ToolReference;
 use Mcp\Schema\Content\Content;
 use Mcp\Schema\Content\TextContent;
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Result\CallToolResult;
 
 /**
@@ -19,10 +21,12 @@ use Mcp\Schema\Result\CallToolResult;
  * agent ~3x context tokens for an array payload, and the workaround of
  * returning a pre-encoded string loses structuredContent.
  *
- * Every branch must stay a mirror of the SDK formatter (Content pass-through,
- * mixed-array per-item formatting, scalar/null/bool special cases) — on an
- * SDK pin bump, re-diff against ToolResultFormatter::format() and
- * ToolReference::extractStructuredContent().
+ * The text branches must stay a mirror of the SDK formatter (Content
+ * pass-through, mixed-array per-item formatting, scalar/null/bool special
+ * cases) — on an SDK pin bump, re-diff against ToolResultFormatter::format().
+ * structuredContent is NOT mirrored: it is delegated to the SDK's own
+ * ToolReference::extractStructuredContent(), whose rules depend on the
+ * protocol revision (a list is structured content only from 2026-07-28 on).
  *
  * @internal
  */
@@ -39,11 +43,14 @@ final readonly class CompactToolResultFormatter
     /**
      * @param mixed $toolExecutionResult the raw value returned by the tool's PHP method
      */
-    public static function format(mixed $toolExecutionResult): CallToolResult
-    {
+    public static function format(
+        mixed $toolExecutionResult,
+        ToolReference $reference,
+        ProtocolVersion $protocolVersion,
+    ): CallToolResult {
         return new CallToolResult(
             self::content($toolExecutionResult),
-            structuredContent: self::structuredContent($toolExecutionResult),
+            structuredContent: $reference->extractStructuredContent($toolExecutionResult, $protocolVersion),
         );
     }
 
@@ -107,33 +114,5 @@ final readonly class CompactToolResultFormatter
         }
 
         return [new TextContent(json_encode($toolExecutionResult, self::JSON_FLAGS))];
-    }
-
-    /**
-     * Mirrors ToolReference::extractStructuredContent(): an array is served
-     * as-is (the SDK does this unconditionally, outputSchema or not), an
-     * object is round-tripped through JSON, everything else has none.
-     *
-     *
-     * @return array<string, mixed>|null
-     */
-    private static function structuredContent(mixed $toolExecutionResult): ?array
-    {
-        if (is_array($toolExecutionResult)) {
-            /** @var array<string, mixed> $toolExecutionResult */
-            return $toolExecutionResult;
-        }
-
-        if (is_object($toolExecutionResult) && !($toolExecutionResult instanceof Content)) {
-            /** @var array<string, mixed> */
-            return json_decode(
-                json_encode($toolExecutionResult, self::JSON_FLAGS),
-                associative: true,
-                depth: 512,
-                flags: JSON_THROW_ON_ERROR,
-            );
-        }
-
-        return null;
     }
 }

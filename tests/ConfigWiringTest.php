@@ -9,12 +9,16 @@ use LogicException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Schema\JsonRpc\MessageInterface;
+use Mcp\Schema\Notification\ResourceUpdatedNotification;
 use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
+use Mcp\Server\Subscription\InMemoryNotificationBus;
+use Mcp\Server\Subscription\NotificationBusInterface;
+use Mcp\Server\Subscription\Psr16NotificationBus;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
@@ -115,10 +119,13 @@ final class ConfigWiringTest
     {
         $params = $this->params();
 
-        /** @var array{session: array{budget: int}, interceptors: list<class-string>} $mcp */
+        /** @var array{tool_call_budget: array{calls: int, window: int}, session: array<string, mixed>, interceptors: list<class-string>, modern_era: bool} $mcp */
         $mcp = $params['rasuvaeff/yii3-mcp'];
 
-        Assert::same($mcp['session']['budget'], 0);
+        Assert::same($mcp['tool_call_budget'], ['calls' => 0, 'window' => 3600]);
+        // the key moved: the package must not ship it, or the "moved" guard
+        // could not tell the default from an application still setting it
+        Assert::false(array_key_exists('budget', $mcp['session']));
         Assert::same($mcp['interceptors'], []);
         Assert::same($mcp['configurators'], []);
         Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
@@ -577,11 +584,154 @@ final class ConfigWiringTest
         Assert::same(count($cache->values), 1);
     }
 
+    /**
+     * An application still setting the 3.x key must fail loudly: ignoring it
+     * would switch its anti-loop guard off without a word.
+     */
+    public function statelessEraAndHeaderValidationAreOnByDefault(): void
+    {
+        $mcp = $this->params()['rasuvaeff/yii3-mcp'];
+
+        Assert::true($mcp['modern_era']);
+        Assert::true($mcp['header_validation']);
+    }
+
+    /**
+     * protocol_version pins the initialize handshake; the stateless revision
+     * has no initialize, so pinning it would advertise a revision the
+     * handshake can never reach.
+     */
+    public function statelessRevisionIsNotAHandshakePin(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['protocol_version'] = '2026-07-28';
+
+        try {
+            $this->di($params);
+            $error = 'accepted';
+        } catch (\InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        }
+
+        Assert::string($error)->contains('Unsupported MCP handshake protocol version "2026-07-28"');
+    }
+
+    public function noNotificationBusIsBoundByDefault(): void
+    {
+        Assert::false(array_key_exists(NotificationBusInterface::class, $this->di()));
+    }
+
+    /**
+     * One binding, so McpServerFactory and ResourceUpdateNotifier share the
+     * instance — a memory bus the notifier publishes to must be the one the
+     * listen streams read.
+     */
+    public function memoryBusIsOneSharedInMemoryBus(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'memory';
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[NotificationBusInterface::class];
+
+        Assert::instanceOf($definition(), InMemoryNotificationBus::class);
+    }
+
+    /**
+     * The PHP-FPM choice: publisher and listener are different workers, so
+     * the bus lives in PSR-16; its keys are per application.
+     */
+    public function psr16BusStoresInTheContainersCache(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'psr16';
+        $cache = new FakeCache();
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[NotificationBusInterface::class];
+        $bus = $definition($cache);
+
+        Assert::instanceOf($bus, Psr16NotificationBus::class);
+        $bus->publish(new ResourceUpdatedNotification('app://x'));
+        Assert::true($cache->values !== []);
+
+        foreach (array_keys($cache->values) as $key) {
+            Assert::true(str_starts_with($key, 'mcp.n.'));
+            Assert::true(strlen($key) <= 64);
+        }
+    }
+
+    public function unknownNotificationBusFailsAtConfigLoad(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'redis';
+
+        try {
+            $this->di($params);
+            $error = 'accepted';
+        } catch (\InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        }
+
+        Assert::string($error)->contains('Unsupported notifications.bus "redis"');
+    }
+
+    public function subscriptionLifetimeReachesTheFactory(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] = 5;
+
+        Assert::same($this->di($params)[McpServerFactory::class]['__construct()']['subscriptionLifetime'], 5.0);
+    }
+
+    public function movedSessionBudgetKeyFailsTheBuild(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 200;
+
+        Assert::string($this->buildFailure($params))->contains('"session.budget" moved to "tool_call_budget.calls"');
+    }
+
+    /**
+     * The PSR-16 store is resolved only when the stateless era needs it —
+     * a handshake-only server with a budget must build without one.
+     */
+    public function budgetNeedsACacheOnlyForTheStatelessEra(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 2;
+        $params['rasuvaeff/yii3-mcp']['modern_era'] = false;
+
+        Assert::same($this->buildFailure($params), 'built');
+
+        $params['rasuvaeff/yii3-mcp']['modern_era'] = true;
+
+        Assert::string($this->buildFailure($params))->contains('"tool_call_budget.calls" with "modern_era" enabled needs a Psr\\SimpleCache\\CacheInterface');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function buildFailure(array $params): string
+    {
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([]);
+
+        try {
+            $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+        } catch (\LogicException $e) {
+            return $e->getMessage();
+        }
+
+        return 'built';
+    }
+
     public function omittedOptionalLimitsAndBudgetStayDisabled(): void
     {
         $params = $this->params();
         $mcp = &$params['rasuvaeff/yii3-mcp'];
-        unset($mcp['session']['budget'], $mcp['limits']['tool_result_bytes']);
+        unset($mcp['tool_call_budget'], $mcp['limits']['tool_result_bytes']);
         $mcp['tools'] = [GreetingTool::class];
 
         /** @var Closure $definition */
@@ -602,6 +752,35 @@ final class ConfigWiringTest
         $second = $tester->callTool('greet', ['name' => 'Yii']);
 
         Assert::same($second['content'][0]['text'], 'Hi, Yii!');
+    }
+
+    /**
+     * Omitted keys fall back to what params.php documents: the stateless era
+     * on (so the budget counts per client in the cache) and a one-hour window.
+     */
+    public function omittedEraAndWindowKeysUseTheDocumentedDefaults(): void
+    {
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        unset($mcp['modern_era'], $mcp['tool_call_budget']['window']);
+        $mcp['tool_call_budget']['calls'] = 1;
+        $mcp['tools'] = [GreetingTool::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([
+            GreetingTool::class => new GreetingTool(prefix: 'Hi'),
+            CacheInterface::class => new FakeCache(),
+        ]);
+
+        /** @var Server $server */
+        $server = $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+        $tester->callTool('greet', ['name' => 'Yii']);
+        $second = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::string($second['content'][0]['text'] ?? '')->contains('budget of 1 per 3600 seconds is exhausted');
     }
 
     public function promptsPathWiresTheMarkdownPromptsConfigurator(): void
@@ -698,7 +877,7 @@ final class ConfigWiringTest
     {
         $params = $this->params();
         $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
-        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 3;
+        $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 3;
         $params['rasuvaeff/yii3-mcp']['interceptors'] = [RecordingInterceptor::class];
 
         /** @var Closure $definition */
@@ -708,6 +887,8 @@ final class ConfigWiringTest
         $container = new SimpleContainer([
             GreetingTool::class => new GreetingTool(prefix: 'Hi'),
             RecordingInterceptor::class => $recording,
+            // the stateless era (on by default) counts the budget in PSR-16
+            CacheInterface::class => new FakeCache(),
         ]);
         $factory = new McpServerFactory(
             container: $container,
@@ -738,7 +919,7 @@ final class ConfigWiringTest
         // may be skipped.
         $params = $this->params();
         $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
-        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 2;
+        $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 2;
         $params['rasuvaeff/yii3-mcp']['interceptors'] = [RecordingInterceptor::class];
         $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
 

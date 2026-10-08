@@ -8,6 +8,7 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\Testing\McpErrorException;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
@@ -68,9 +69,13 @@ $tester = new McpTester($server, $factory, $factory, $factory);
 $names = array_column($tester->listTools(), 'name');
 echo 'tools/list for non-admin: ' . implode(', ', $names) . "\n";
 
-// fail-closed: guessing the hidden name does not help
-$result = $tester->callTool('admin.delete', ['id' => '42']);
-echo 'admin.delete isError=' . var_export($result['isError'], true) . ': ' . $result['content'][0]['text'] . "\n";
+// fail-closed: guessing the hidden name does not help — the answer is the
+// very JSON-RPC error a tool that does not exist gets
+try {
+    $tester->callTool('admin.delete', ['id' => '42']);
+} catch (McpErrorException $e) {
+    echo "admin.delete -> {$e->errorCode} {$e->errorMessage}\n";
+}
 
 // The declarative variant: session-independent deny/allow name patterns with
 // '*' wildcards — no class needed. In an application:

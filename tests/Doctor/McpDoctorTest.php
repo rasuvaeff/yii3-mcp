@@ -605,6 +605,69 @@ final class McpDoctorTest
      * @param array<string, string> $headers
      * @param list<string> $clientIds
      */
+    public function handshakeOnlyServerSaysModernClientsAreTurnedAway(): void
+    {
+        $check = $this->check($this->doctor(modernEra: false)->diagnose(), 'protocol_eras');
+
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::string($check->details)->contains('does not fall back to initialize');
+    }
+
+    /**
+     * A single endpoint_secret is one client ("default"): on the stateless era
+     * every caller then draws from ONE budget — worth saying before production
+     * finds out.
+     */
+    public function singleSecretBudgetIsSharedOnTheStatelessEra(): void
+    {
+        $check = $this->check($this->doctor(toolCallBudget: true)->diagnose(), 'protocol_eras');
+
+        Assert::string($check->details)->contains('every caller is client "default" and shares ONE budget');
+    }
+
+    public function perClientSecretsBudgetIsPerClient(): void
+    {
+        $check = $this->check($this->doctor(secret: '', clientIds: ['a', 'b'], toolCallBudget: true)->diagnose(), 'protocol_eras');
+
+        Assert::string($check->details)->contains('per client id and window');
+    }
+
+    public function missingBusAndKeyAreReported(): void
+    {
+        $details = $this->check($this->doctor()->diagnose(), 'protocol_eras')->details;
+
+        Assert::string($details)->contains('no notifications.bus');
+        Assert::string($details)->contains('no request_state.key');
+    }
+
+    public function aKeyOfExactlyTheMinimumLengthPasses(): void
+    {
+        $check = $this->check($this->doctor(requestStateKeyBytes: 32)->diagnose(), 'protocol_eras');
+
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::true(str_starts_with($check->details, 'Handshake and stateless 2026-07-28 eras; '));
+    }
+
+    public function tooShortRequestStateKeyFails(): void
+    {
+        $check = $this->check($this->doctor(requestStateKeyBytes: 16)->diagnose(), 'protocol_eras');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('16 bytes; the SDK requires at least 32');
+    }
+
+    /**
+     * The stateless budget and the PSR-16 bus both live in the container's
+     * cache: a missing one is a build failure the doctor names first.
+     */
+    public function statelessBudgetAndPsr16BusRequireACache(): void
+    {
+        $check = $this->check($this->doctor(toolCallBudget: true, notificationBus: 'psr16')->diagnose(), 'service_simplecache_cacheinterface');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('Stateless tool-call budget, Notification bus');
+    }
+
     private function doctor(
         string $secret = 'test-secret',
         ?string $sessionDir = null,
@@ -618,6 +681,10 @@ final class McpDoctorTest
         array $allowedHosts = [],
         bool $appsEnabled = false,
         array $appDefinitions = [],
+        bool $modernEra = true,
+        bool $toolCallBudget = false,
+        string $notificationBus = '',
+        int $requestStateKeyBytes = 0,
     ): McpDoctor {
         $factory = new Psr17Factory();
         $definitions = [
@@ -647,6 +714,10 @@ final class McpDoctorTest
             allowedHosts: $allowedHosts,
             appsEnabled: $appsEnabled,
             appDefinitions: $appDefinitions,
+            modernEra: $modernEra,
+            toolCallBudgetEnabled: $toolCallBudget,
+            notificationBus: $notificationBus,
+            requestStateKeyBytes: $requestStateKeyBytes,
         );
     }
 

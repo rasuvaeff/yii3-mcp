@@ -21,18 +21,19 @@ ClientIdentityContext is @internal}`,
 `GuardedRegistry is @internal`,
 `ConditionalToolInterface`,
 `ServerConfiguratorInterface`, `ReservedToolNamesAwareInterface`,
-`Testing\McpTester`, `Testing\SchemaSnapshot`,
+`Testing\McpTester`, `Testing\McpErrorException`, `Testing\SchemaSnapshot`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 PromptGetInterceptorInterface, PromptGetContext,
 ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
-SessionBudgetInterceptor, ResponseSizeLimitInterceptor,
+ToolCallBudgetInterceptor, ResponseSizeLimitInterceptor,
 CachingToolCallInterceptor, InterceptingReferenceHandler, ArgumentMasker,
-ToolCallLimiterInterface, RateLimitInterceptor}`,
+ToolCallLimiterInterface, RateLimitInterceptor; ClientInfoResolver and
+RequestEra are @internal}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
 PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
 FilteredListResourcesHandler, FilteredListResourceTemplatesHandler,
-FilteredCompletionCompleteHandler are @internal}`,
+FilteredCallToolHandler, FilteredCompletionCompleteHandler are @internal}`,
 `OpenApi\{SpecIndex, ToolNameValidator, JsonPointerResolver,
 OutputSchemaProjector, OperationContractValidator are @internal;
 OpenApiBridgeFactory, OpenApiServerConfigurator,
@@ -91,9 +92,16 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   load-bearing: interceptors (RBAC/audit), the cache and the size limit must
   keep seeing the RAW handler result they were written against.
   `CompactToolResultFormatter` (@internal) must stay a branch-for-branch mirror
-  of the SDK's `ToolResultFormatter::format()` + structured-content extraction
-  (Content pass-through, mixed-array per-item formatting, scalar/null/bool
-  sentinels, `JSON_INVALID_UTF8_SUBSTITUTE`); re-diff it on every SDK pin bump.
+  of the SDK's `ToolResultFormatter::format()` TEXT branches (Content
+  pass-through, mixed-array per-item formatting, scalar/null/bool sentinels,
+  `JSON_INVALID_UTF8_SUBSTITUTE`); re-diff it on every SDK pin bump.
+  `structuredContent` is NOT mirrored but delegated to
+  `ToolReference::extractStructuredContent($result, $protocolVersion)`: since
+  SDK 0.8 the rule depends on the revision (a list is structured content only
+  from 2026-07-28 on; before it strict clients reject the whole call). The 0.7
+  copy of those rules drifted the moment 0.8 changed them —
+  `structuredContentAgreesWithTheSdk` compares the two per revision. A ready
+  `InputRequiredResult` (multi round-trip ask) passes through unformatted.
   Its property test compares the text with `json_encode(structuredContent)` at
   the ENCODING level on purpose: PHP decodes JSON numbers without a decimal
   point as ints, so `0.0` does not survive `json_decode(json_encode(0.0))` as a
@@ -122,18 +130,51 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   `McpServerComponentResolver` (and the same validation set is mirrored by
   `OpenApiBridgeFactory::create()` for standalone consumers).
 
-- **Interceptor chain order is fixed and load-bearing:** session budget
+- **Interceptor chain order is fixed and load-bearing:** tool-call budget
   (outermost) → configured `interceptors` → `CachingToolCallInterceptor` →
   `ResponseSizeLimitInterceptor` (innermost). Caching must sit BETWEEN user
   interceptors and the size limit, never around user interceptors — RBAC/
   audit must run on every call including a cache hit, or caching becomes an
   ACL bypass. Never reorder without preserving this.
-- **`SessionBudgetInterceptor`'s counter is deliberately NOT
-  concurrency-safe** — a plain `get()`/`set()` read-modify-write, no
-  compare-and-swap, because the SDK's `SessionInterface` is a generic
-  key-value abstraction over an arbitrary session-store backend with no lock
-  primitive to reach for portably. N concurrent requests on the same session
-  can overrun the budget by up to N-1. Accepted: it's an anti-loop guard
+- **`ToolCallBudgetInterceptor` counts in two places, by era, and the
+  stateless one is the reason the class exists.** Handshake era: in the
+  session (initialize → TTL). Stateless 2026-07-28 era: the SDK hands every
+  request a THROWAWAY session (`StatelessProtocol` builds
+  `new Session(new InMemorySessionStore())`), so a session counter starts at
+  zero on every call and the guard silently never fires — that was 3.x's
+  `SessionBudgetInterceptor` under SDK 0.8. There the budget is per client id
+  in PSR-16 over a FIXED window: `floor(now / window)` is part of the key and
+  the TTL runs to the end of the window. Never key on the client alone with
+  `ttl = window`: PSR-16 `set()` re-arms the TTL on every write, so a client
+  that keeps calling would never be reset. A null client id is one shared
+  bucket (stricter, on purpose). Missing cache or a throwing backend rejects
+  the call (fail-closed, like `RateLimitInterceptor`). The resolver resolves
+  `CacheInterface` ONLY when the stateless era is on (3.0.1 was the same class
+  of bug with PSR-18), and `session.budget` (the 3.x key) fails the build —
+  the package's own params must therefore never ship that key. Era detection
+  lives in `Interceptor\RequestEra` only.
+- **A multi round-trip call is several `tools/call`s, and each round re-enters
+  the whole chain.** On the stateless era `elicit()` suspends the handler
+  Fiber; the SDK abandons it, answers `input_required`, and on the client's
+  retry runs the handler from the top (`ElicitationReplay`). Consequences kept
+  on purpose: the budget counts every round (answers are unsigned — a budget
+  skipping retries is bypassed by attaching made-up `inputResponses`);
+  `CachingToolCallInterceptor` neither stores an `InputRequiredResult` (it
+  would answer the retry carrying its own answer, forever) nor reads/writes
+  on a retry (`RequestEra::isRetry()` — the arguments do not show the
+  answers). More than one ask needs `request_state.key`.
+  `tests/MultiRoundTripTest` drives it end to end through the tester.
+- **`cache_policy` `public` is refused on per-caller answers.** With any
+  visibility filter, `tools/list`/`prompts/list`/`resources/list`/
+  `resources/templates/list`/`resources/read` depend on the caller; a
+  `public` SEP-2549 hint would let a shared proxy serve one caller's view to
+  another, so `McpServerFactory::create()` throws. `CachePolicyParams` fails
+  config load on a method that carries no hint (a typo would be a hint never
+  sent) — do not loosen either into a warning.
+- **Neither budget counter is concurrency-safe** — a plain `get()`/`set()`
+  read-modify-write, no compare-and-swap, because neither the SDK's
+  `SessionInterface` nor PSR-16 exposes one. N concurrent requests can
+  overrun the budget by up to N-1. Accepted: it's an anti-loop guard
   against a runaway agent, not a hard quota — do not "fix" this with a
   backend-specific lock (e.g. flock on `FileSessionStore`'s file), which
   would break for any other `SessionStoreInterface` a consumer binds. A real
@@ -188,12 +229,17 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   running them inside `new Fiber(...)` and asserting the suspend value — that is
   exactly what the transport would flush. Do not "fix" the tester by parsing
   output buffers.
-- **`Resource\ResourceUpdateNotifier` reaches only the CALLING session, by
-  construction.** It checks `SubscriptionManagerInterface::isSubscribed()` first,
-  so an unsolicited `notifications/resources/updated` can never appear on the
-  wire, and it sends through the request's own `ClientGateway`. Notifying other
-  subscribers would need a connection this process does not hold — under FPM
-  nothing outlives the request. `config/di.php` binds the manager so the SDK's
+- **`Resource\ResourceUpdateNotifier` has two delivery paths, one per era,
+  and the SDK joins them nowhere.** The notification bus (SDK 0.8) feeds ONLY
+  stateless `subscriptions/listen` streams; handshake sessions still get an
+  update only through their own `ClientGateway`, i.e. only the CALLING session,
+  after `SubscriptionManagerInterface::isSubscribed()` (so nothing unsolicited
+  reaches the wire). `notify($uri, ?$context)` publishes to the bus whenever
+  one is bound — without a context too (queue worker) — and skips the gateway
+  for a stateless context (its session is a throwaway). The bus is bound in
+  `config/di.php` only when `notifications.bus` is set, and BOTH
+  `McpServerFactory` and the notifier take it as an optional dependency: a
+  memory bus split into two instances would publish where nobody reads. `config/di.php` binds the manager so the SDK's
   subscribe handler and the notifier read the same state; a consumer swapping the
   binding must get both sides, which is why `McpServerFactory` forwards it to
   `Builder::setResourceSubscriptionManager()` instead of letting them diverge.
@@ -205,13 +251,18 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   Enabling it would advertise a capability the server never honours — the exact
   mistake `resources/subscribe` used to make here. Revisit only if the SDK grows
   the listener.
-- **The served protocol revision comes from the SDK and is NOT negotiated.**
-  `MessageInterface::PROTOCOL_VERSION` (2025-11-25 under the `~0.7.0` pin) is
-  what `initialize` answers with, whatever the client requested. Do not
-  hardcode a revision anywhere — `Testing\McpTester` reads that constant, so
-  the test client and the server can never silently disagree again (they did:
-  the tester claimed 2025-06-18 while the server answered 2025-11-25, and both
-  READMEs documented the client's number). Re-read it on any SDK pin bump.
+- **Two eras on one endpoint, and `initialize` negotiates (since SDK 0.8).**
+  Handshake era: the client's revision when supported, else the newest
+  handshake one (`MessageInterface::PROTOCOL_VERSION`); `protocol_version`
+  pins one HANDSHAKE revision (`config/di.php` rejects 2026-07-28 — it has no
+  initialize). Stateless era (`modern_era`, default on): the SDK classifies
+  each request by `params._meta`; there is no session, the SDK builds a
+  throwaway one per request. Do not hardcode a revision anywhere —
+  `Testing\McpTester` defaults to that constant (they disagreed once: the
+  tester claimed 2025-06-18 while the server answered 2025-11-25) and takes a
+  revision for era-specific tests. Anything session-bound must be tested on
+  both eras; that is how the 0.8 bump found the budget, ownership and
+  `getClientInfo()` holes.
 - **`completion/complete` does not go through the reference handler, so
   visibility has to be applied to it separately.** The SDK's
   `CompletionCompleteHandler` reads the registry directly; before
@@ -221,9 +272,16 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   existence (hidden answered, missing errored). The decorator wraps the SDK
   handler rather than reimplementing provider resolution, and phrases its
   refusal with the SDK's own `PromptNotFoundException` /
-  `ResourceNotFoundException` message so a hidden ref stays byte-identical to
-  a missing one. A ref that does not resolve at all is passed through to the
-  inner handler — never phrase "unknown capability" in two places. If the SDK
+  `ResourceNotFoundException` message AND the SDK's code (`-32602` since 0.8;
+  answering the old `-32002` kept the text identical and still made the code
+  an existence oracle) so a hidden ref stays byte-identical to a missing one.
+  `tools/call` has the same problem one step earlier:
+  `Visibility\FilteredCallToolHandler` answers a hidden tool before the SDK
+  validates arguments against its schema (an invalid call would otherwise
+  reveal it) — the reference-handler check stays as defence in depth.
+  `tests/Visibility/HiddenIsMissingTest` compares whole error envelopes for
+  every capability method; keep new methods in it. A ref that does not
+  resolve at all is passed through to the inner handler — never phrase "unknown capability" in two places. If the SDK
   ever routes completion through the reference handler, drop the decorator
   instead of stacking two checks.
 - **`tag:` is a reserved prefix in `DeclarativeToolVisibility` patterns.**
@@ -398,7 +456,8 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   regression guard. CSP domains themselves are passed through verbatim — the
   host enforces the policy and `definitions` is application-owned config, not
   client input.
-- **`mcp/sdk` is pinned `~0.7.0` (tilde, not caret).** The SDK is experimental
+- **`mcp/sdk` is pinned `~0.8.1` (tilde, not caret); the 3.x line stays on
+  `~0.7.0` (branch `3.x`).** The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect
   API drift. After SDK 1.0 → `^1.0` and a major of this package. The 0.6.0 →
@@ -479,9 +538,10 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   termination — `timeoutMs` is mandatory there, a hung guard must fail CI, not
   hang it), `Interceptor\ArgumentMasker` (idempotence, no sensitive value at
   any depth, structure preserved), `Visibility\DeclarativeToolVisibility`
-  (deny beats allow, monotonicity) and `Interceptor\SessionBudgetInterceptor`
-  (model-based, `tests/Support/SessionBudget/`, sequential only — see the
-  concurrency note above). Generators live in `<method>Generators()`, **public
+  (deny beats allow, monotonicity) and `Interceptor\ToolCallBudgetInterceptor`
+  (model-based for both eras: `tests/Support/SessionBudget/` and
+  `tests/Support/StatelessBudget/` — clients × windows × clock — sequential
+  only, see the concurrency note above). Generators live in `<method>Generators()`, **public
   static** (rector rewrites a private static helper called from a property
   body, which silently unhooks the provider — it surfaces on `release-check`,
   not `build`). Every property carries `Classify::cover` gates: a generator
@@ -510,5 +570,8 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 - Update `README.md` AND `README.ru.md` — the README is bilingual, every
   change lands in both files in the same commit (and `examples/` if usage
   changed); update `CHANGELOG.md` when releasing.
+- Keep `resources/skills/rasuvaeff-yii3-mcp/SKILL.md` current in the same
+  commit: it ships to consumers' agents (`llm/skills`) and states the safety
+  rules they follow — a stale rule there is followed, not ignored.
 - Re-run `composer build`; if the change affects public API or release safety,
   also run `make release-check`. Paste the output.

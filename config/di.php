@@ -7,9 +7,14 @@ use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
+use Mcp\Server\Subscription\InMemoryNotificationBus;
+use Mcp\Server\Subscription\NotificationBusInterface;
+use Mcp\Server\Subscription\Psr16NotificationBus;
+use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Yii3Mcp\CachePolicyParams;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
 use Rasuvaeff\Yii3Mcp\McpAction;
@@ -25,13 +30,16 @@ use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 // Fail at config load, not at the first request: an unsupported revision here
 // would otherwise surface as an opaque SDK error deep in the server build.
 $protocolVersionParam = (string) ($params['rasuvaeff/yii3-mcp']['protocol_version'] ?? '');
+$handshakeVersion = ProtocolVersion::tryFrom($protocolVersionParam);
 $protocolVersion = $protocolVersionParam === ''
     ? null
-    : (ProtocolVersion::tryFrom($protocolVersionParam) ?? throw new InvalidArgumentException(sprintf(
-        'Unsupported MCP protocol version "%s"; supported: %s',
-        $protocolVersionParam,
-        implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::cases())),
-    )));
+    : ($handshakeVersion instanceof ProtocolVersion && !$handshakeVersion->isModern()
+        ? $handshakeVersion
+        : throw new InvalidArgumentException(sprintf(
+            'Unsupported MCP handshake protocol version "%s"; supported: %s (the stateless era is "modern_era")',
+            $protocolVersionParam,
+            implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::handshakeVersions())),
+        )));
 
 // Same fail-early contract for the result-JSON knob: a typo like "compct"
 // would otherwise silently serve pretty-printed results forever.
@@ -44,6 +52,34 @@ $compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETT
         McpServerFactory::RESULT_JSON_PRETTY,
         McpServerFactory::RESULT_JSON_COMPACT,
     ));
+
+// Same for the notification bus: an unknown kind would otherwise leave
+// stateless listen streams silently empty.
+$notificationBus = (string) ($params['rasuvaeff/yii3-mcp']['notifications']['bus'] ?? '');
+
+if (!in_array($notificationBus, ['', 'psr16', 'memory'], true)) {
+    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, memory', $notificationBus));
+}
+
+// Bound only when configured: McpServerFactory and ResourceUpdateNotifier take
+// it as an optional dependency, and must share ONE instance — a memory bus the
+// notifier publishes to must be the one listen streams read.
+$notificationBusDefinition = match ($notificationBus) {
+    '' => [],
+    'memory' => [NotificationBusInterface::class => static fn(): NotificationBusInterface => new InMemoryNotificationBus()],
+    'psr16' => [
+        NotificationBusInterface::class => static fn(CacheInterface $cache): NotificationBusInterface => new Psr16NotificationBus(
+            cache: $cache,
+            // per application, short: PSR-16 guarantees 64-character keys
+            prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
+        ),
+    ],
+};
+
+/** @var array<array-key, mixed> $cachePolicyParams */
+$cachePolicyParams = $params['rasuvaeff/yii3-mcp']['cache_policy'] ?? [];
+// parsed at config load: a typo in a method name would be a hint never sent
+$cachePolicy = CachePolicyParams::parse($cachePolicyParams);
 
 // Session store default is FPM-safe (file-based): the MCP Streamable HTTP
 // session spans several requests, so the SDK's in-memory default would lose
@@ -70,6 +106,7 @@ return [
     // backs resources/subscribe AND is what Resource\ResourceUpdateNotifier
     // reads, so both sides of a subscription agree by construction
     SubscriptionManagerInterface::class => SessionSubscriptionManager::class,
+    ...$notificationBusDefinition,
     McpServerFactory::class => [
         '__construct()' => [
             'name' => $params['rasuvaeff/yii3-mcp']['server_name'],
@@ -78,6 +115,12 @@ return [
             'paginationLimit' => $params['rasuvaeff/yii3-mcp']['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
             'protocolVersion' => $protocolVersion,
             'compactToolResults' => $compactToolResults,
+            'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
+            'headerValidation' => (bool) ($params['rasuvaeff/yii3-mcp']['header_validation'] ?? true),
+            'cachePolicy' => $cachePolicy,
+            'requestStateKey' => (string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? ''),
+            'requestStateTtl' => (int) ($params['rasuvaeff/yii3-mcp']['request_state']['ttl'] ?? 600),
+            'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
         ],
     ],
     Server::class => [
@@ -129,7 +172,7 @@ return [
         },
     ],
     McpDoctor::class => [
-        'definition' => static function (ContainerInterface $container) use ($params): McpDoctor {
+        'definition' => static function (ContainerInterface $container) use ($params, $notificationBus): McpDoctor {
             /** @var array{dir?: string} $session */
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
             /** @var string $serverName */
@@ -160,6 +203,10 @@ return [
                 appDefinitions: $apps['definitions'] ?? [],
                 openApiInProcess: ($openapi['executor'] ?? 'http') === 'psr15',
                 openApiInProcessHandler: $openapi['handler'] ?? '',
+                modernEra: (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
+                toolCallBudgetEnabled: (int) ($params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] ?? 0) > 0,
+                notificationBus: $notificationBus,
+                requestStateKeyBytes: strlen((string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? '')),
             );
         },
     ],

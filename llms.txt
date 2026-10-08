@@ -29,15 +29,18 @@ composer require rasuvaeff/yii3-mcp
 - Capability names are unique across the whole server, enforced: any
   collision (attribute tools, configurators, OpenAPI bridge, prompts) fails
   the build with Exception\DuplicateCapabilityException.
-- Protocol revision served is 2025-11-25 (the SDK's default, `MessageInterface::PROTOCOL_VERSION`);
-  the SDK does NOT negotiate — it answers with its own version whatever the
-  client asks for. `Testing\McpTester` reads the same constant.
-- `resources/subscribe` is advertised by the SDK whenever any resource exists and
-  subscriptions ARE recorded per session. `Resource\ResourceUpdateNotifier` sends
-  `notifications/resources/updated` to the CALLING session from inside the request
-  that changed the resource (needs the tool's `RequestContext`); an unsubscribed
-  session gets nothing. Other sessions cannot be reached — under FPM no process
-  outlives the request, so out-of-band push stays impossible.
+- Two protocol eras on one endpoint. Handshake (2024-11-05 … 2025-11-25):
+  `initialize` NEGOTIATES (client's revision when supported, else 2025-11-25;
+  `protocol_version` pins one handshake revision), state in the session.
+  Stateless 2026-07-28 (`modern_era`, default true): no initialize, no session
+  (a throwaway one per request), `_meta` + `Mcp-Method`/`Mcp-Name` headers per
+  request, checked against the body when `header_validation` (default true).
+  Per-session state does nothing there — package guards are era-aware.
+  Not found = -32602 (resources: -32002 before 2026-07-28); hidden = missing.
+- Resource updates: `Resource\ResourceUpdateNotifier::notify($uri, ?$context)`
+  publishes to the notification bus (stateless listen streams, any process)
+  and notifies the calling handshake session if subscribed. Other handshake
+  sessions cannot be reached — no process holds their connections.
 - Server-wide params knobs: `instructions` (text served in initialize, '' omits),
   `pagination_limit` (default 50; applied to BOTH the SDK's list handlers and this
   package's filtering ones so they never page differently), `protocol_version`
@@ -110,7 +113,13 @@ $tester->callTool('greet', ['name' => 'Yii']);   // decoded result envelope
 $tester->listTools(); $tester->listResources(); $tester->listResourceTemplates(); $tester->listPrompts();
 // list* methods follow nextCursor and return every page
 $tester->readResource('app://x'); $tester->request('custom/method');
-// JSON-RPC error => RuntimeException
+// 5th arg = protocol revision: null/handshake revision => initialize;
+// ProtocolVersion::V2026_07_28 => stateless era (no initialize/session, _meta +
+// Mcp-Method/Mcp-Name headers per request; initialize() = server/discover);
+// the server needs McpServerFactory(modernEra: true).
+// 6th arg = ClientCapabilities (declare elicitation: true to test a tool that asks).
+// JSON-RPC error => Testing\McpErrorException (a RuntimeException):
+//   ->errorCode (int), ->errorMessage, ->errorData
 
 // Schema contract canary (drift in served schemas fails the build):
 use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
@@ -425,7 +434,7 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   Orthogonal to `safeMethodsOnly` — does not expose an operation the safety
   gate would otherwise reject. An unknown operationId in `dry_run` =>
   `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
-  call still passes through the full interceptor chain (session budget,
+  call still passes through the full interceptor chain (tool-call budget,
   RBAC/audit, caching, size limit).
 
 ### Argument autocompletion (completion/complete)
@@ -466,7 +475,7 @@ public function __construct(private ResourceUpdateNotifier $notifier) {}
 public function cancel(string $orderId, RequestContext $context): string
 {
     $this->orders->cancel($orderId);
-    $this->notifier->notify($context, 'app://orders/' . $orderId);  // true if subscribed
+    $this->notifier->notify('app://orders/' . $orderId, $context);  // void; $context optional
 
     return 'cancelled';
 }
@@ -474,9 +483,13 @@ public function cancel(string $orderId, RequestContext $context): string
 
 - Requires the SDK's request-scoped `RequestContext` (a method parameter; the SDK
   keeps it out of the generated input schema).
-- Checks the subscription first: an unsolicited `notifications/resources/updated`
-  never reaches a client that did not subscribe. Returns whether it was sent.
-- Reaches ONLY the calling session. `SubscriptionManagerInterface` is bound in
+- Publishes to the notification bus when one is bound (params
+  'notifications' => ['bus' => ''|'psr16'|'memory', 'subscription_lifetime' => 30]):
+  every stateless subscriptions/listen stream whose filter names the URI gets
+  it, from any process — no $context needed (queue worker, console).
+- With a handshake-era $context: checks the session subscription first (never
+  unsolicited) and notifies the CALLING session only.
+- Handshake sessions: reaches ONLY the calling session. `SubscriptionManagerInterface` is bound in
   `config/di.php` (default `SessionSubscriptionManager`) and shared with the SDK's
   subscribe/unsubscribe handlers — swap the binding and both sides follow.
 - Sends by suspending the handler Fiber; outside a Fiber `ClientGateway::notify()`
@@ -569,7 +582,7 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName; $context->arguments (array<string, mixed>);
-        // $context->session (?SessionInterface); $context->getClientInfo();
+        // $context->session (?SessionInterface); $context->clientInfo(); // ?Mcp\Schema\Implementation
         // $context->clientId (?string — identity resolved from the endpoint
         // secret; null on stdio)
         return $next();   // don't call it to short-circuit
@@ -582,10 +595,15 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // other exceptions => opaque internal error.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors).
 
-// Session budget (Interceptor\SessionBudgetInterceptor — anti-loop, NOT a
-// client quota — new session = new counter):
-// params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
-// exhausted => tool error "Session tool-call budget of N is exhausted..."
+// Tool-call budget (Interceptor\ToolCallBudgetInterceptor — anti-loop, NOT a
+// client quota): handshake era = per session (new session = new counter);
+// stateless 2026-07-28 era = per client id and fixed window in the
+// container's PSR-16 cache (required when modern_era is on; anonymous
+// callers share one budget; cache outage => rejected):
+// params: 'tool_call_budget' => ['calls' => 50, 'window' => 3600]  // calls 0 = unlimited
+// 'session' => ['budget' => …] (3.x key) => LogicException at build
+// exhausted => tool error "Session tool-call budget of N is exhausted..." /
+//   "Tool-call budget of N per W seconds is exhausted; retry in S seconds"
 
 // Result size limit (Interceptor\ResponseSizeLimitInterceptor —
 // context-overflow guard) — a string over the limit is truncated with a
@@ -609,7 +627,7 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // security gate. An identity provider failure fails CLOSED for cached
 // tools (serving a result without knowing whose it is = the leak the key
 // prevents).
-// Chain order: session budget → configured interceptors → caching → size
+// Chain order: tool-call budget → configured interceptors → caching → size
 // limit (innermost). Configured interceptors (RBAC, audit) run on EVERY
 // call, including a cache hit — no ACL bypass through the cache. The size
 // limit only runs on a cache miss; the already-limited value is what gets
@@ -671,7 +689,8 @@ final readonly class MyVisibility implements ToolVisibilityInterface
 // params: 'tool_visibility' => MyVisibility::class  ('' = off, DI-resolved)
 // 'tool_visibility' and 'visibility' are mutually exclusive => LogicException at build.
 // Applies to tools/list (invisible tools omitted) AND tools/call (fail-closed:
-// calling a hidden tool => tool error "not available in this session";
+// calling a hidden tool => the same JSON-RPC error as a missing tool:
+// -32602 'Tool not found: "x".', before argument validation;
 // the call never reaches interceptors or the tool).
 // ConditionalToolInterface = build-time global; this = per-session.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors, $visibility).
@@ -687,7 +706,7 @@ final readonly class MyVisibility implements ToolVisibilityInterface
 
 ```php
 // Same seams for the other capabilities — SEPARATE interfaces and params:
-use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->getClientInfo()
+use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->clientInfo()
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadContext;     // ->uri, ->variables (RFC 6570), ->uriTemplate (null = static), ->session, ->clientId
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
@@ -733,7 +752,7 @@ Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 secrets; mutually exclusive with endpoint_secret; a secret shared by two
 client ids is rejected), `secret_header`,
 `allowed_hosts`, `session.dir`, `session.ttl`,
-`session.budget`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
+`tool_call_budget.calls`, `tool_call_budget.window`, `modern_era`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
 `cache.tools`, `cache.namespace`, `interceptors`,
 `prompt_interceptors`,
 `resource_interceptors`, `configurators`, `tool_visibility`,
@@ -756,3 +775,37 @@ calls `withReservedToolNames()` with the names of the `#[McpTool]` methods
 before `configure()`, so it can reject a colliding name instead of losing
 its own tool (the SDK registry is last-write-wins and registers attribute
 tools last).
+
+## Multi round-trip calls (stateless 2026-07-28 era)
+
+- `ClientGateway::elicit()`/`elicitUrl()` in a handler: the request ends with
+  `resultType: input_required` + `inputRequests`; the client re-sends the call
+  with `inputResponses` (+ `requestState`) and the handler RUNS AGAIN FROM THE
+  TOP — side effects before the last ask repeat per round.
+- More than one ask per call needs params
+  'request_state' => ['key' => <>= 32 bytes, from env>, 'ttl' => 600];
+  without a key the second ask fails the call.
+- Every round is a tools/call: interceptors run and the tool-call budget counts
+  each round (one ask = two units). The result cache skips asks and retries.
+- `sample()`/`listRoots()` throw on 2026-07-28 (deprecated: SEP-2577).
+- Testing: McpTester(..., ProtocolVersion::V2026_07_28, new ClientCapabilities(elicitation: true));
+  first callTool() returns the input_required result; answer with
+  $tester->request('tools/call', ['name' => …, 'arguments' => …, 'inputResponses' => ['key' => ['action' => 'accept', 'content' => […]]]]).
+
+## Stateless-era extras
+
+- Interceptor contexts (`ToolCallContext`, `PromptGetContext`,
+  `ResourceReadContext`) carry `?Mcp\Server\RequestContext $requestContext`:
+  `->getClientGateway()->elicit(...)` asks the user before the call (works for
+  OpenAPI-bridged tools too; interceptors outside it run once per round),
+  `->getTraceContext()` = caller's traceparent/tracestate/baggage.
+- `$context->isStateless()`: true on the 2026-07-28 era, where `$context->session`
+  is a per-request throwaway — its id names nothing, nothing in it survives.
+- params 'cache_policy' => ['ttl_ms' => 0, 'scope' => 'private'|'public',
+  'methods' => ['tools/list' => ['ttl_ms' => 300000, 'scope' => 'private']]]
+  (cacheable: server/discover, tools/list, prompts/list, resources/list,
+  resources/templates/list, resources/read; unknown method/scope = config-load
+  error; 'public' on a list/read + any visibility filter = build error).
+- `ResourceLink` content passes through result_json compact untouched.
+- mcp:doctor `protocol_eras` check; the stateless budget and a psr16 bus add
+  `Psr\SimpleCache\CacheInterface` to the required services.

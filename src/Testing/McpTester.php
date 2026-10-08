@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Testing;
 
+use Mcp\Client\Stateless\HeaderFactory;
+use Mcp\Client\Stateless\RequestEnvelope;
+use Mcp\Client\Stateless\ToolCatalog;
+use Mcp\Schema\ClientCapabilities;
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\Implementation;
 use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Server;
 use Mcp\Server\Transport\StreamableHttpTransport;
@@ -16,45 +22,73 @@ use RuntimeException;
 /**
  * In-process MCP client for testing application tools without HTTP or a
  * transport process: drives the same Streamable HTTP code path the real
- * endpoint uses (initialize handshake, session id, JSON-RPC framing) and
- * returns decoded results.
+ * endpoint uses and returns decoded results.
+ *
+ * By default it speaks the handshake era (initialize, session id); given a
+ * modern revision (2026-07-28) it speaks the stateless era instead — no
+ * initialize, every request carries its own `_meta` envelope and the
+ * standard `Mcp-Method`/`Mcp-Name`/`Mcp-Param-*` headers, built by the SDK's
+ * own client classes so the tester cannot drift from a conformant client.
  *
  * ```php
  * $tester = new McpTester($server, $requestFactory, $responseFactory, $streamFactory);
  * $tester->callTool('order.status', ['orderId' => '42']);
+ *
+ * $modern = new McpTester($server, $requestFactory, $responseFactory, $streamFactory, ProtocolVersion::V2026_07_28);
  * ```
  *
  * @api
  */
 final class McpTester
 {
+    private const string CLIENT_NAME = 'mcp-tester';
+
+    private const string CLIENT_VERSION = '1.0';
+
     private string $sessionId = '';
 
     private int $requestId = 0;
 
+    private readonly ToolCatalog $toolCatalog;
+
+    /**
+     * @param ProtocolVersion|null $protocolVersion the revision to speak; null = the SDK's
+     *                                              newest handshake revision
+     * @param ClientCapabilities|null $capabilities what the tester claims to support — declare
+     *                                              `elicitation` to test a tool that asks the user
+     */
     public function __construct(
         private readonly Server $server,
         private readonly ServerRequestFactoryInterface $requestFactory,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
-    ) {}
+        private readonly ?ProtocolVersion $protocolVersion = null,
+        private readonly ?ClientCapabilities $capabilities = null,
+    ) {
+        $this->toolCatalog = new ToolCatalog();
+    }
 
     /**
      * Performs the initialize handshake; called implicitly by the other
-     * methods when needed.
+     * methods when needed. The modern era has no handshake: there it asks
+     * `server/discover` instead, which answers the same questions.
      *
-     * @return array<array-key, mixed> the initialize result (serverInfo, capabilities, …)
+     * @return array<array-key, mixed> the initialize (or server/discover) result
      */
     public function initialize(): array
     {
+        if ($this->isModern()) {
+            return $this->request('server/discover');
+        }
+
         $response = $this->post([
             'jsonrpc' => '2.0',
             'id' => ++$this->requestId,
             'method' => 'initialize',
             'params' => [
                 'protocolVersion' => $this->protocolVersion(),
-                'capabilities' => [],
-                'clientInfo' => ['name' => 'mcp-tester', 'version' => '1.0'],
+                'capabilities' => $this->capabilities ?? new \stdClass(),
+                'clientInfo' => ['name' => self::CLIENT_NAME, 'version' => self::CLIENT_VERSION],
             ],
         ]);
 
@@ -115,6 +149,13 @@ final class McpTester
                 }
             }
 
+            // the catalog derives the Mcp-Param-* headers a modern tools/call
+            // must carry for the tool's declared header parameters
+            if ($method === 'tools/list') {
+                /** @var list<array<string, mixed>> $items */
+                $this->toolCatalog->record($items);
+            }
+
             /** @var mixed $nextCursor */
             $nextCursor = $result['nextCursor'] ?? null;
             $cursor = is_string($nextCursor) && $nextCursor !== '' ? $nextCursor : null;
@@ -159,7 +200,7 @@ final class McpTester
      */
     public function request(string $method, ?array $params = null): array
     {
-        if ($this->sessionId === '') {
+        if ($this->sessionId === '' && !$this->isModern()) {
             $this->initialize();
         }
 
@@ -181,7 +222,12 @@ final class McpTester
      */
     private function protocolVersion(): string
     {
-        return MessageInterface::PROTOCOL_VERSION->value;
+        return ($this->protocolVersion ?? MessageInterface::PROTOCOL_VERSION)->value;
+    }
+
+    private function isModern(): bool
+    {
+        return $this->protocolVersion?->isModern() === true;
     }
 
     private function notify(string $method): void
@@ -194,6 +240,20 @@ final class McpTester
      */
     private function post(array $payload): ResponseInterface
     {
+        $headers = [];
+        $version = $this->protocolVersion;
+
+        if ($version?->isModern() === true) {
+            $payload = (new RequestEnvelope(
+                $version,
+                $this->capabilities ?? new ClientCapabilities(),
+                new Implementation(name: self::CLIENT_NAME, version: self::CLIENT_VERSION),
+            ))->stamp($payload);
+            /** @var array<string, mixed> $serialized the message exactly as it goes on the wire */
+            $serialized = json_decode(json_encode($payload, JSON_THROW_ON_ERROR), associative: true, flags: JSON_THROW_ON_ERROR);
+            $headers = (new HeaderFactory($this->toolCatalog))->forMessage($serialized, $version);
+        }
+
         $request = $this->requestFactory
             ->createServerRequest('POST', '/mcp')
             ->withHeader('Content-Type', 'application/json')
@@ -204,6 +264,10 @@ final class McpTester
             $request = $request
                 ->withHeader('Mcp-Session-Id', $this->sessionId)
                 ->withHeader('MCP-Protocol-Version', $this->protocolVersion());
+        }
+
+        foreach ($headers as $name => $value) {
+            $request = $request->withHeader($name, $value);
         }
 
         return $this->server->run(new StreamableHttpTransport(
@@ -229,10 +293,14 @@ final class McpTester
         $decoded = json_decode($raw, associative: true, flags: JSON_THROW_ON_ERROR);
 
         if (isset($decoded['error']) && is_array($decoded['error'])) {
-            throw new RuntimeException(sprintf(
-                'MCP error: %s',
-                $this->stringOr($decoded['error']['message'] ?? null, 'unknown error'),
-            ));
+            /** @var mixed $code */
+            $code = $decoded['error']['code'] ?? null;
+
+            throw new McpErrorException(
+                errorCode: is_int($code) ? $code : null,
+                errorMessage: $this->stringOr($decoded['error']['message'] ?? null, 'unknown error'),
+                errorData: $decoded['error']['data'] ?? null,
+            );
         }
 
         return $this->arrayOrEmpty($decoded['result'] ?? null);

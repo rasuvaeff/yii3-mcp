@@ -10,6 +10,7 @@ use Mcp\Server;
 use Mcp\Server\Builder;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\InMemorySessionStore;
+use Mcp\Server\Transport\StreamableHttpTransport;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Invocation;
@@ -36,6 +37,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyPromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingLogger;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\TrailingHelperTool;
@@ -257,10 +259,16 @@ final class McpServerFactoryTest
     {
         $server = $this->factory()->create([GreetingTool::class], [], [], new DenyListVisibility(hidden: ['greet']));
 
-        $result = $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+        $tester = $this->tester($server);
 
-        Assert::true($result['isError']);
-        Assert::string($result['content'][0]['text'])->contains('not available in this session');
+        try {
+            $tester->callTool('greet', ['name' => 'Yii']);
+            $error = 'no error';
+        } catch (\RuntimeException $e) {
+            $error = $e->getMessage();
+        }
+
+        Assert::same($error, 'MCP error: Tool not found: "greet".');
     }
 
     public function visibilityAndInterceptorsComposeInOneDecorator(): void
@@ -369,6 +377,68 @@ final class McpServerFactoryTest
         }
 
         Assert::notNull($caught);
+    }
+
+    /**
+     * Stateless requests whose standard headers contradict the body are
+     * refused by default (SEP-2243) — what lets a proxy route on headers.
+     */
+    #[DataProvider('headerValidationProvider')]
+    public function contradictingStandardHeadersAreRefusedUnlessDisabled(bool $validation, bool $refused): void
+    {
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: new InMemorySessionStore(),
+            headerValidation: $validation,
+        ))->create([GreetingTool::class]);
+        $psr17 = new Psr17Factory();
+        $request = $psr17->createServerRequest('POST', '/mcp')
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Accept', 'application/json, text/event-stream')
+            ->withHeader('MCP-Protocol-Version', '2026-07-28')
+            ->withHeader('Mcp-Method', 'tools/call')
+            ->withHeader('Mcp-Name', 'explode')
+            ->withBody($psr17->createStream(json_encode([
+                'jsonrpc' => '2.0',
+                'id' => 1,
+                'method' => 'tools/call',
+                'params' => [
+                    'name' => 'greet',
+                    'arguments' => ['name' => 'Yii'],
+                    '_meta' => [
+                        'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                        'io.modelcontextprotocol/clientCapabilities' => new \stdClass(),
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)));
+
+        $body = (string) $server->run(new StreamableHttpTransport($request, $psr17, $psr17))->getBody();
+
+        Assert::same(str_contains($body, 'does not match the body value'), $refused);
+    }
+
+    public static function headerValidationProvider(): iterable
+    {
+        yield 'on (default)' => [true, true];
+        yield 'off' => [false, false];
+    }
+
+    /**
+     * The visibility-aware tools/call handler logs through the configured
+     * logger, like every SDK handler — not into a silent NullLogger.
+     */
+    public function hiddenToolHandlerLogsThroughTheConfiguredLogger(): void
+    {
+        $logger = new RecordingLogger();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: new InMemorySessionStore(),
+            logger: $logger,
+        ))->create([GreetingTool::class], [], [], new DenyListVisibility(hidden: ['explode']));
+
+        $this->tester($server)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::true(in_array('Executing tool', $logger->messages, strict: true));
     }
 
     private function tester(Server $server): McpTester

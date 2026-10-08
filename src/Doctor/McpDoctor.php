@@ -7,6 +7,7 @@ namespace Rasuvaeff\Yii3Mcp\Doctor;
 use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Server;
 use Mcp\Server\Session\SessionStoreInterface;
+use Mcp\Server\Stateless\RequestStateCodec;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -53,6 +54,8 @@ final readonly class McpDoctor
      * @param list<string> $clientSecretIds ids (NOT secrets) from the `client_secrets` param
      * @param list<array<string, mixed>> $appDefinitions raw `apps.definitions` entries, parsed here so a
      *                                                   malformed one is reported even when the server build check skips
+     * @param string $notificationBus the `notifications.bus` kind ('' | psr16 | memory)
+     * @param int $requestStateKeyBytes length of `request_state.key` — the key itself is never passed here
      */
     public function __construct(
         private ContainerInterface $container,
@@ -73,6 +76,10 @@ final readonly class McpDoctor
         private array $appDefinitions = [],
         private bool $openApiInProcess = false,
         private string $openApiInProcessHandler = '',
+        private bool $modernEra = true,
+        private bool $toolCallBudgetEnabled = false,
+        private string $notificationBus = '',
+        private int $requestStateKeyBytes = 0,
     ) {}
 
     public function diagnose(bool $probeUpstream = false): DoctorReport
@@ -83,6 +90,7 @@ final readonly class McpDoctor
             ...$this->checkServices(),
             $this->checkSessionDirectory(),
             $this->checkSessionStore(),
+            $this->checkProtocolEras(),
             $this->checkOpenApiSpec($probeUpstream),
             $this->checkMcpApps(),
             $this->checkServerBuild($probeUpstream),
@@ -182,6 +190,14 @@ final readonly class McpDoctor
             $requirements[CacheInterface::class][] = 'Tool result cache';
         }
 
+        if ($this->modernEra && $this->toolCallBudgetEnabled) {
+            $requirements[CacheInterface::class][] = 'Stateless tool-call budget';
+        }
+
+        if ($this->notificationBus === 'psr16') {
+            $requirements[CacheInterface::class][] = 'Notification bus';
+        }
+
         $checks = [];
 
         foreach ($requirements as $interface => $features) {
@@ -264,6 +280,53 @@ final readonly class McpDoctor
             details: $this->clientSecretIds === []
                 ? 'Configured (single secret)'
                 : sprintf('Configured: %d client(s) [%s]', count($this->clientSecretIds), implode(', ', $this->clientSecretIds)),
+        );
+    }
+
+    /**
+     * What the stateless 2026-07-28 era changes for this configuration — the
+     * facts an operator moving off 3.x would otherwise learn from production.
+     */
+    private function checkProtocolEras(): CheckResult
+    {
+        if (!$this->modernEra) {
+            return new CheckResult(
+                name: 'protocol_eras',
+                category: CheckCategory::Config,
+                status: CheckStatus::Pass,
+                details: 'Handshake era only (modern_era: false): a client speaking only 2026-07-28 gets "Unsupported protocol version" and does not fall back to initialize',
+            );
+        }
+
+        if ($this->requestStateKeyBytes > 0 && $this->requestStateKeyBytes < RequestStateCodec::MINIMUM_KEY_BYTES) {
+            return new CheckResult(
+                name: 'protocol_eras',
+                category: CheckCategory::Config,
+                status: CheckStatus::Fail,
+                details: sprintf('request_state.key is %d bytes; the SDK requires at least %d', $this->requestStateKeyBytes, RequestStateCodec::MINIMUM_KEY_BYTES),
+            );
+        }
+
+        $notes = ['Handshake and stateless 2026-07-28 eras'];
+
+        if ($this->toolCallBudgetEnabled) {
+            $notes[] = $this->clientSecretIds === []
+                ? 'tool-call budget on the stateless era is per client: with a single endpoint_secret every caller is client "default" and shares ONE budget'
+                : 'tool-call budget on the stateless era is per client id and window';
+        }
+
+        $notes[] = $this->notificationBus === ''
+            ? 'no notifications.bus: stateless subscriptions/listen streams carry no resource updates'
+            : sprintf('notifications.bus: %s', $this->notificationBus);
+        $notes[] = $this->requestStateKeyBytes === 0
+            ? 'no request_state.key: a tool asking the user more than once per call fails on the stateless era'
+            : 'request_state.key set';
+
+        return new CheckResult(
+            name: 'protocol_eras',
+            category: CheckCategory::Config,
+            status: CheckStatus::Pass,
+            details: implode('; ', $notes),
         );
     }
 

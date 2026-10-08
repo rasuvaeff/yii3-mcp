@@ -31,9 +31,41 @@ Yii3 DI-контейнер.
 | Требование | Версия |
 |------------|--------|
 | PHP | 8.3 - 8.5 |
-| `mcp/sdk` | `~0.7.0` (экспериментален до 1.0, поэтому используется tilde pin) |
-| MCP protocol | 2025-11-25 (дефолт SDK; он анонсирует эту ревизию в `initialize` независимо от того, что запросил клиент) |
+| `mcp/sdk` | `~0.8.1` (экспериментальный до 1.0 — отсюда tilde-пин; линия 3.x остаётся на `~0.7.0`) |
+| MCP protocol | 2024-11-05 … 2025-11-25 через `initialize` (согласуется), 2026-07-28 stateless |
 | `ext-fileinfo` | требуется SDK |
+
+
+| Линия | Ветка | `mcp/sdk` | Ревизии MCP | Поддержка |
+|---|---|---|---|---|
+| 4.x | `master` | `~0.8.1` | handshake + stateless 2026-07-28 | фичи и исправления |
+| 3.x | `3.x` | `~0.7.0` | только handshake | исправления багов и безопасности |
+
+## Ревизии протокола
+
+Один endpoint обслуживает обе эры протокола; SDK классифицирует каждый запрос.
+
+| Эра | Ревизии | Жизненный цикл | Состояние |
+|---|---|---|---|
+| handshake | 2024-11-05 … 2025-11-25 | `initialize` → `Mcp-Session-Id` в каждом запросе | в session store (`session.*`) |
+| stateless | 2026-07-28 | нет: каждый запрос несёт свой `_meta` (ревизия, client info, capabilities) и заголовки `Mcp-Method`/`Mcp-Name` | нет — SDK даёт каждому запросу одноразовую session |
+
+- `initialize` согласует ревизию: ревизию клиента, если она поддерживается,
+  иначе 2025-11-25. `protocol_version` закрепляет handshake за одной ревизией
+  (только handshake-ревизии).
+- `modern_era` (по умолчанию `true`) обслуживает stateless-эру. Если её
+  выключить, такие запросы получат `Unsupported protocol version`, а клиент,
+  говорящий только на 2026-07-28, сам на `initialize` не откатится.
+- `header_validation` (по умолчанию `true`) отклоняет stateless-запрос, чьи
+  стандартные заголовки противоречат телу (`-32020`): proxy может
+  маршрутизировать и авторизовать только по заголовкам.
+- Всё, что хранит состояние «на session», в stateless-эре живёт один запрос.
+  Session-зависимые гарды пакета учитывают эру: tool-call budget считается
+  на клиента, владельца session привязывать не к чему (identity — client id
+  каждого запроса), `clientInfo()` читает `_meta` запроса.
+- Not found — это `-32602` для tools, prompts и completion refs на всех
+  ревизиях и для resources начиная с 2026-07-28 (раньше `-32002`); скрытые
+  capabilities отвечают ровно так же.
 
 ## Установка
 
@@ -205,6 +237,32 @@ elicitation, выбирайте fail-closed fallback для разрушител
 capabilities. Передавайте `RequestContext` в метод, а не в constructor: он
 принадлежит одному request/session.
 
+В stateless-эре 2026-07-28 спросить некого, пока запрос открыт, поэтому
+вопрос работает иначе — а тот же хендлер обслуживает обе эры без изменений:
+
+- `elicit()`/`elicitUrl()` завершают запрос с `resultType: input_required`;
+  клиент присылает вызов заново с ответом, и SDK **запускает хендлер заново с
+  начала**, где вопрос теперь возвращает ответ. Всё, что хендлер делает до
+  последнего вопроса, повторяется на каждом раунде — побочные эффекты держите
+  после него.
+- Больше одного вопроса за вызов переносят прежние ответы между раундами в
+  подписанном `requestState`: задайте `request_state.key` (не короче 32 байт, из
+  окружения). Без ключа первый вопрос работает, второй валит вызов.
+- Каждый раунд — это `tools/call`: interceptors выполняются на каждом раунде, и
+  tool-call budget считает каждый (один вопрос стоит двух). Ответы не
+  подписаны, поэтому budget, пропускающий «повторы», обходился бы любым клиентом.
+- Кеш результатов никогда не сохраняет вопрос и не отдаёт следующий раунд.
+- `sample()`/`listRoots()` бросают исключение на 2026-07-28, где их убрали
+  (Sampling, Roots и Logging объявлены deprecated в SEP-2577).
+- `progress()`/`log()` стримятся по SSE, если клиент принимает
+  `text/event-stream`.
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'request_state' => ['key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '', 'ttl' => 600],
+],
+```
+
 Чтобы включать capability class по условию (feature flag, проверка окружения),
 реализуйте `ConditionalToolInterface`. Экземпляр будет разрешён контейнером
 при построении сервера и пропущен, когда `shouldRegister()` возвращает `false`.
@@ -335,7 +393,11 @@ capabilities.
 (включая **конфиденциальность**: session directory, читаемая group/others,
 проваливает проверку — не только незаписываемая), OpenAPI spec, конфигурацию
 MCP Apps (каждое декларативное определение парсится, поэтому битое будет
-показано даже когда проверка server build пропущена) и реальный server build. Отсутствующий service выводится с точным
+показано даже когда проверка server build пропущена), эры протокола (что
+stateless-эра меняет для этой конфигурации: с одним `endpoint_secret` все
+stateless-вызовы делят один tool-call budget, без `notifications.bus`
+listen-потоки пусты, без `request_state.key` вызов может спросить только
+один раз; слишком короткий ключ — fail) и реальный server build. Отсутствующий service выводится с точным
 именем interface. Exit codes стабильны для скриптов: `0` — здоров,
 `2` — config error, `3` — storage error, `4` — upstream error; берётся
 категория **первой** упавшей проверки (проверки идут от корневых причин, так
@@ -472,9 +534,14 @@ interceptor.
     // Применяется и к обработчикам SDK, и к фильтрующим обработчикам пакета —
     // они не могут разойтись в пагинации из-за наличия visibility.
     'pagination_limit' => 50,
-    // фиксирует ревизию, анонсируемую в initialize; пусто — дефолт SDK
-    // (2025-11-25). Неподдерживаемое значение падает на загрузке конфига.
+    // закрепляет handshake за одной ревизией, например '2025-06-18'; пусто —
+    // согласование (ревизия клиента, если поддерживается, иначе 2025-11-25).
+    // Только handshake-ревизии; остальное падает на загрузке конфига.
     'protocol_version' => '',
+    // обслуживать и stateless-эру 2026-07-28 (см. «Ревизии протокола»)
+    'modern_era' => true,
+    // stateless-эра: отклонять запросы, чьи стандартные заголовки противоречат телу
+    'header_validation' => true,
     // как array/object результаты tools кодируются в текст, который читает
     // агент: 'pretty' (по умолчанию, форматирование самого SDK) или 'compact'
     // — без отступов, ~3x меньше байт; на structuredContent не влияет.
@@ -485,11 +552,8 @@ interceptor.
 
 ### Подписки на ресурсы
 
-SDK анонсирует `resources.subscribe`, как только у сервера есть хоть один
-ресурс, и записывает `resources/subscribe` в сессию. Сам по себе
-`notifications/resources/updated` никто не шлёт — но тулза, которая *вызвала*
-изменение, может сделать это в рамках того же запроса через
-`Resource\ResourceUpdateNotifier`:
+Подписчики двух эр протокола достигаются по-разному, и
+`Resource\ResourceUpdateNotifier` покрывает обе одним вызовом:
 
 ```php
 public function __construct(private ResourceUpdateNotifier $notifier) {}
@@ -498,22 +562,62 @@ public function __construct(private ResourceUpdateNotifier $notifier) {}
 public function cancel(string $orderId, RequestContext $context): string
 {
     $this->orders->cancel($orderId);
-    $this->notifier->notify($context, 'app://orders/' . $orderId);
+    $this->notifier->notify('app://orders/' . $orderId, $context);
 
     return 'cancelled';
 }
 ```
 
-`notify()` возвращает, был ли вызывающий подписан; сессии, которая не
-подписывалась, не отправляется ничего — незапрошенное уведомление на провод не
-попадёт. Свой `Mcp\Server\Resource\SubscriptionManagerInterface` подхватят
-обе стороны — и обработчик subscribe, и нотификатор; по умолчанию биндится
-session-backed менеджер SDK.
+| Эра | Подписка | Кого достигает |
+|---|---|---|
+| stateless 2026-07-28 | поток `subscriptions/listen`, который читает notification bus | каждого слушателя, чей фильтр называет URI, из любого процесса с общей шиной — `$context` необязателен, уведомлять может и queue worker, и консольная команда |
+| handshake | `resources/subscribe`, записан в сессии вызывающего | только вызывающую сессию, изнутри запроса, изменившего ресурс — соединений других сессий нет ни у одного процесса |
 
-**Достижима только вызывающая сессия.** Другие сессии, подписанные на тот же
-URI, — нет: для этого нужно соединение, которого у процесса нет. Под PHP-FPM
-ничего не переживает запрос, поэтому внеполосный push по-прежнему невозможен —
-клиентам, которым нужно видеть чужие изменения, остаётся опрос.
+```php
+'rasuvaeff/yii3-mcp' => [
+    'notifications' => [
+        // '' = нет (listen-потоки ничего не несут), 'psr16' = через PSR-16 cache
+        // контейнера (PHP-FPM: публикующий и слушающий — разные воркеры),
+        // 'memory' = один процесс (stdio, постоянный рантайм)
+        'bus' => 'psr16',
+        // сколько секунд держится listen-поток; под PHP-FPM он столько же
+        // держит воркер — держите ниже max_execution_time
+        'subscription_lifetime' => 30,
+    ],
+],
+```
+
+Незапрошенное уведомление на провод не попадёт: путь через сессию сначала
+проверяет подписку, а listen-поток несёт только URI из собственного фильтра.
+Свой `Mcp\Server\Resource\SubscriptionManagerInterface` подхватят и обработчик
+subscribe, и нотификатор; шина привязывается один раз, поэтому
+`McpServerFactory` и нотификатор всегда делят один экземпляр.
+
+### Подсказки кеширования (stateless-эра)
+
+Stateless-ответы на `server/discover`, `tools/list`, `prompts/list`,
+`resources/list`, `resources/templates/list` и `resources/read` несут
+подсказки кеширования SEP-2549. По умолчанию — как в SDK: ничего не свежо
+(`ttlMs: 0`), ничего не разделяется (`private`).
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'cache_policy' => [
+        'ttl_ms' => 0,
+        'scope' => 'private',
+        'methods' => [
+            // список tools меняется только с выкладкой
+            'tools/list' => ['ttl_ms' => 300000, 'scope' => 'private'],
+        ],
+    ],
+],
+```
+
+`public` позволяет **общему** кешу (proxy) отдать ответ одного вызывающего
+другому — это решение оператора. Если настроен любой visibility-фильтр,
+`public` на списке или `resources/read` валит сборку: такие ответы зависят от
+вызывающего. Метод без подсказки, опечатка в имени или неизвестный scope
+падают на загрузке конфига, а не игнорируются.
 
 ## Framework-agnostic usage
 
@@ -575,13 +679,25 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
     public function intercept(ToolCallContext $context, callable $next): mixed
     {
         // $context->toolName, $context->arguments, $context->session,
-        // $context->getClientInfo() - who is calling what with which input
+        // $context->clientInfo() (?Implementation) - who is calling what with which input
         $this->logger->info('tools/call', ['tool' => $context->toolName]);
 
         return $next();   // skip $next() to short-circuit
     }
 }
 ```
+
+`$context->isStateless()` отличает stateless-эру: там `$context->session` —
+одноразовая сессия этого запроса, её id ничего не называет (не пишите его в
+логи как session) и ничего в ней не переживает вызов.
+`$context->requestContext` — это `RequestContext` SDK для вызова (null вне
+запроса к серверу): `getClientGateway()` позволяет interceptor спросить
+пользователя до вызова — способ подтвердить дорогую операцию на tool, чьим
+хендлером приложение не владеет (например, bridged через OpenAPI), — а
+`getTraceContext()` несёт W3C `traceparent`/`tracestate`/`baggage` вызывающего
+(stateless-эра). В stateless-эре вопрос завершает запрос, и на повторе вся
+цепочка выполняется заново: interceptors снаружи спрашивающего выполняются
+на каждом раунде (см. «Server-initiated communication»).
 
 ```php
 // config/params.php - resolved through the container, first = outermost
@@ -619,22 +735,39 @@ $this->logger->info('tools/call', ['tool' => $context->toolName, 'arguments' => 
 Это единый helper, поэтому audit trail, telemetry и custom interceptors
 маскируют данные одинаково и не расходятся по semantics.
 
-### Session budget: остановка agent loops
+### Tool-call budget: остановка agent loops
 
-Это жёсткий предел `tools/call` на MCP session - с `initialize` до истечения
-TTL. Зациклившийся агент исчерпает budget и получит понятную tool error вместо
-того, чтобы непрерывно нагружать приложение.
+Это жёсткий предел `tools/call` подряд. Зациклившийся агент исчерпает budget и
+получит понятную tool error вместо того, чтобы непрерывно нагружать
+приложение.
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    'session' => ['budget' => 50],   // 0 = unlimited (default)
+    'tool_call_budget' => [
+        'calls' => 50,     // 0 = unlimited (default)
+        'window' => 3600,  // секунды, только stateless-эра
+    ],
 ],
 ```
 
-Защита действует **внутри одной session**, а не задаёт client quota: повторный
-`initialize` начинает новый counter. Client quotas должны жить в rate limiter
-уровня приложения. Budget guard всегда внешний interceptor и отклоняет вызов
-до работы остальных interceptors.
+Что значит «подряд», зависит от эры протокола:
+
+| Эра | Считается на | Сбрасывается |
+|---|---|---|
+| handshake (`initialize`) | MCP session, в самой session | новой session (повторный initialize) или TTL session |
+| stateless 2026-07-28 | client id, в PSR-16 cache контейнера | сменой фиксированного окна (`floor(now / window)`) |
+
+У stateless-эры нет session, в которой можно считать: session-счётчик
+начинался бы с нуля на каждом запросе. Поэтому при включённом `modern_era`
+budget требует `Psr\SimpleCache\CacheInterface` в контейнере (без него сборка
+падает). Без `SharedSecretMiddleware` client id нет, и все анонимные
+stateless-вызовы делят **один** budget. Сбой cache отклоняет вызов
+(fail-closed).
+
+Это защита от циклов, а не client quota: client quotas должны жить в rate
+limiter уровня приложения. Budget guard всегда внешний interceptor и
+отклоняет вызов до работы остальных interceptors. Ключ `session.budget` из 3.x
+валит сборку с указанием на новый ключ.
 
 ### Лимит размера результата и кеш
 
@@ -731,7 +864,7 @@ Tool, результат которого зависит от того, кто �
 чтение» не то же самое, что «одинаковый ответ для всех». Bridged operations
 закрыты identity provider'ом; hand-written tools - на вашей ответственности.
 
-Порядок interceptors фиксирован: session budget (самый внешний) →
+Порядок interceptors фиксирован: tool-call budget (самый внешний) →
 настроенные `interceptors` → caching → result size limit (самый внутренний,
 ближе всего к реальному вызову tool). Настроенные interceptors (RBAC,
 audit) выполняются всегда, даже на cache hit - через cache нельзя обойти
@@ -900,8 +1033,11 @@ final readonly class PlanBasedVisibility implements ToolVisibilityInterface
 Два вида конфигурации взаимоисключающие: оба одновременно дают build-time
 error. В обоих случаях filter работает согласованно в двух точках:
 `tools/list` исключает невидимые tools, а `tools/call` **fail-closed**
-отклоняет их. Клиент, угадавший скрытое имя, получит tool error; вызов не
-дойдёт ни до interceptor chain, ни до tool. Это ранний filter, а не замена ACL
+отклоняет их. Клиент, угадавший скрытое имя, получит ровно ту же JSON-RPC
+ошибку, что и для несуществующего tool (`-32602`, `Tool not found: "…"`;
+проверка идёт до валидации аргументов, поэтому неверный вызов тоже не
+раскрывает схему); вызов не дойдёт ни до interceptor chain, ни до tool. То же
+верно для скрытых prompts, resources и completion refs. Это ранний filter, а не замена ACL
 уровня приложения.
 
 ### Hooks для prompts и resources
@@ -1386,7 +1522,7 @@ Dry-run ортогонален `safe_methods_only`: он не экспониру
 safety gate иначе бы отверг - write operation всё так же требует
 `safe_methods_only: false` (или отсутствия параметра), чтобы вообще быть
 exposed. Dry-run call всё так же проходит через весь interceptor chain
-(session budget, RBAC/audit, caching, size limit), как и любой другой call -
+(tool-call budget, RBAC/audit, caching, size limit), как и любой другой call -
 preview write action требует того же permission, что и реальный call.
 
 ## MCP Apps: интерактивный UI прямо в разговоре
@@ -1520,12 +1656,13 @@ public function refresh(): string { /* … */ }
 | `Exception\InvalidToolClassException` | configured tool class отсутствует или не имеет capability attributes (fail-fast) |
 | `ConditionalToolInterface` | capability class отказывается от registration при build time через `shouldRegister()` |
 | `Testing\McpTester` | in-process test client: initialize/list всех paginated capabilities/callTool/readResource |
+| `Testing\McpErrorException` | JSON-RPC error в ответ `McpTester`: `errorCode`, `errorMessage`, `errorData` |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot всех capability schemas; drift ломает build |
 | `Prompts\MarkdownPromptsConfigurator` | directory `*.md` files как MCP prompts, vjik/my-prompts-mcp-compatible format |
 | `ServerConfiguratorInterface` | extension point для добавления capabilities в builder через params `configurators` |
 | `Interceptor\ToolCallInterceptorInterface` | оборачивает каждый tools/call: tracing, ACL, rate limits; params `interceptors` |
-| `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `getClientInfo()` |
-| `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap: параметр `session.budget`, anti-loop guard |
+| `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, обе эры протокола) |
+| `Interceptor\ToolCallBudgetInterceptor` | tools/call cap на session (handshake-эра) или на client id и окно (stateless-эра): параметр `tool_call_budget`, anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | ограничивает размер tool result (параметр `limits.tool_result_bytes`) - обрезает strings, отклоняет oversized arrays/objects |
 | `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); типизированный ключ включает обязательный application namespace, client id и, при delegated auth, `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | decorator, подключающий chain к SDK; используется `McpServerFactory` |
@@ -1541,7 +1678,7 @@ public function refresh(): string { /* … */ }
 | `OpenApi\OperationModifierInterface` | hook кастомизации на уровне operation, применяется после `tool_names` rename |
 | `OpenApi\Operation` | read-only контекст operation, передаваемый в `OperationModifierInterface::modify()` |
 | `OpenApi\Exception\*` | `InvalidSpecException`, `UnknownOperationException`, `UnsafeOperationException`, `OperationFailedException` |
-| `Resource\ResourceUpdateNotifier` | шлёт `notifications/resources/updated` вызывающей сессии изнутри запроса, изменившего ресурс; неподписанной сессии не отправляется ничего |
+| `Resource\ResourceUpdateNotifier` | `notify($uri, ?$context)`: публикует `notifications/resources/updated` в notification bus (stateless listen-потоки) и вызывающей handshake-сессии, если она подписана; без незапрошенных уведомлений |
 | `Apps\McpAppsConfigurator` | анонсирует extension MCP Apps и регистрирует декларативные `ui://` app-ресурсы (params `apps`) |
 | `Apps\AppDefinition` | одно декларативное приложение: `ui://` URI, имя, HTML (строка или `Closure(): string`) и его `UiResourceContentMeta` |
 
@@ -1585,7 +1722,7 @@ public function refresh(): string { /* … */ }
 | [`conditional.php`](examples/conditional.php) | registration gating через `ConditionalToolInterface` | нет |
 | [`prompts.php`](examples/prompts.php) | Markdown files как MCP prompts | нет |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools, с `tool_names` и `OperationModifierInterface` | нет |
-| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, session budget guard и result size limit | нет |
+| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, tool-call budget guard и result size limit | нет |
 | [`visibility.php`](examples/visibility.php) | per-session interface, declarative deny patterns и fail-closed call | нет |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` и `structuredContent` tool | нет |
 | [`server-initiated.php`](examples/server-initiated.php) | официальный `ToolAnnotations` и schema-safe параметр `RequestContext` для progress/elicitation | нет |
@@ -1610,6 +1747,26 @@ $tester->listPrompts();               // все prompt definitions
 $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // любой raw JSON-RPC method
 ```
+
+Пятый аргумент задаёт ревизию протокола, шестой — `ClientCapabilities`, чтобы
+тестировать tool, который спрашивает пользователя
+(`new ClientCapabilities(elicitation: true)`; первый вызов вернёт результат
+`input_required`, ответ — `request('tools/call', [... 'inputResponses' => [...]])`). Handshake-ревизия
+(`ProtocolVersion::V2025_06_18`, …) согласуется через `initialize`;
+`ProtocolVersion::V2026_07_28` говорит на stateless-эре — без `initialize` и
+session id, каждый запрос несёт свой `_meta`-конверт и заголовки
+`Mcp-Method`/`Mcp-Name`/`Mcp-Param-*`, собранные клиентскими классами самого
+SDK (`initialize()` там вызывает `server/discover`). Сервер должен обслуживать
+эту эру (`McpServerFactory(modernEra: true)`):
+
+```php
+$modern = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+$modern->callTool('order.status', ['orderId' => '42']);
+```
+
+JSON-RPC error бросается как `Testing\McpErrorException` с полным конвертом —
+`errorCode`, `errorMessage`, `errorData`, — поэтому тест может проверить код, а
+не только текст (`-32602` для неизвестной или скрытой capability).
 
 ### Schema snapshot: защита от случайного изменения контракта
 
