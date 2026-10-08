@@ -619,22 +619,39 @@ $this->logger->info('tools/call', ['tool' => $context->toolName, 'arguments' => 
 Это единый helper, поэтому audit trail, telemetry и custom interceptors
 маскируют данные одинаково и не расходятся по semantics.
 
-### Session budget: остановка agent loops
+### Tool-call budget: остановка agent loops
 
-Это жёсткий предел `tools/call` на MCP session - с `initialize` до истечения
-TTL. Зациклившийся агент исчерпает budget и получит понятную tool error вместо
-того, чтобы непрерывно нагружать приложение.
+Это жёсткий предел `tools/call` подряд. Зациклившийся агент исчерпает budget и
+получит понятную tool error вместо того, чтобы непрерывно нагружать
+приложение.
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    'session' => ['budget' => 50],   // 0 = unlimited (default)
+    'tool_call_budget' => [
+        'calls' => 50,     // 0 = unlimited (default)
+        'window' => 3600,  // секунды, только stateless-эра
+    ],
 ],
 ```
 
-Защита действует **внутри одной session**, а не задаёт client quota: повторный
-`initialize` начинает новый counter. Client quotas должны жить в rate limiter
-уровня приложения. Budget guard всегда внешний interceptor и отклоняет вызов
-до работы остальных interceptors.
+Что значит «подряд», зависит от эры протокола:
+
+| Эра | Считается на | Сбрасывается |
+|---|---|---|
+| handshake (`initialize`) | MCP session, в самой session | новой session (повторный initialize) или TTL session |
+| stateless 2026-07-28 | client id, в PSR-16 cache контейнера | сменой фиксированного окна (`floor(now / window)`) |
+
+У stateless-эры нет session, в которой можно считать: session-счётчик
+начинался бы с нуля на каждом запросе. Поэтому при включённом `modern_era`
+budget требует `Psr\SimpleCache\CacheInterface` в контейнере (без него сборка
+падает). Без `SharedSecretMiddleware` client id нет, и все анонимные
+stateless-вызовы делят **один** budget. Сбой cache отклоняет вызов
+(fail-closed).
+
+Это защита от циклов, а не client quota: client quotas должны жить в rate
+limiter уровня приложения. Budget guard всегда внешний interceptor и
+отклоняет вызов до работы остальных interceptors. Ключ `session.budget` из 3.x
+валит сборку с указанием на новый ключ.
 
 ### Лимит размера результата и кеш
 
@@ -731,7 +748,7 @@ Tool, результат которого зависит от того, кто �
 чтение» не то же самое, что «одинаковый ответ для всех». Bridged operations
 закрыты identity provider'ом; hand-written tools - на вашей ответственности.
 
-Порядок interceptors фиксирован: session budget (самый внешний) →
+Порядок interceptors фиксирован: tool-call budget (самый внешний) →
 настроенные `interceptors` → caching → result size limit (самый внутренний,
 ближе всего к реальному вызову tool). Настроенные interceptors (RBAC,
 audit) выполняются всегда, даже на cache hit - через cache нельзя обойти
@@ -1389,7 +1406,7 @@ Dry-run ортогонален `safe_methods_only`: он не экспониру
 safety gate иначе бы отверг - write operation всё так же требует
 `safe_methods_only: false` (или отсутствия параметра), чтобы вообще быть
 exposed. Dry-run call всё так же проходит через весь interceptor chain
-(session budget, RBAC/audit, caching, size limit), как и любой другой call -
+(tool-call budget, RBAC/audit, caching, size limit), как и любой другой call -
 preview write action требует того же permission, что и реальный call.
 
 ## MCP Apps: интерактивный UI прямо в разговоре
@@ -1529,7 +1546,7 @@ public function refresh(): string { /* … */ }
 | `ServerConfiguratorInterface` | extension point для добавления capabilities в builder через params `configurators` |
 | `Interceptor\ToolCallInterceptorInterface` | оборачивает каждый tools/call: tracing, ACL, rate limits; params `interceptors` |
 | `Interceptor\ToolCallContext` | данные interceptor: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, обе эры протокола) |
-| `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap: параметр `session.budget`, anti-loop guard |
+| `Interceptor\ToolCallBudgetInterceptor` | tools/call cap на session (handshake-эра) или на client id и окно (stateless-эра): параметр `tool_call_budget`, anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | ограничивает размер tool result (параметр `limits.tool_result_bytes`) - обрезает strings, отклоняет oversized arrays/objects |
 | `Interceptor\CachingToolCallInterceptor` | PSR-16 cache успешных tool results, по имени tool с TTL (параметр `cache.tools`); типизированный ключ включает обязательный application namespace, client id и, при delegated auth, `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | decorator, подключающий chain к SDK; используется `McpServerFactory` |
@@ -1589,7 +1606,7 @@ public function refresh(): string { /* … */ }
 | [`conditional.php`](examples/conditional.php) | registration gating через `ConditionalToolInterface` | нет |
 | [`prompts.php`](examples/prompts.php) | Markdown files как MCP prompts | нет |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools, с `tool_names` и `OperationModifierInterface` | нет |
-| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, session budget guard и result size limit | нет |
+| [`interceptors.php`](examples/interceptors.php) | tracing interceptor с `ArgumentMasker`, tool-call budget guard и result size limit | нет |
 | [`visibility.php`](examples/visibility.php) | per-session interface, declarative deny patterns и fail-closed call | нет |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` и `structuredContent` tool | нет |
 | [`server-initiated.php`](examples/server-initiated.php) | официальный `ToolAnnotations` и schema-safe параметр `RequestContext` для progress/elicitation | нет |

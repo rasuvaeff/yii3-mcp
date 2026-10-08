@@ -78,6 +78,7 @@ return [
             'paginationLimit' => $params['rasuvaeff/yii3-mcp']['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
             'protocolVersion' => $protocolVersion,
             'compactToolResults' => $compactToolResults,
+            'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? false),
         ],
     ],
     Server::class => [

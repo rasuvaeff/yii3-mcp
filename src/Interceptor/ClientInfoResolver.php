@@ -25,8 +25,7 @@ final readonly class ClientInfoResolver
             return null;
         }
 
-        /** @var mixed $meta */
-        $meta = $session->get(RequestMeta::class);
+        $meta = RequestEra::meta($session);
 
         if ($meta instanceof RequestMeta) {
             return $meta->clientInfo;

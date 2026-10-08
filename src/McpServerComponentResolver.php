@@ -18,7 +18,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\CachingToolCallInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
-use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
@@ -183,10 +183,30 @@ final readonly class McpServerComponentResolver
 
         /** @var array{budget?: int} $session */
         $session = $this->params['session'] ?? [];
-        $budget = $session['budget'] ?? 0;
 
-        if ($budget > 0) {
-            $interceptors[] = new SessionBudgetInterceptor($budget);
+        // the key moved in 4.0; silently ignoring an application still
+        // setting it would switch its anti-loop guard off
+        if (array_key_exists('budget', $session)) {
+            throw new LogicException('"session.budget" moved to "tool_call_budget.calls" in 4.0 (it now applies to the stateless protocol era too)');
+        }
+
+        /** @var array{calls?: int, window?: int} $budget */
+        $budget = $this->params['tool_call_budget'] ?? [];
+        $calls = $budget['calls'] ?? 0;
+
+        if ($calls > 0) {
+            /** @var string $serverName */
+            $serverName = $this->params['server_name'];
+            /** @var bool $modernEra */
+            $modernEra = $this->params['modern_era'] ?? false;
+            $interceptors[] = new ToolCallBudgetInterceptor(
+                budget: $calls,
+                // the stateless era has no session to count in; only then is
+                // a PSR-16 store required — and resolved
+                cache: $modernEra ? $this->budgetCache() : null,
+                window: $budget['window'] ?? 3600,
+                namespace: $serverName,
+            );
         }
 
         /** @var list<class-string<ToolCallInterceptorInterface>> $interceptorClasses */
@@ -292,5 +312,18 @@ final readonly class McpServerComponentResolver
         }
 
         return $service;
+    }
+
+    private function budgetCache(): CacheInterface
+    {
+        if (!$this->container->has(CacheInterface::class)) {
+            throw new LogicException(sprintf(
+                '"tool_call_budget.calls" with "modern_era" enabled needs a %s in the container: the stateless era has no session to count calls in',
+                CacheInterface::class,
+            ));
+        }
+
+        /** @var CacheInterface */
+        return $this->container->get(CacheInterface::class);
     }
 }

@@ -25,10 +25,10 @@ ClientIdentityContext is @internal}`,
 `Interceptor\{ToolCallInterceptorInterface, ToolCallContext,
 PromptGetInterceptorInterface, PromptGetContext,
 ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
-SessionBudgetInterceptor, ResponseSizeLimitInterceptor,
+ToolCallBudgetInterceptor, ResponseSizeLimitInterceptor,
 CachingToolCallInterceptor, InterceptingReferenceHandler, ArgumentMasker,
-ToolCallLimiterInterface, RateLimitInterceptor; ClientInfoResolver is
-@internal}`,
+ToolCallLimiterInterface, RateLimitInterceptor; ClientInfoResolver and
+RequestEra are @internal}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
 PromptVisibilityInterface, ResourceVisibilityInterface;
 FilteredListToolsHandler, FilteredListPromptsHandler,
@@ -130,18 +130,33 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   `McpServerComponentResolver` (and the same validation set is mirrored by
   `OpenApiBridgeFactory::create()` for standalone consumers).
 
-- **Interceptor chain order is fixed and load-bearing:** session budget
+- **Interceptor chain order is fixed and load-bearing:** tool-call budget
   (outermost) → configured `interceptors` → `CachingToolCallInterceptor` →
   `ResponseSizeLimitInterceptor` (innermost). Caching must sit BETWEEN user
   interceptors and the size limit, never around user interceptors — RBAC/
   audit must run on every call including a cache hit, or caching becomes an
   ACL bypass. Never reorder without preserving this.
-- **`SessionBudgetInterceptor`'s counter is deliberately NOT
-  concurrency-safe** — a plain `get()`/`set()` read-modify-write, no
-  compare-and-swap, because the SDK's `SessionInterface` is a generic
-  key-value abstraction over an arbitrary session-store backend with no lock
-  primitive to reach for portably. N concurrent requests on the same session
-  can overrun the budget by up to N-1. Accepted: it's an anti-loop guard
+- **`ToolCallBudgetInterceptor` counts in two places, by era, and the
+  stateless one is the reason the class exists.** Handshake era: in the
+  session (initialize → TTL). Stateless 2026-07-28 era: the SDK hands every
+  request a THROWAWAY session (`StatelessProtocol` builds
+  `new Session(new InMemorySessionStore())`), so a session counter starts at
+  zero on every call and the guard silently never fires — that was 3.x's
+  `SessionBudgetInterceptor` under SDK 0.8. There the budget is per client id
+  in PSR-16 over a FIXED window: `floor(now / window)` is part of the key and
+  the TTL runs to the end of the window. Never key on the client alone with
+  `ttl = window`: PSR-16 `set()` re-arms the TTL on every write, so a client
+  that keeps calling would never be reset. A null client id is one shared
+  bucket (stricter, on purpose). Missing cache or a throwing backend rejects
+  the call (fail-closed, like `RateLimitInterceptor`). The resolver resolves
+  `CacheInterface` ONLY when the stateless era is on (3.0.1 was the same class
+  of bug with PSR-18), and `session.budget` (the 3.x key) fails the build —
+  the package's own params must therefore never ship that key. Era detection
+  lives in `Interceptor\RequestEra` only.
+- **Neither budget counter is concurrency-safe** — a plain `get()`/`set()`
+  read-modify-write, no compare-and-swap, because neither the SDK's
+  `SessionInterface` nor PSR-16 exposes one. N concurrent requests can
+  overrun the budget by up to N-1. Accepted: it's an anti-loop guard
   against a runaway agent, not a hard quota — do not "fix" this with a
   backend-specific lock (e.g. flock on `FileSessionStore`'s file), which
   would break for any other `SessionStoreInterface` a consumer binds. A real
@@ -495,9 +510,10 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   termination — `timeoutMs` is mandatory there, a hung guard must fail CI, not
   hang it), `Interceptor\ArgumentMasker` (idempotence, no sensitive value at
   any depth, structure preserved), `Visibility\DeclarativeToolVisibility`
-  (deny beats allow, monotonicity) and `Interceptor\SessionBudgetInterceptor`
-  (model-based, `tests/Support/SessionBudget/`, sequential only — see the
-  concurrency note above). Generators live in `<method>Generators()`, **public
+  (deny beats allow, monotonicity) and `Interceptor\ToolCallBudgetInterceptor`
+  (model-based for both eras: `tests/Support/SessionBudget/` and
+  `tests/Support/StatelessBudget/` — clients × windows × clock — sequential
+  only, see the concurrency note above). Generators live in `<method>Generators()`, **public
   static** (rector rewrites a private static helper called from a property
   body, which silently unhooks the provider — it surfaces on `release-check`,
   not `build`). Every property carries `Classify::cover` gates: a generator

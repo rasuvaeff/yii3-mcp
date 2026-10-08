@@ -49,10 +49,21 @@ return [
             // to 0600 — session JSON must not be readable by other OS users
             'dir' => '',
             'ttl' => 3600,
-            // max tools/call per session (0 = unlimited); anti-loop guard,
-            // NOT a client quota — a new session starts a fresh counter
-            'budget' => 0,
         ],
+        // anti-loop guard, NOT a client quota: max tools/call (0 = unlimited)
+        // per session on the handshake era, per client id and window on the
+        // stateless 2026-07-28 era (which has no session; counted in the
+        // container's PSR-16 cache, required then — a missing one fails the
+        // build). Without SharedSecretMiddleware every anonymous stateless
+        // caller shares one budget.
+        'tool_call_budget' => [
+            'calls' => 0,
+            'window' => 3600,
+        ],
+        // also serve the stateless 2026-07-28 era (no initialize, no session)
+        // on the same endpoint; false answers its requests with "unsupported
+        // protocol version"
+        'modern_era' => false,
         // how array/object tool results are encoded into the text content the
         // agent reads: 'pretty' (default, the SDK's own formatting) or
         // 'compact' — no indentation, JSON_UNESCAPED_SLASHES |

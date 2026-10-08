@@ -430,7 +430,7 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   Orthogonal to `safeMethodsOnly` — does not expose an operation the safety
   gate would otherwise reject. An unknown operationId in `dry_run` =>
   `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
-  call still passes through the full interceptor chain (session budget,
+  call still passes through the full interceptor chain (tool-call budget,
   RBAC/audit, caching, size limit).
 
 ### Argument autocompletion (completion/complete)
@@ -587,10 +587,15 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // other exceptions => opaque internal error.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors).
 
-// Session budget (Interceptor\SessionBudgetInterceptor — anti-loop, NOT a
-// client quota — new session = new counter):
-// params: 'session' => ['budget' => 50]  // 0 = unlimited (default)
-// exhausted => tool error "Session tool-call budget of N is exhausted..."
+// Tool-call budget (Interceptor\ToolCallBudgetInterceptor — anti-loop, NOT a
+// client quota): handshake era = per session (new session = new counter);
+// stateless 2026-07-28 era = per client id and fixed window in the
+// container's PSR-16 cache (required when modern_era is on; anonymous
+// callers share one budget; cache outage => rejected):
+// params: 'tool_call_budget' => ['calls' => 50, 'window' => 3600]  // calls 0 = unlimited
+// 'session' => ['budget' => …] (3.x key) => LogicException at build
+// exhausted => tool error "Session tool-call budget of N is exhausted..." /
+//   "Tool-call budget of N per W seconds is exhausted; retry in S seconds"
 
 // Result size limit (Interceptor\ResponseSizeLimitInterceptor —
 // context-overflow guard) — a string over the limit is truncated with a
@@ -614,7 +619,7 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // security gate. An identity provider failure fails CLOSED for cached
 // tools (serving a result without knowing whose it is = the leak the key
 // prevents).
-// Chain order: session budget → configured interceptors → caching → size
+// Chain order: tool-call budget → configured interceptors → caching → size
 // limit (innermost). Configured interceptors (RBAC, audit) run on EVERY
 // call, including a cache hit — no ACL bypass through the cache. The size
 // limit only runs on a cache miss; the already-limited value is what gets
@@ -739,7 +744,7 @@ Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 secrets; mutually exclusive with endpoint_secret; a secret shared by two
 client ids is rejected), `secret_header`,
 `allowed_hosts`, `session.dir`, `session.ttl`,
-`session.budget`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
+`tool_call_budget.calls`, `tool_call_budget.window`, `modern_era`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
 `cache.tools`, `cache.namespace`, `interceptors`,
 `prompt_interceptors`,
 `resource_interceptors`, `configurators`, `tool_visibility`,

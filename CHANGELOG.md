@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `allowed_hosts` no longer adds `ProtocolVersionMiddleware` to the transport
   stack: SDK 0.8 applies it to handshake-era traffic itself, and in the custom
   stack it rejected every modern-era request.
+- **BC break:** `Interceptor\SessionBudgetInterceptor` is now
+  `Interceptor\ToolCallBudgetInterceptor`, and the `session.budget` param is
+  `tool_call_budget.calls` (+ `tool_call_budget.window`); `session.budget`
+  fails the build. On the stateless 2026-07-28 era — which hands every request
+  a throwaway session, so a session counter never ran out — the budget is
+  counted per client id over a fixed window in the container's PSR-16 cache
+  (required then; anonymous callers share one budget; a cache outage rejects
+  the call).
+- New param `modern_era` (default `false` for now) serves the stateless era.
 - `Testing\McpTester` takes an optional protocol revision (fifth argument):
   a handshake revision is negotiated through `initialize`,
   `ProtocolVersion::V2026_07_28` speaks the stateless era (per-request `_meta`

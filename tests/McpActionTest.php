@@ -14,6 +14,7 @@ use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingSessionStore;
 use Testo\Assert;
 use Testo\Assert\Api\Json\JsonAbstract;
 use Testo\Codecov\Covers;
@@ -207,6 +208,47 @@ final class McpActionTest
                 'clientInfo' => ['name' => 'test-client', 'version' => '1.0'],
             ],
         ])->withUri(new \Nyholm\Psr7\Uri('https://' . $host . '/mcp'), preserveHost: false);
+    }
+
+    /**
+     * The stateless era has no session: an authenticated tools/call comes
+     * back without an Mcp-Session-Id and leaves the store untouched — so the
+     * ownership stamp (which keys on that id) has nothing to bind, and
+     * identity is the request's own client id every time.
+     */
+    public function statelessCallCreatesNoSession(): void
+    {
+        $factory = new Psr17Factory();
+        $store = new RecordingSessionStore();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: $store,
+            modernEra: true,
+        ))->create([GreetingTool::class]);
+        $action = new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory, sessionStore: $store);
+
+        $response = $action->handle($this->request([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => 'greet',
+                'arguments' => ['name' => 'Yii'],
+                '_meta' => [
+                    'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                    'io.modelcontextprotocol/clientCapabilities' => new \stdClass(),
+                ],
+            ],
+        ])
+            ->withHeader('MCP-Protocol-Version', '2026-07-28')
+            ->withHeader('Mcp-Method', 'tools/call')
+            ->withHeader('Mcp-Name', 'greet')
+            ->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-a'));
+
+        Assert::same($response->getStatusCode(), 200);
+        Assert::same($response->getHeaderLine('Mcp-Session-Id'), '');
+        Assert::same($store->writes, 0);
+        Assert::same($this->decode($response)['result']['content'][0]['text'] ?? null, 'Hello, Yii!');
     }
 
     public function initializeHandshakeSucceeds(): void

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget;
 
 use Mcp\Exception\ToolCallException;
-use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 
@@ -24,14 +24,14 @@ final class BudgetHarness
 {
     public int $executed = 0;
 
-    private readonly SessionBudgetInterceptor $interceptor;
+    private readonly ToolCallBudgetInterceptor $interceptor;
 
     private FakeSession $session;
 
     public function __construct(
         public readonly int $budget,
     ) {
-        $this->interceptor = new SessionBudgetInterceptor($budget);
+        $this->interceptor = new ToolCallBudgetInterceptor($budget);
         $this->session = new FakeSession();
     }
 

@@ -621,22 +621,38 @@ $this->logger->info('tools/call', ['tool' => $context->toolName, 'arguments' => 
 It is one shared helper so every consumer (audit trail, telemetry, your own
 interceptors) masks with identical semantics instead of drifting apart.
 
-### Session budget: stop agent loops
+### Tool-call budget: stop agent loops
 
-A hard cap on `tools/call` per MCP session (from `initialize` until the TTL
-expires). An agent stuck in a loop burns the budget and gets an explanatory
-tool error instead of hammering the application:
+A hard cap on `tools/call` in a row. An agent stuck in a loop burns the budget
+and gets an explanatory tool error instead of hammering the application:
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    'session' => ['budget' => 50],   // 0 = unlimited (default)
+    'tool_call_budget' => [
+        'calls' => 50,     // 0 = unlimited (default)
+        'window' => 3600,  // seconds, stateless era only
+    ],
 ],
 ```
 
-This is loop protection **inside one session**, not a client quota: a
-re-initialize starts a fresh counter. Client quotas belong to an
+"In a row" depends on the protocol era:
+
+| Era | Counted per | Reset by |
+|---|---|---|
+| handshake (`initialize`) | MCP session, in the session itself | a new session (re-initialize) or the session TTL |
+| stateless 2026-07-28 | client id, in the container's PSR-16 cache | the fixed window turning (`floor(now / window)`) |
+
+The stateless era has no session to count in — a session counter would start
+at zero on every request — so with `modern_era` on, a budget requires a
+`Psr\SimpleCache\CacheInterface` in the container (a missing one fails the
+build). Without `SharedSecretMiddleware` there is no client id, and every
+anonymous stateless caller shares **one** budget. A cache outage rejects the
+call (fail-closed).
+
+This is loop protection, not a client quota. Client quotas belong to an
 application-level rate limiter. The budget guard is always the outermost
-interceptor, so it rejects before any other interceptor does work.
+interceptor, so it rejects before any other interceptor does work. 3.x's
+`session.budget` fails the build with a pointer to the new key.
 
 ### Result size limit and caching
 
@@ -735,7 +751,7 @@ cached unless `openapi.identity_provider` resolves that user — "idempotent
 read" is not the same as "same answer for everyone". Bridged operations are
 covered by the identity provider; hand-written tools are yours to judge.
 
-Interceptor order is fixed: session budget (outermost) → configured
+Interceptor order is fixed: tool-call budget (outermost) → configured
 `interceptors` → caching → result size limit (innermost, closest to the
 actual tool call). Configured interceptors (RBAC, audit) always run, even on
 a cache hit — caching cannot be used to bypass them. The size limit only
@@ -1544,7 +1560,7 @@ build (the SDK rejects a duplicate extension id).
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
 | `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, both protocol eras) |
-| `Interceptor\SessionBudgetInterceptor` | per-session tools/call cap (`session.budget` param) — anti-loop guard |
+| `Interceptor\ToolCallBudgetInterceptor` | tools/call cap per session (handshake era) or per client id and window (stateless era): `tool_call_budget` param — anti-loop guard |
 | `Interceptor\ResponseSizeLimitInterceptor` | caps tool result size (`limits.tool_result_bytes` param) — truncates strings, rejects oversized arrays/objects |
 | `Interceptor\CachingToolCallInterceptor` | PSR-16 cache for successful tool results, per tool name with a TTL (`cache.tools` param); typed key includes a mandatory application namespace, the client id and, with delegated auth, the `ExecutionIdentity` |
 | `Interceptor\InterceptingReferenceHandler` | the decorator wiring the chain into the SDK (used by `McpServerFactory`) |
@@ -1604,7 +1620,7 @@ See [examples/](examples/) — every script runs offline.
 | [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
 | [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools, with `tool_names` and `OperationModifierInterface` | no |
-| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + session budget guard + result size limit | no |
+| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + tool-call budget guard + result size limit | no |
 | [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
 | [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
 | [`server-initiated.php`](examples/server-initiated.php) | Official `ToolAnnotations` and a schema-safe `RequestContext` parameter for progress/elicitation | no |

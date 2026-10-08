@@ -7,7 +7,7 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
-use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -82,10 +82,10 @@ $server = (new McpServerFactory(
     [],
     // first = outermost: the budget guard rejects before tracing does work;
     // the size limit goes last (innermost, closest to the tool) — in an
-    // application: params 'session' => ['budget' => 3] and
+    // application: params 'tool_call_budget' => ['calls' => 3] and
     // 'limits' => ['tool_result_bytes' => 100] wire both automatically, in
     // this same relative order
-    [new SessionBudgetInterceptor(budget: 3), new TracingInterceptor(), new ResponseSizeLimitInterceptor(maxBytes: 100)],
+    [new ToolCallBudgetInterceptor(budget: 3), new TracingInterceptor(), new ResponseSizeLimitInterceptor(maxBytes: 100)],
 );
 
 $tester = new McpTester($server, $factory, $factory, $factory);
@@ -98,6 +98,6 @@ echo $tester->callTool('counter.next', ['current' => 1])['content'][0]['text'] .
 $result = $tester->callTool('report.dump', []);
 echo 'dump length=' . strlen($result['content'][0]['text']) . ': ' . $result['content'][0]['text'] . "\n";
 
-// fourth call: session budget of 3 is exhausted -> MCP tool-error envelope
+// fourth call: the session's tool-call budget of 3 is exhausted -> MCP tool-error envelope
 $result = $tester->callTool('counter.next', ['current' => 3]);
 echo 'fourth call isError=' . var_export($result['isError'], true) . ': ' . $result['content'][0]['text'] . "\n";

@@ -115,10 +115,13 @@ final class ConfigWiringTest
     {
         $params = $this->params();
 
-        /** @var array{session: array{budget: int}, interceptors: list<class-string>} $mcp */
+        /** @var array{tool_call_budget: array{calls: int, window: int}, session: array<string, mixed>, interceptors: list<class-string>, modern_era: bool} $mcp */
         $mcp = $params['rasuvaeff/yii3-mcp'];
 
-        Assert::same($mcp['session']['budget'], 0);
+        Assert::same($mcp['tool_call_budget'], ['calls' => 0, 'window' => 3600]);
+        // the key moved: the package must not ship it, or the "moved" guard
+        // could not tell the default from an application still setting it
+        Assert::false(array_key_exists('budget', $mcp['session']));
         Assert::same($mcp['interceptors'], []);
         Assert::same($mcp['configurators'], []);
         Assert::same($params['rasuvaeff/yii3-mcp']['tool_visibility'], '');
@@ -577,11 +580,57 @@ final class ConfigWiringTest
         Assert::same(count($cache->values), 1);
     }
 
+    /**
+     * An application still setting the 3.x key must fail loudly: ignoring it
+     * would switch its anti-loop guard off without a word.
+     */
+    public function movedSessionBudgetKeyFailsTheBuild(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 200;
+
+        Assert::string($this->buildFailure($params))->contains('"session.budget" moved to "tool_call_budget.calls"');
+    }
+
+    /**
+     * The PSR-16 store is resolved only when the stateless era needs it —
+     * a handshake-only server with a budget must build without one.
+     */
+    public function budgetNeedsACacheOnlyForTheStatelessEra(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 2;
+
+        Assert::same($this->buildFailure($params), 'built');
+
+        $params['rasuvaeff/yii3-mcp']['modern_era'] = true;
+
+        Assert::string($this->buildFailure($params))->contains('"tool_call_budget.calls" with "modern_era" enabled needs a Psr\\SimpleCache\\CacheInterface');
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function buildFailure(array $params): string
+    {
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([]);
+
+        try {
+            $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+        } catch (\LogicException $e) {
+            return $e->getMessage();
+        }
+
+        return 'built';
+    }
+
     public function omittedOptionalLimitsAndBudgetStayDisabled(): void
     {
         $params = $this->params();
         $mcp = &$params['rasuvaeff/yii3-mcp'];
-        unset($mcp['session']['budget'], $mcp['limits']['tool_result_bytes']);
+        unset($mcp['tool_call_budget'], $mcp['limits']['tool_result_bytes']);
         $mcp['tools'] = [GreetingTool::class];
 
         /** @var Closure $definition */
@@ -698,7 +747,7 @@ final class ConfigWiringTest
     {
         $params = $this->params();
         $params['rasuvaeff/yii3-mcp']['tools'] = [GreetingTool::class];
-        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 3;
+        $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 3;
         $params['rasuvaeff/yii3-mcp']['interceptors'] = [RecordingInterceptor::class];
 
         /** @var Closure $definition */
@@ -738,7 +787,7 @@ final class ConfigWiringTest
         // may be skipped.
         $params = $this->params();
         $params['rasuvaeff/yii3-mcp']['tools'] = [CountingTool::class];
-        $params['rasuvaeff/yii3-mcp']['session']['budget'] = 2;
+        $params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] = 2;
         $params['rasuvaeff/yii3-mcp']['interceptors'] = [RecordingInterceptor::class];
         $params['rasuvaeff/yii3-mcp']['cache']['tools'] = ['count.up' => 60];
 

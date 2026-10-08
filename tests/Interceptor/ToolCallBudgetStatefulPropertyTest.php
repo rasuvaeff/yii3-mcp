@@ -10,11 +10,15 @@ use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\PropertyTesting\StateMachine\CommandSequence;
 use Rasuvaeff\PropertyTesting\StateMachine\StateMachine;
-use Rasuvaeff\Yii3Mcp\Interceptor\SessionBudgetInterceptor;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget\BudgetHarness;
 use Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget\BudgetModel;
 use Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget\CallToolCommand;
 use Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget\ReInitializeCommand;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StatelessBudget\AdvanceClockCommand;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StatelessBudget\StatelessBudgetHarness;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StatelessBudget\StatelessBudgetModel;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StatelessBudget\StatelessCallCommand;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -22,7 +26,7 @@ use Testo\Test;
 /**
  * The budget is a lifecycle, not a function: what a call does depends on every
  * call before it in the session. The individual cases in
- * {@see SessionBudgetInterceptorTest} pin fixed sequences; this drives
+ * {@see ToolCallBudgetInterceptorTest} pin fixed sequences; this drives
  * generated ones — arbitrary interleavings of tool calls and re-initializes —
  * against a model of the documented behaviour.
  *
@@ -32,8 +36,8 @@ use Testo\Test;
  * AGENTS.md); a concurrent model would fail by design instead of finding a bug.
  */
 #[Test]
-#[Covers(SessionBudgetInterceptor::class)]
-final class SessionBudgetStatefulPropertyTest
+#[Covers(ToolCallBudgetInterceptor::class)]
+final class ToolCallBudgetStatefulPropertyTest
 {
     #[Property(runs: 200, timeoutMs: 2000)]
     public function callsAreAllowedExactlyWhileTheSessionBudgetLasts(CommandSequence $sequence): void
@@ -96,6 +100,72 @@ final class SessionBudgetStatefulPropertyTest
                     ],
                     minLength: 1,
                     maxLength: 12,
+                ),
+            ),
+        ];
+    }
+
+    /**
+     * The stateless era: no session survives between calls, so the budget
+     * lives per client and window. Interleaves three callers (one anonymous)
+     * with clock advances that may cross window boundaries — the only thing
+     * that resets a budget there.
+     */
+    #[Property(runs: 200, timeoutMs: 2000)]
+    public function statelessCallsAreAllowedExactlyWhileTheClientWindowBudgetLasts(CommandSequence $sequence): void
+    {
+        $initial = $sequence->initialModel;
+        $budget = $initial instanceof StatelessBudgetModel ? $initial->budget : 1;
+        $window = $initial instanceof StatelessBudgetModel ? $initial->window : 1;
+
+        $model = $initial instanceof StatelessBudgetModel ? $initial : new StatelessBudgetModel(1, 1);
+        $rejected = 0;
+        $crossed = 0;
+
+        foreach ($sequence->commands as $command) {
+            $before = $model;
+            /** @var StatelessBudgetModel $model */
+            $model = $command->nextState($model);
+
+            if ($command instanceof StatelessCallCommand && $model === $before) {
+                $rejected++;
+            }
+
+            if (intdiv($model->now, $window) !== intdiv($before->now, $window)) {
+                $crossed++;
+            }
+        }
+
+        Classify::cover($rejected > 0, 'a call is rejected', 20.0);
+        Classify::cover($crossed > 0, 'a window boundary is crossed', 20.0);
+        Classify::when($rejected > 0 && $crossed > 0, 'rejected, then a new window');
+
+        $harness = new StatelessBudgetHarness($budget, $window);
+
+        StateMachine::check($sequence, static fn(): StatelessBudgetHarness => $harness);
+
+        Assert::same($harness->executed, $model->executed);
+    }
+
+    /**
+     * @return array<string, ArbitraryInterface>
+     */
+    public static function statelessCallsAreAllowedExactlyWhileTheClientWindowBudgetLastsGenerators(): array
+    {
+        return [
+            'sequence' => Gen::flatMap(
+                Gen::tuple(Gen::intBetween(1, 3), Gen::intBetween(5, 20)),
+                static fn(array $config): ArbitraryInterface => Gen::commands(
+                    new StatelessBudgetModel(budget: $config[0], window: $config[1]),
+                    [
+                        Gen::constant(new StatelessCallCommand('alice')),
+                        Gen::constant(new StatelessCallCommand('alice')),
+                        Gen::constant(new StatelessCallCommand('bob')),
+                        Gen::constant(new StatelessCallCommand(null)),
+                        Gen::map(Gen::intBetween(1, 15), static fn(int $seconds): AdvanceClockCommand => new AdvanceClockCommand($seconds)),
+                    ],
+                    minLength: 1,
+                    maxLength: 16,
                 ),
             ),
         ];
