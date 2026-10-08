@@ -75,6 +75,16 @@ return [
         // PSR-16 cache — the PHP-FPM choice, where the publishing request and
         // the listening one are different workers. 'memory' = one process
         // (stdio, persistent runtimes). An unknown value fails the build.
+        // multi round-trip calls (a handler asking the user mid-call through
+        // ClientGateway::elicit()): on the stateless era each ask ends the
+        // request and the client re-sends the call with the answer; answers
+        // from earlier rounds travel in a signed requestState. 'key' signs it
+        // — at least 32 bytes, from the environment, never committed. Empty
+        // = none: one ask per call works, a second fails the call.
+        'request_state' => [
+            'key' => '',
+            'ttl' => 600,
+        ],
         'notifications' => [
             'bus' => '',
             // seconds a listen stream is held open (0 = until the client or

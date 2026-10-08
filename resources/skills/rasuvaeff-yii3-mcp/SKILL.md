@@ -104,6 +104,13 @@ $server = $factory->create([OrderTools::class]);
 // SharedSecretMiddleware(secret: ..., responseFactory: $psr17) -> McpAction(server: ..., ...)
 ```
 
+Asking the user mid-call (`ClientGateway::elicit()`): on the stateless era
+the request ends with `input_required` and the handler RUNS AGAIN FROM THE TOP
+on the retry — keep side effects after the last ask. Two or more asks per call
+need `request_state.key` (>= 32 bytes, from env). Each round is a tools/call:
+interceptors and the budget count every round. `sample()`/`listRoots()` throw
+on 2026-07-28.
+
 Resource updates: `ResourceUpdateNotifier::notify($uri, ?$context)` publishes
 to the notification bus (`notifications.bus`: `psr16` under PHP-FPM, `memory`
 for one process) for stateless listen streams, and notifies the calling

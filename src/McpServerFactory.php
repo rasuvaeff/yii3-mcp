@@ -76,6 +76,9 @@ final readonly class McpServerFactory
      *                                                      null = streams acknowledge and carry nothing
      * @param float $subscriptionLifetime seconds a listen stream is held open (0 = until the client or runtime
      *                                    ends it); under PHP-FPM keep it below max_execution_time
+     * @param string $requestStateKey signs the `requestState` a multi round-trip call carries between rounds
+     *                                (at least 32 bytes; '' = none: a handler asking more than once per call fails)
+     * @param int $requestStateTtl seconds a minted requestState stays valid
      */
     public function __construct(
         private ContainerInterface $container,
@@ -92,6 +95,9 @@ final readonly class McpServerFactory
         private bool $headerValidation = true,
         private ?NotificationBusInterface $notificationBus = null,
         private float $subscriptionLifetime = self::DEFAULT_SUBSCRIPTION_LIFETIME,
+        #[\SensitiveParameter]
+        private string $requestStateKey = '',
+        private int $requestStateTtl = 600,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -147,6 +153,10 @@ final readonly class McpServerFactory
 
         if ($this->notificationBus instanceof NotificationBusInterface) {
             $builder->setNotificationBus($this->notificationBus);
+        }
+
+        if ($this->requestStateKey !== '') {
+            $builder->setRequestState($this->requestStateKey, $this->requestStateTtl);
         }
 
         if ($this->instructions !== '') {

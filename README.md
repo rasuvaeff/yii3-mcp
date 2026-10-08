@@ -232,6 +232,32 @@ every MCP client supports every server-initiated capability. Keep
 `RequestContext` as a method parameter rather than a constructor dependency:
 it belongs to one request/session.
 
+On the stateless 2026-07-28 era there is nobody to ask while the request is
+open, so an ask works differently — and the same handler serves both eras
+unchanged:
+
+- `elicit()`/`elicitUrl()` end the request with `resultType: input_required`;
+  the client re-sends the call with the answer and the SDK **runs the handler
+  again from the top**, where the ask now returns it. Anything a handler does
+  before its last ask happens once per round — keep side effects after it.
+- More than one ask per call carries earlier answers between rounds in a
+  signed `requestState`: set `request_state.key` (at least 32 bytes, from the
+  environment). Without it the first ask works and a second fails the call.
+- Every round is a `tools/call`: interceptors run each round and the
+  tool-call budget counts each one (one ask costs two). The answers are not
+  signed, so a budget skipping "retries" could be bypassed by any client.
+- The result cache never stores an ask or serves a later round.
+- `sample()`/`listRoots()` throw on 2026-07-28, which removed them (Sampling,
+  Roots and Logging are deprecated by SEP-2577).
+- `progress()`/`log()` stream over SSE when the client accepts
+  `text/event-stream`.
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'request_state' => ['key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '', 'ttl' => 600],
+],
+```
+
 To gate a capability class (feature flag, environment check), implement
 `ConditionalToolInterface` — the instance is resolved through the container
 at build time and skipped when `shouldRegister()` returns `false`:
@@ -1691,7 +1717,10 @@ $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // any raw JSON-RPC method
 ```
 
-Pass a revision as the fifth argument to test a specific protocol era. A
+Pass a revision as the fifth argument to test a specific protocol era, and
+`ClientCapabilities` as the sixth to test a tool that asks the user
+(`new ClientCapabilities(elicitation: true)`; the first call returns the
+`input_required` result, answer with `request('tools/call', [... 'inputResponses' => [...]])`). A
 handshake revision (`ProtocolVersion::V2025_06_18`, …) is negotiated through
 `initialize`; `ProtocolVersion::V2026_07_28` speaks the stateless era — no
 `initialize`, no session id, every request carries its own `_meta` envelope

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
+use Mcp\Schema\Result\InputRequiredResult;
+use Mcp\Server\Stateless\InputContext;
 use Psr\SimpleCache\CacheInterface;
 use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Invocation;
@@ -12,6 +14,8 @@ use Rasuvaeff\Yii3Mcp\Interceptor\CachingToolCallInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeCache;
+use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Rasuvaeff\Yii3Mcp\Tests\Support\MutableExecutionIdentityProvider;
 use RuntimeException;
 use Testo\Assert;
@@ -465,6 +469,54 @@ final class CachingToolCallInterceptorTest
     /**
      * @param array<string, mixed> $arguments
      */
+    /**
+     * A later round of a multi round-trip call carries answers its arguments
+     * do not show: it must neither be served from the cache (that would skip
+     * or replay the ask) nor stored.
+     */
+    public function aMultiRoundRetryBypassesTheCache(): void
+    {
+        $cache = new FakeCache();
+        $cache->values = [];
+        $interceptor = new CachingToolCallInterceptor($cache, ['order.delete' => 60], namespace: 'app');
+        $retry = new ToolCallContext(
+            toolName: 'order.delete',
+            arguments: ['orderId' => '42'],
+            session: new FakeSession([InputContext::class => new InputContext(['confirm' => ['action' => 'accept']])]),
+        );
+        $calls = 0;
+
+        $interceptor->intercept($retry, static function () use (&$calls): string {
+            $calls++;
+
+            return 'deleted';
+        });
+        $interceptor->intercept($retry, static function () use (&$calls): string {
+            $calls++;
+
+            return 'deleted';
+        });
+
+        Assert::same($calls, 2);
+        Assert::same($cache->values, []);
+    }
+
+    /**
+     * An ask is not an outcome: cached, it would come back on the very retry
+     * that carries its answer, forever.
+     */
+    public function anAskIsNeverCached(): void
+    {
+        $cache = new FakeCache();
+        $interceptor = new CachingToolCallInterceptor($cache, ['order.delete' => 60], namespace: 'app');
+        $ask = new InputRequiredResult(requestState: 'opaque');
+
+        $result = $interceptor->intercept($this->context('order.delete'), static fn(): InputRequiredResult => $ask);
+
+        Assert::same($result, $ask);
+        Assert::same($cache->values, []);
+    }
+
     private function context(string $toolName, array $arguments = [], ?string $clientId = 'client'): ToolCallContext
     {
         return new ToolCallContext(toolName: $toolName, arguments: $arguments, clientId: $clientId);

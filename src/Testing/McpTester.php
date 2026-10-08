@@ -54,6 +54,8 @@ final class McpTester
     /**
      * @param ProtocolVersion|null $protocolVersion the revision to speak; null = the SDK's
      *                                              newest handshake revision
+     * @param ClientCapabilities|null $capabilities what the tester claims to support — declare
+     *                                              `elicitation` to test a tool that asks the user
      */
     public function __construct(
         private readonly Server $server,
@@ -61,6 +63,7 @@ final class McpTester
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
         private readonly ?ProtocolVersion $protocolVersion = null,
+        private readonly ?ClientCapabilities $capabilities = null,
     ) {
         $this->toolCatalog = new ToolCatalog();
     }
@@ -84,7 +87,7 @@ final class McpTester
             'method' => 'initialize',
             'params' => [
                 'protocolVersion' => $this->protocolVersion(),
-                'capabilities' => [],
+                'capabilities' => $this->capabilities ?? new \stdClass(),
                 'clientInfo' => ['name' => self::CLIENT_NAME, 'version' => self::CLIENT_VERSION],
             ],
         ]);
@@ -242,7 +245,7 @@ final class McpTester
         if ($this->protocolVersion instanceof ProtocolVersion && $this->isModern()) {
             $payload = (new RequestEnvelope(
                 $this->protocolVersion,
-                new ClientCapabilities(),
+                $this->capabilities ?? new ClientCapabilities(),
                 new Implementation(name: self::CLIENT_NAME, version: self::CLIENT_VERSION),
             ))->stamp($payload);
             /** @var array<string, mixed> $serialized the message exactly as it goes on the wire */

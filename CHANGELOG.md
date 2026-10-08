@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `subscriptions/listen` stream whose filter names the URI gets the update,
   from any process (no request needed); with a handshake-era context it still
   notifies the calling session if subscribed.
+- Multi round-trip calls on the stateless era: a handler's `elicit()` ends the
+  request with `input_required` and runs again on the retry; new params
+  `request_state.key`/`ttl` (`McpServerFactory(requestStateKey:,
+  requestStateTtl:)`) sign the state that carries earlier answers. Every round
+  counts against the tool-call budget. `CachingToolCallInterceptor` never
+  stores an ask and never serves a later round.
+- `Testing\McpTester` takes `ClientCapabilities` (sixth argument) to test tools
+  that elicit.
 - **BC break:** `initialize` negotiates the revision (SDK 0.8) instead of always
   answering 2025-11-25; `protocol_version` pins a handshake revision only —
   `2026-07-28` there fails at config load.

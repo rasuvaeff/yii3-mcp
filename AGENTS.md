@@ -153,6 +153,17 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   of bug with PSR-18), and `session.budget` (the 3.x key) fails the build —
   the package's own params must therefore never ship that key. Era detection
   lives in `Interceptor\RequestEra` only.
+- **A multi round-trip call is several `tools/call`s, and each round re-enters
+  the whole chain.** On the stateless era `elicit()` suspends the handler
+  Fiber; the SDK abandons it, answers `input_required`, and on the client's
+  retry runs the handler from the top (`ElicitationReplay`). Consequences kept
+  on purpose: the budget counts every round (answers are unsigned — a budget
+  skipping retries is bypassed by attaching made-up `inputResponses`);
+  `CachingToolCallInterceptor` neither stores an `InputRequiredResult` (it
+  would answer the retry carrying its own answer, forever) nor reads/writes
+  on a retry (`RequestEra::isRetry()` — the arguments do not show the
+  answers). More than one ask needs `request_state.key`.
+  `tests/MultiRoundTripTest` drives it end to end through the tester.
 - **Neither budget counter is concurrency-safe** — a plain `get()`/`set()`
   read-modify-write, no compare-and-swap, because neither the SDK's
   `SessionInterface` nor PSR-16 exposes one. N concurrent requests can

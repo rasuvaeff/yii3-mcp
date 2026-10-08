@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use Mcp\Server\Session\SessionInterface;
+use Mcp\Server\Stateless\InputContext;
 use Mcp\Server\Stateless\RequestMeta;
 
 /**
@@ -30,5 +31,15 @@ final readonly class RequestEra
     public static function isModern(?SessionInterface $session): bool
     {
         return self::meta($session) instanceof RequestMeta;
+    }
+
+    /**
+     * Whether this call is a later round of a multi round-trip call — the
+     * client re-sending it with answers (`inputResponses`/`requestState`),
+     * which the SDK lifts onto the session as {@see InputContext}.
+     */
+    public static function isRetry(?SessionInterface $session): bool
+    {
+        return $session?->get(InputContext::class) instanceof InputContext;
     }
 }

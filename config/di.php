@@ -111,6 +111,8 @@ return [
             'compactToolResults' => $compactToolResults,
             'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
             'headerValidation' => (bool) ($params['rasuvaeff/yii3-mcp']['header_validation'] ?? true),
+            'requestStateKey' => (string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? ''),
+            'requestStateTtl' => (int) ($params['rasuvaeff/yii3-mcp']['request_state']['ttl'] ?? 600),
             'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
         ],
     ],

@@ -232,6 +232,32 @@ elicitation, выбирайте fail-closed fallback для разрушител
 capabilities. Передавайте `RequestContext` в метод, а не в constructor: он
 принадлежит одному request/session.
 
+В stateless-эре 2026-07-28 спросить некого, пока запрос открыт, поэтому
+вопрос работает иначе — а тот же хендлер обслуживает обе эры без изменений:
+
+- `elicit()`/`elicitUrl()` завершают запрос с `resultType: input_required`;
+  клиент присылает вызов заново с ответом, и SDK **запускает хендлер заново с
+  начала**, где вопрос теперь возвращает ответ. Всё, что хендлер делает до
+  последнего вопроса, повторяется на каждом раунде — побочные эффекты держите
+  после него.
+- Больше одного вопроса за вызов переносят прежние ответы между раундами в
+  подписанном `requestState`: задайте `request_state.key` (не короче 32 байт, из
+  окружения). Без ключа первый вопрос работает, второй валит вызов.
+- Каждый раунд — это `tools/call`: interceptors выполняются на каждом раунде, и
+  tool-call budget считает каждый (один вопрос стоит двух). Ответы не
+  подписаны, поэтому budget, пропускающий «повторы», обходился бы любым клиентом.
+- Кеш результатов никогда не сохраняет вопрос и не отдаёт следующий раунд.
+- `sample()`/`listRoots()` бросают исключение на 2026-07-28, где их убрали
+  (Sampling, Roots и Logging объявлены deprecated в SEP-2577).
+- `progress()`/`log()` стримятся по SSE, если клиент принимает
+  `text/event-stream`.
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    'request_state' => ['key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '', 'ttl' => 600],
+],
+```
+
 Чтобы включать capability class по условию (feature flag, проверка окружения),
 реализуйте `ConditionalToolInterface`. Экземпляр будет разрешён контейнером
 при построении сервера и пропущен, когда `shouldRegister()` возвращает `false`.
@@ -1675,7 +1701,10 @@ $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // любой raw JSON-RPC method
 ```
 
-Пятый аргумент задаёт ревизию протокола. Handshake-ревизия
+Пятый аргумент задаёт ревизию протокола, шестой — `ClientCapabilities`, чтобы
+тестировать tool, который спрашивает пользователя
+(`new ClientCapabilities(elicitation: true)`; первый вызов вернёт результат
+`input_required`, ответ — `request('tools/call', [... 'inputResponses' => [...]])`). Handshake-ревизия
 (`ProtocolVersion::V2025_06_18`, …) согласуется через `initialize`;
 `ProtocolVersion::V2026_07_28` говорит на stateless-эре — без `initialize` и
 session id, каждый запрос несёт свой `_meta`-конверт и заголовки

@@ -117,6 +117,7 @@ $tester->readResource('app://x'); $tester->request('custom/method');
 // ProtocolVersion::V2026_07_28 => stateless era (no initialize/session, _meta +
 // Mcp-Method/Mcp-Name headers per request; initialize() = server/discover);
 // the server needs McpServerFactory(modernEra: true).
+// 6th arg = ClientCapabilities (declare elicitation: true to test a tool that asks).
 // JSON-RPC error => Testing\McpErrorException (a RuntimeException):
 //   ->errorCode (int), ->errorMessage, ->errorData
 
@@ -774,3 +775,19 @@ calls `withReservedToolNames()` with the names of the `#[McpTool]` methods
 before `configure()`, so it can reject a colliding name instead of losing
 its own tool (the SDK registry is last-write-wins and registers attribute
 tools last).
+
+## Multi round-trip calls (stateless 2026-07-28 era)
+
+- `ClientGateway::elicit()`/`elicitUrl()` in a handler: the request ends with
+  `resultType: input_required` + `inputRequests`; the client re-sends the call
+  with `inputResponses` (+ `requestState`) and the handler RUNS AGAIN FROM THE
+  TOP — side effects before the last ask repeat per round.
+- More than one ask per call needs params
+  'request_state' => ['key' => <>= 32 bytes, from env>, 'ttl' => 600];
+  without a key the second ask fails the call.
+- Every round is a tools/call: interceptors run and the tool-call budget counts
+  each round (one ask = two units). The result cache skips asks and retries.
+- `sample()`/`listRoots()` throw on 2026-07-28 (deprecated: SEP-2577).
+- Testing: McpTester(..., ProtocolVersion::V2026_07_28, new ClientCapabilities(elicitation: true));
+  first callTool() returns the input_required result; answer with
+  $tester->request('tools/call', ['name' => …, 'arguments' => …, 'inputResponses' => ['key' => ['action' => 'accept', 'content' => […]]]]).
