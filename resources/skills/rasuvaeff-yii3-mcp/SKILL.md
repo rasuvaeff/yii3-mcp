@@ -5,7 +5,8 @@ description: >-
   mcp/sdk — McpServerFactory, McpAction (PSR-15 Streamable HTTP),
   SharedSecretMiddleware, tool-call interceptors (ToolCallBudgetInterceptor,
   RateLimitInterceptor, ResponseSizeLimitInterceptor,
-  CachingToolCallInterceptor, ArgumentMasker), tool visibility (name and
+  CachingToolCallInterceptor, ArgumentMasker), tool-result decorators
+  (ToolResultDecoratorInterface), tool visibility (name and
   tag: patterns), OpenAPI bridge (tool_names, OperationModifierInterface,
   dry_run), both protocol eras (handshake and stateless 2026-07-28),
   Testing\McpTester + McpErrorException + SchemaSnapshot. Use when writing, reviewing
@@ -82,6 +83,15 @@ stateless era: read the era with care, never assume a session persists.
    fail and the Streamable HTTP transport then drops the response silently.
    Use `Utf8::cut()`; validate foreign bytes (an upstream error body)
    separately with `preg_match('//u', …)`.
+
+9. **Add content to a tool result with a decorator, not an interceptor.**
+   Interceptors see the RAW result; returning a hand-built `CallToolResult`
+   from one re-implements formatting and the per-revision `structuredContent`
+   rule, and drifts on the next SDK bump. `result_decorators`
+   (`ToolResultDecoratorInterface::decorate(CallToolResult, ToolCallContext)`)
+   get the formatted result after the whole chain — cache hits included,
+   never an `input_required` ask, never a `ToolCallException`. Keep
+   `structuredContent` unless the tool's `outputSchema` still describes it.
 
 ## Canonical usage
 

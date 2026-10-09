@@ -28,6 +28,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
 use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredCallToolHandler;
 use Rasuvaeff\Yii3Mcp\Visibility\FilteredCompletionCompleteHandler;
@@ -131,6 +132,8 @@ final readonly class McpServerFactory
      * @param iterable<ResourceReadInterceptorInterface> $resourceInterceptors resources/read chain (static + templates), first = outermost
      * @param PromptVisibilityInterface|null $promptVisibility per-session filter for prompts/list + fail-closed prompts/get
      * @param ResourceVisibilityInterface|null $resourceVisibility per-session filter for resources/list, resources/templates/list + fail-closed resources/read
+     * @param iterable<ToolResultDecoratorInterface> $resultDecorators applied in order to the formatted result of every
+     *                                                                 successful tools/call, after the whole interceptor chain
      */
     public function create(
         array $toolClasses,
@@ -141,6 +144,7 @@ final readonly class McpServerFactory
         iterable $resourceInterceptors = [],
         ?PromptVisibilityInterface $promptVisibility = null,
         ?ResourceVisibilityInterface $resourceVisibility = null,
+        iterable $resultDecorators = [],
     ): Server {
         $builder = Server::builder()
             ->setServerInfo(name: $this->name, version: $this->version)
@@ -219,6 +223,12 @@ final readonly class McpServerFactory
             $resourceInterceptorList[] = $resourceInterceptor;
         }
 
+        $resultDecoratorList = [];
+
+        foreach ($resultDecorators as $resultDecorator) {
+            $resultDecoratorList[] = $resultDecorator;
+        }
+
         $anyVisibility = $toolVisibility instanceof ToolVisibilityInterface
             || $promptVisibility instanceof PromptVisibilityInterface
             || $resourceVisibility instanceof ResourceVisibilityInterface;
@@ -238,7 +248,7 @@ final readonly class McpServerFactory
 
         $referenceHandler = null;
 
-        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility || $this->compactToolResults) {
+        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility || $this->compactToolResults || $resultDecoratorList !== []) {
             // the decorator wraps EVERY registration path: [class, method]
             // references, closures and explicit handler objects all execute
             // through the reference handler
@@ -251,6 +261,7 @@ final readonly class McpServerFactory
                 promptVisibility: $promptVisibility,
                 resourceVisibility: $resourceVisibility,
                 compactToolResults: $this->compactToolResults,
+                resultDecorators: $resultDecoratorList,
             );
             $builder->setReferenceHandler($referenceHandler);
         }

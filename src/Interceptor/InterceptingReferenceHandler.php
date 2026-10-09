@@ -37,7 +37,10 @@ use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
  * With $compactToolResults on, tool results are also re-encoded here as
  * compact JSON text ({@see CompactToolResultFormatter}) — the SDK's own
  * formatter pretty-prints array results, which costs an agent ~3x context
- * tokens for the same payload.
+ * tokens for the same payload. With result decorators configured, the
+ * pretty result is built here too — exactly as the SDK's CallToolHandler
+ * would — so every {@see ToolResultDecoratorInterface} gets a formatted
+ * {@see CallToolResult}.
  *
  * The client identity of a call comes FROM THE SESSION first
  * ({@see self::CLIENT_ID_SESSION_KEY} — the immutable owner
@@ -73,6 +76,8 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
      * @param bool $compactToolResults encode array/object tool results as compact JSON text
      *                                ({@see CompactToolResultFormatter}); pretty-printing stays the
      *                                default for backward compatibility
+     * @param list<ToolResultDecoratorInterface> $resultDecorators applied in order to the formatted result
+     *                                                             of every successful tools/call
      */
     public function __construct(
         private ReferenceHandlerInterface $inner,
@@ -83,6 +88,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         private ?PromptVisibilityInterface $promptVisibility = null,
         private ?ResourceVisibilityInterface $resourceVisibility = null,
         private bool $compactToolResults = false,
+        private array $resultDecorators = [],
     ) {}
 
     /**
@@ -142,15 +148,50 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         /** @var mixed $result */
         $result = $next();
 
-        // compact results are built HERE, deliberately: after the interceptor
-        // chain (every interceptor — RBAC, audit, the cache, the size limit —
-        // keeps seeing the raw handler result it was written against) and
-        // before the SDK's CallToolHandler, which skips BOTH its pretty
-        // formatter and structured-content extraction for a ready
-        // CallToolResult. A handler that already returned one keeps it
-        // untouched, exactly as the SDK would.
-        if ($this->compactToolResults && !$result instanceof CallToolResult && !$result instanceof InputRequiredResult) {
-            return CompactToolResultFormatter::format($result, $reference, $this->protocolVersion($arguments, $session));
+        // an ask is a result in its own right, not tool output: never
+        // formatted, never decorated
+        if ($result instanceof InputRequiredResult) {
+            return $result;
+        }
+
+        // results are built HERE, deliberately: after the interceptor chain
+        // (every interceptor — RBAC, audit, the cache, the size limit — keeps
+        // seeing the raw handler result it was written against) and before
+        // the SDK's CallToolHandler, which skips BOTH its pretty formatter and
+        // structured-content extraction for a ready CallToolResult. A handler
+        // that already returned one keeps it untouched, exactly as the SDK
+        // would.
+        if ($result instanceof CallToolResult) {
+            return $this->decorated($result, $context);
+        }
+
+        if ($this->compactToolResults) {
+            return $this->decorated(
+                CompactToolResultFormatter::format($result, $reference, $this->protocolVersion($arguments, $session)),
+                $context,
+            );
+        }
+
+        // pretty without decorators: the raw result goes on and the SDK
+        // formats it — the path stays exactly what it was
+        if ($this->resultDecorators === []) {
+            return $result;
+        }
+
+        // the SDK's own pretty path, verbatim (CallToolHandler::handle)
+        return $this->decorated(
+            new CallToolResult(
+                $reference->formatResult($result),
+                structuredContent: $reference->extractStructuredContent($result, $this->protocolVersion($arguments, $session)),
+            ),
+            $context,
+        );
+    }
+
+    private function decorated(CallToolResult $result, ToolCallContext $context): CallToolResult
+    {
+        foreach ($this->resultDecorators as $decorator) {
+            $result = $decorator->decorate($result, $context);
         }
 
         return $result;

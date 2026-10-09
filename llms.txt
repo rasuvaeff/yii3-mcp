@@ -595,6 +595,18 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // other exceptions => opaque internal error.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors).
 
+// Tool-result decorators (Interceptor\ToolResultDecoratorInterface) — add
+// content (a ResourceLink per item, an image) to the FORMATTED result:
+//   public function decorate(CallToolResult $result, ToolCallContext $context): CallToolResult
+// params: 'result_decorators' => [MyDecorator::class]  — DI-resolved, in order;
+// a class not implementing the interface fails the build. Run after the whole
+// chain on every successful tools/call (cache hits too; the cache stores the
+// raw result); added content is not counted by limits.tool_result_bytes;
+// never get an input_required ask or a ToolCallException (a handler-returned
+// CallToolResult::error() does reach them — check $result->isError). Keep
+// structuredContent unless outputSchema still describes it.
+// Manual wiring: $factory->create(..., resultDecorators: [new MyDecorator()]).
+
 // Tool-call budget (Interceptor\ToolCallBudgetInterceptor — anti-loop, NOT a
 // client quota): handshake era = per session (new session = new counter);
 // stateless 2026-07-28 era = per client id and fixed window in the

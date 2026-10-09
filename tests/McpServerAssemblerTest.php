@@ -18,6 +18,8 @@ use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyPromptVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyResourceVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDecorator;
+use Rasuvaeff\Yii3Mcp\Tests\Support\LinkingDecorator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingPromptInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingResourceInterceptor;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -123,6 +125,66 @@ final class McpServerAssemblerTest
         );
 
         Assert::same($resolver->resolve()->resourceInterceptors, [$interceptor]);
+    }
+
+    public function resolverPassesConfiguredResultDecoratorsInOrder(): void
+    {
+        $first = new LinkingDecorator(name: 'first');
+        $params = $this->params();
+        $params['result_decorators'] = [LinkingDecorator::class, IdentityDecorator::class];
+        $identity = new IdentityDecorator();
+        $resolver = new McpServerComponentResolver(
+            container: new SimpleContainer([LinkingDecorator::class => $first, IdentityDecorator::class => $identity]),
+            params: $params,
+        );
+
+        Assert::same($resolver->resolve()->resultDecorators, [$first, $identity]);
+    }
+
+    public function aResultDecoratorThatIsNoDecoratorFailsTheBuild(): void
+    {
+        $params = $this->params();
+        $params['result_decorators'] = [GreetingTool::class];
+        $resolver = new McpServerComponentResolver(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]),
+            params: $params,
+        );
+
+        try {
+            $resolver->resolve();
+            $error = null;
+        } catch (\LogicException $error) {
+        }
+
+        Assert::instanceOf($error, \LogicException::class);
+        Assert::string($error->getMessage())->contains('must implement Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolResultDecoratorInterface');
+    }
+
+    public function assemblerHandsResultDecoratorsToTheServer(): void
+    {
+        $components = new McpServerComponents(
+            tools: [GreetingTool::class],
+            configurators: [],
+            interceptors: [],
+            visibility: null,
+            promptInterceptors: [],
+            resourceInterceptors: [],
+            promptVisibility: null,
+            resourceVisibility: null,
+            resultDecorators: [new LinkingDecorator()],
+        );
+        $server = new McpServerAssembler(
+            factory: new McpServerFactory(
+                container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]),
+                sessionStore: new InMemorySessionStore(),
+            ),
+            components: $components,
+        )->create();
+        $psr17 = new Psr17Factory();
+
+        $result = new McpTester(server: $server, requestFactory: $psr17, responseFactory: $psr17, streamFactory: $psr17)->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][1]['uri'] ?? null, 'app://link');
     }
 
     public function anAllowListAloneStillBuildsDeclarativeToolVisibility(): void
