@@ -27,7 +27,8 @@ PromptGetInterceptorInterface, PromptGetContext,
 ResourceReadInterceptorInterface, ResourceReadContext, CallOutcome,
 ToolCallBudgetInterceptor, ResponseSizeLimitInterceptor,
 CachingToolCallInterceptor, InterceptingReferenceHandler, ArgumentMasker,
-ToolCallLimiterInterface, RateLimitInterceptor; ClientInfoResolver and
+ToolCallLimiterInterface, RateLimitInterceptor, ToolResultDecoratorInterface;
+ClientInfoResolver and
 RequestEra are @internal}`,
 `Visibility\{ToolVisibilityInterface, DeclarativeToolVisibility,
 PromptVisibilityInterface, ResourceVisibilityInterface;
@@ -136,6 +137,21 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   interceptors and the size limit, never around user interceptors — RBAC/
   audit must run on every call including a cache hit, or caching becomes an
   ACL bypass. Never reorder without preserving this.
+- **Result decorators run AFTER the chain and AFTER formatting, and never
+  change anything by their mere presence.** `InterceptingReferenceHandler`
+  formats first (compact mode: `CompactToolResultFormatter`; pretty mode with
+  decorators: the SDK's own `formatResult()` + `extractStructuredContent()`
+  for the request's revision — a verbatim copy of `CallToolHandler`'s
+  branch), then hands the `CallToolResult` to each decorator in order. Pretty
+  mode WITHOUT decorators still returns the raw result and lets the SDK
+  format — never build it in-package unconditionally. An
+  `InputRequiredResult` returns before formatting and is never decorated.
+  `McpServerFactory::create()` installs the handler when decorators alone are
+  configured (otherwise they would be silently ignored). The regression guard
+  is `ToolResultDecoratorTest::anIdentityDecoratorChangesNothing` — every
+  result shape × both eras × both `result_json` modes compared whole against
+  a server without decorators; re-run it on every SDK pin bump, it is what
+  proves the pretty copy still matches the SDK.
 - **`ToolCallBudgetInterceptor` counts in two places, by era, and the
   stateless one is the reason the class exists.** Handshake era: in the
   session (initialize → TTL). Stateless 2026-07-28 era: the SDK hands every

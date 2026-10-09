@@ -7,6 +7,7 @@ namespace Rasuvaeff\Yii3Mcp;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
@@ -22,6 +23,7 @@ final readonly class McpServerComponents
      * @param list<ToolCallInterceptorInterface> $interceptors
      * @param list<PromptGetInterceptorInterface> $promptInterceptors
      * @param list<ResourceReadInterceptorInterface> $resourceInterceptors
+     * @param list<ToolResultDecoratorInterface> $resultDecorators
      */
     public function __construct(
         public array $tools,
@@ -32,5 +34,6 @@ final readonly class McpServerComponents
         public array $resourceInterceptors,
         public ?PromptVisibilityInterface $promptVisibility,
         public ?ResourceVisibilityInterface $resourceVisibility,
+        public array $resultDecorators = [],
     ) {}
 }

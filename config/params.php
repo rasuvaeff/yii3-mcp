@@ -154,6 +154,12 @@ return [
         // alike; resolved through the container, applied in order, first =
         // outermost); each implements Interceptor\ResourceReadInterceptorInterface
         'resource_interceptors' => [],
+        // tool-result decorator FQCNs (resolved through the container, applied
+        // in order); each implements Interceptor\ToolResultDecoratorInterface
+        // and gets the FORMATTED CallToolResult of every successful tools/call
+        // after the whole interceptor chain — add content (e.g. a ResourceLink
+        // per item) without re-implementing result formatting
+        'result_decorators' => [],
         // server configurator FQCNs (resolved through the container, applied
         // in order after the core's own prompts/openapi configurators); each
         // implements ServerConfiguratorInterface. Extension point for

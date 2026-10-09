@@ -20,6 +20,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionRequestAttributesInterface;
@@ -286,6 +287,24 @@ final readonly class McpServerComponentResolver
         /** @var ResourceVisibilityInterface|null $resourceVisibility */
         $resourceVisibility = $resourceVisibilityClass === '' ? null : $this->getService($resourceVisibilityClass);
 
+        /** @var list<ToolResultDecoratorInterface> $resultDecorators */
+        $resultDecorators = [];
+
+        /** @var list<class-string> $resultDecoratorClasses */
+        $resultDecoratorClasses = $this->params['result_decorators'] ?? [];
+
+        foreach ($resultDecoratorClasses as $resultDecoratorClass) {
+            $resultDecorator = $this->getService($resultDecoratorClass);
+
+            // getService() only proves the configured class itself; a class
+            // that is no decorator must fail the build, not the first call
+            if (!$resultDecorator instanceof ToolResultDecoratorInterface) {
+                throw new LogicException(sprintf('Result decorator "%s" must implement %s', $resultDecoratorClass, ToolResultDecoratorInterface::class));
+            }
+
+            $resultDecorators[] = $resultDecorator;
+        }
+
         return new McpServerComponents(
             $tools,
             $configurators,
@@ -295,6 +314,7 @@ final readonly class McpServerComponentResolver
             $resourceInterceptors,
             $promptVisibility,
             $resourceVisibility,
+            $resultDecorators,
         );
     }
 

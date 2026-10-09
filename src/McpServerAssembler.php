@@ -27,6 +27,7 @@ final readonly class McpServerAssembler
             resourceInterceptors: $this->components->resourceInterceptors,
             promptVisibility: $this->components->promptVisibility,
             resourceVisibility: $this->components->resourceVisibility,
+            resultDecorators: $this->components->resultDecorators,
         );
     }
 }

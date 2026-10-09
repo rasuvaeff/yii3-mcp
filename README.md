@@ -870,6 +870,67 @@ a cache hit — caching cannot be used to bypass them. The size limit only
 runs on a cache miss; the value it already limited is what gets cached, so a
 hit never needs re-limiting.
 
+#### Decorating tool results
+
+Interceptors see the raw handler result, so they cannot add content next to
+it without re-implementing result formatting. A result decorator gets the
+**formatted** `CallToolResult` instead — text in the configured
+`result_json` mode, `structuredContent` by the rules of the request's
+protocol revision — and returns it with whatever it adds: a `ResourceLink`
+per item of a search result, an image, a note.
+
+```php
+use Mcp\Schema\Content\ResourceLink;
+use Mcp\Schema\Result\CallToolResult;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
+
+final readonly class CreatorLinks implements ToolResultDecoratorInterface
+{
+    public function decorate(CallToolResult $result, ToolCallContext $context): CallToolResult
+    {
+        $items = is_array($result->structuredContent) ? ($result->structuredContent['items'] ?? []) : [];
+        if ($context->toolName !== 'search_creators' || $result->isError || !is_array($items)) {
+            return $result;
+        }
+
+        $links = [];
+        foreach ($items as $item) {
+            $links[] = new ResourceLink(uri: 'app://creator/' . $item['slug'], name: $item['slug']);
+        }
+
+        return new CallToolResult([...$result->content, ...$links], $result->isError, $result->structuredContent, $result->meta);
+    }
+}
+```
+
+```php
+'rasuvaeff/yii3-mcp' => [
+    // FQCNs resolved through the container, applied in order; a class that
+    // does not implement ToolResultDecoratorInterface fails the build
+    'result_decorators' => [CreatorLinks::class],
+],
+```
+
+- Decorators run after the whole interceptor chain (budget, interceptors,
+  the result cache, the size limit) on every successful `tools/call` —
+  cache hits included, since the cache stores the raw result.
+- What a decorator adds does not count against `limits.tool_result_bytes`,
+  which measures the raw result inside the chain.
+- Keep `structuredContent` unless the tool's `outputSchema` still describes
+  the new value: clients validate it.
+- A multi round-trip ask (`input_required`) is never decorated; the final
+  round's result is. A `ToolCallException` never reaches a decorator (the
+  SDK turns it into an error envelope after the handler); a handler that
+  returns `CallToolResult::error()` itself does — check `$result->isError`.
+- In `pretty` mode the package builds the result exactly as the SDK would
+  (`formatResult()` + `extractStructuredContent()` for the request's
+  revision), but only when at least one decorator is configured; the
+  SDK's warning about a value that cannot be `structuredContent` despite an
+  `outputSchema` is not logged on that path (nor in `compact` mode).
+- `McpServerFactory::create(resultDecorators: [...])` takes them directly
+  without `yiisoft/config`.
+
 ### Client identity and secret rotation
 
 One endpoint can serve several MCP clients, each with its own secret — and

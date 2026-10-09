@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Tool-result decorators (#71): `Interceptor\ToolResultDecoratorInterface`
+  gets the formatted `CallToolResult` of every successful `tools/call` after
+  the whole interceptor chain and returns it with added content (a
+  `ResourceLink` per item, an image) — no re-implementation of result
+  formatting or of the per-revision `structuredContent` rule. Configured by
+  the new `result_decorators` params key (a class not implementing the
+  interface fails the build) or `McpServerFactory::create(resultDecorators:)`.
+  Decorators run on cache hits too, never see an `input_required` ask or a
+  `ToolCallException`, and their output is not counted by
+  `limits.tool_result_bytes`. In `pretty` mode the package builds the result
+  the way the SDK does, only when a decorator is configured; without one
+  nothing changes.
+
 ## 4.0.1 — 2026-10-08
 
 - `clientInfo()` keeps the name of a client that sends no `version` (an
