@@ -173,16 +173,16 @@ final class McpServerAssemblerTest
             resourceVisibility: null,
             resultDecorators: [new LinkingDecorator()],
         );
-        $server = new McpServerAssembler(
+        $server = (new McpServerAssembler(
             factory: new McpServerFactory(
                 container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]),
                 sessionStore: new InMemorySessionStore(),
             ),
             components: $components,
-        )->create();
+        ))->create();
         $psr17 = new Psr17Factory();
 
-        $result = new McpTester(server: $server, requestFactory: $psr17, responseFactory: $psr17, streamFactory: $psr17)->callTool('greet', ['name' => 'Yii']);
+        $result = (new McpTester(server: $server, requestFactory: $psr17, responseFactory: $psr17, streamFactory: $psr17))->callTool('greet', ['name' => 'Yii']);
 
         Assert::same($result['content'][1]['uri'] ?? null, 'app://link');
     }
