@@ -111,7 +111,7 @@ final readonly class McpAction implements RequestHandlerInterface
         }
 
         // an SSE stream must leave frame by frame: see OutputBufferReleasingStream
-        if (str_starts_with(strtolower($response->getHeaderLine('Content-Type')), 'text/event-stream')) {
+        if (str_starts_with($response->getHeaderLine('Content-Type'), 'text/event-stream')) {
             return $response->withBody(new OutputBufferReleasingStream($response->getBody()));
         }
 

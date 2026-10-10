@@ -21,7 +21,7 @@ use Psr\Http\Message\StreamInterface;
  * first is harmless for it.
  *
  * Buffers are ended down to `$baseLevel` (0 — all of them — in production);
- * a non-removable buffer stops the release without a notice.
+ * a non-removable buffer stops the release.
  *
  * @internal
  */
@@ -131,13 +131,10 @@ final readonly class OutputBufferReleasingStream implements StreamInterface
     private function release(): void
     {
         while (ob_get_level() > $this->baseLevel) {
-            $flags = ob_get_status()['flags'] ?? 0;
-
-            if (!is_int($flags) || ($flags & PHP_OUTPUT_HANDLER_REMOVABLE) === 0) {
+            // a non-removable buffer refuses with a notice and stays: stop there
+            if (!@ob_end_flush()) {
                 return;
             }
-
-            ob_end_flush();
         }
     }
 }
