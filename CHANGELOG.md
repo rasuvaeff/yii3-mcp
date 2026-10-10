@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notification arrived up to `subscription_lifetime` late. `McpAction` now
   wraps a `text/event-stream` body in `OutputBufferReleasingStream`
   (@internal), which ends PHP's output buffers before the SDK writes.
+  Fixed upstream in modelcontextprotocol/php-sdk#520 (not released yet); the
+  wrapper goes once the `mcp/sdk` pin includes it.
 
 ## 4.1.0 — 2026-10-09
 

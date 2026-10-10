@@ -252,8 +252,9 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   the application (4096 by default) and `yiisoft/psr-emitter` (ends only buffers
   above the level it recorded) would hold a whole `subscriptions/listen`
   stream until it closes (#74). The wrapper ends buffers right before the
-  SDK's callback writes; it never reads the stream itself. Drop it only once
-  a pinned SDK flushes userland buffers on the stateless path too.
+  SDK's callback writes; it never reads the stream itself. Fixed upstream
+  (modelcontextprotocol/php-sdk#520, `@ob_flush()` in `sse()`, merged
+  2026-10-05, not in 0.8.1): drop the wrapper once the pin includes it.
 - **`Resource\ResourceUpdateNotifier` has two delivery paths, one per era,
   and the SDK joins them nowhere.** The notification bus (SDK 0.8) feeds ONLY
   stateless `subscriptions/listen` streams; handshake sessions still get an
