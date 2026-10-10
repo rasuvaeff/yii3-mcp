@@ -245,6 +245,15 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   running them inside `new Fiber(...)` and asserting the suspend value — that is
   exactly what the transport would flush. Do not "fix" the tester by parsing
   output buffers.
+- **A `text/event-stream` response leaves `McpAction` wrapped in
+  `OutputBufferReleasingStream` (@internal), and the wrapper must stay.** The
+  SDK's stateless `StatelessResponder::sse()` (0.8.1) writes frames with
+  `flush()` but no `ob_flush()`; the `output_buffering` buffer PHP opens before
+  the application (4096 by default) and `yiisoft/psr-emitter` (ends only buffers
+  above the level it recorded) would hold a whole `subscriptions/listen`
+  stream until it closes (#74). The wrapper ends buffers right before the
+  SDK's callback writes; it never reads the stream itself. Drop it only once
+  a pinned SDK flushes userland buffers on the stateless path too.
 - **`Resource\ResourceUpdateNotifier` has two delivery paths, one per era,
   and the SDK joins them nowhere.** The notification bus (SDK 0.8) feeds ONLY
   stateless `subscriptions/listen` streams; handshake sessions still get an
