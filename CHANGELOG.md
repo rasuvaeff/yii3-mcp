@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Stateless SSE streams (`subscriptions/listen`) are sent frame by frame
+  under PHP-FPM (#74). `mcp/sdk` 0.8.1 writes each frame with `flush()` only,
+  which leaves it in PHP's `output_buffering` buffer (4096 in both shipped
+  php.ini files), so the client got the whole stream when it closed — a
+  notification arrived up to `subscription_lifetime` late. `McpAction` now
+  wraps a `text/event-stream` body in `OutputBufferReleasingStream`
+  (@internal), which ends PHP's output buffers before the SDK writes.
+  Fixed upstream in modelcontextprotocol/php-sdk#520 (not released yet); the
+  wrapper goes once the `mcp/sdk` pin includes it.
+
 ## 4.1.0 — 2026-10-09
 
 - Tool-result decorators (#71): `Interceptor\ToolResultDecoratorInterface`

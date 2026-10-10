@@ -11,6 +11,7 @@ use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OutputBufferReleasingStream;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
@@ -151,6 +152,51 @@ final class McpActionTest
 
         Assert::same($response->getStatusCode(), 200);
         Assert::true(isset($this->decode($response)['result']['supportedVersions']));
+    }
+
+    /**
+     * A subscriptions/listen stream must leave frame by frame under PHP-FPM:
+     * its body ends PHP's output buffers before the SDK writes (#74). The
+     * stream is not read here — it would hold the test for its lifetime.
+     */
+    public function eventStreamBodyReleasesOutputBuffers(): void
+    {
+        $factory = new Psr17Factory();
+        $action = new McpAction(
+            server: (new McpServerFactory(
+                container: new SimpleContainer([]),
+                sessionStore: new InMemorySessionStore(),
+                modernEra: true,
+            ))->create([]),
+            responseFactory: $factory,
+            streamFactory: $factory,
+        );
+
+        $response = $action->handle($this->request([
+            'jsonrpc' => '2.0',
+            'id' => 'listen-1',
+            'method' => 'subscriptions/listen',
+            'params' => [
+                '_meta' => [
+                    'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                    'io.modelcontextprotocol/clientCapabilities' => new \stdClass(),
+                ],
+                'notifications' => ['resourceSubscriptions' => ['app://item/1']],
+            ],
+        ])
+            ->withHeader('MCP-Protocol-Version', '2026-07-28')
+            ->withHeader('Mcp-Method', 'subscriptions/listen'));
+
+        Assert::same($response->getHeaderLine('Content-Type'), 'text/event-stream');
+        Assert::instanceOf($response->getBody(), OutputBufferReleasingStream::class);
+    }
+
+    public function jsonBodyIsLeftAsIs(): void
+    {
+        $response = $this->initialize();
+
+        Assert::same($response->getHeaderLine('Content-Type'), 'application/json');
+        Assert::false($response->getBody() instanceof OutputBufferReleasingStream);
     }
 
     public function localHostsStayAllowedWhenCustomHostsAreSet(): void
