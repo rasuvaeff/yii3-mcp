@@ -71,6 +71,7 @@ jobs:
   build:
     name: PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
 
     strategy:
       fail-fast: false
@@ -79,6 +80,17 @@ jobs:
           - '8.3'
           - '8.4'
           - '8.5'
+        experimental: [false]
+        include:
+          # PHP 8.6 is not released yet: the job runs on the RC, is not a
+          # required check and cannot fail the workflow. composer.json still
+          # says "8.3 - 8.5", hence --ignore-platform-req=php+ below. It runs
+          # the tests only: php-cs-fixer refuses 8.6 and psalm crashes on the
+          # RC — style and static analysis are covered by 8.3–8.5. After GA:
+          # drop `experimental`, widen "php" to "8.3 - 8.6", run the full
+          # build and add "PHP 8.6" to templates/branch-protection.json.
+          - php: '8.6'
+            experimental: true
 
     steps:
       - name: Checkout
@@ -102,10 +114,14 @@ jobs:
           restore-keys: composer-${{ runner.os }}-
 
       - name: Install dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist
+        env:
+          PLATFORM_FLAGS: ${{ matrix.experimental && '--ignore-platform-req=php+' || '' }}
+        run: composer install --no-interaction --no-progress --prefer-dist $PLATFORM_FLAGS
 
       - name: Build
-        run: composer build
+        env:
+          BUILD_SCRIPT: ${{ matrix.experimental && 'test' || 'build' }}
+        run: composer "$BUILD_SCRIPT"
 
   prefer-lowest:
     name: Prefer lowest
