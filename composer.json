@@ -1,6 +1,6 @@
 {
     "name": "rasuvaeff/yii3-mcp",
-    "description": "MCP server integration for Yii3: PSR-15 Streamable HTTP endpoint, DI tool registry, and stdio transport over the official mcp/sdk",
+    "description": "MCP server for Yii3 on the official mcp/sdk: attribute tools, OpenAPI bridge, per-user RBAC and audit log for everything the model touches",
     "license": "BSD-3-Clause",
     "type": "library",
     "keywords": [
