@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Mcp\Capability\Registry;
+use Mcp\Capability\Registry\ResourceTemplateReference;
+use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Schema\Prompt;
 use Mcp\Schema\ResourceDefinition;
 use Mcp\Schema\ResourceTemplate;
@@ -101,6 +103,62 @@ final class GuardedRegistryTest
         $registry->registerTool($this->tool('lookup'), static fn(): string => 'second');
 
         Assert::true($registry->hasTool('lookup'));
+    }
+
+    public function reRegisteringAResourceAfterAnExplicitUnregisterIsAllowed(): void
+    {
+        $registry = $this->registry();
+        $registry->registerResource($this->resource('app://config'), static fn(): string => 'first');
+        $registry->unregisterResource('app://config');
+
+        Assert::false($registry->hasResource('app://config'));
+
+        $registry->registerResource($this->resource('app://config'), static fn(): string => 'second');
+
+        Assert::true($registry->hasResource('app://config'));
+    }
+
+    public function reRegisteringATemplateAfterAnExplicitUnregisterIsAllowed(): void
+    {
+        $registry = $this->registry();
+        $registry->registerResourceTemplate($this->template('app://user/{id}'), static fn(string $id): string => $id);
+        $registry->unregisterResourceTemplate('app://user/{id}');
+
+        Assert::false($registry->hasResourceTemplate('app://user/{id}'));
+
+        $registry->registerResourceTemplate($this->template('app://user/{id}'), static fn(string $id): string => $id);
+
+        Assert::true($registry->hasResourceTemplate('app://user/{id}'));
+    }
+
+    public function reRegisteringAPromptAfterAnExplicitUnregisterIsAllowed(): void
+    {
+        $registry = $this->registry();
+        $registry->registerPrompt(new Prompt(name: 'style'), static fn(): string => 'first');
+        $registry->unregisterPrompt('style');
+
+        Assert::false($registry->hasPrompt('style'));
+
+        $registry->registerPrompt(new Prompt(name: 'style'), static fn(): string => 'second');
+
+        Assert::true($registry->hasPrompt('style'));
+    }
+
+    public function getResourceResolvesTemplatesUnlessTheyAreExcluded(): void
+    {
+        $registry = $this->registry();
+        $registry->registerResourceTemplate($this->template('app://user/{id}'), static fn(string $id): string => $id);
+
+        Assert::instanceOf($registry->getResource('app://user/5'), ResourceTemplateReference::class);
+
+        $caught = null;
+
+        try {
+            $registry->getResource('app://user/5', includeTemplates: false);
+        } catch (ResourceNotFoundException $caught) {
+        }
+
+        Assert::notNull($caught);
     }
 
     public function factoryDetectsACollisionBetweenConfiguratorAndAttributeTool(): void

@@ -10,6 +10,7 @@ use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
+use Rasuvaeff\Yii3Mcp\Tests\Support\WarningsAsErrors;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -153,6 +154,43 @@ final class DeclarativeToolVisibilityTest
         );
 
         Assert::true((new DeclarativeToolVisibility(deny: ['tag:*']))->isVisible($tool, null));
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    #[DataProvider('malformedTagMetaProvider')]
+    public function malformedTagMetaIsIgnoredWithoutAWarning(array $meta): void
+    {
+        $tool = new Tool(
+            name: 'x',
+            title: null,
+            inputSchema: ['type' => 'object'],
+            description: null,
+            annotations: null,
+            meta: $meta,
+        );
+
+        $visible = WarningsAsErrors::around(
+            static fn(): bool => (new DeclarativeToolVisibility(deny: ['tag:*']))->isVisible($tool, null),
+        );
+
+        Assert::true($visible);
+    }
+
+    public static function malformedTagMetaProvider(): iterable
+    {
+        yield 'own meta is not an array' => [['rasuvaeff/yii3-mcp' => 'not-an-array']];
+        yield 'tags is not an array' => [['rasuvaeff/yii3-mcp' => ['tags' => 'admin']]];
+        yield 'tags absent' => [['rasuvaeff/yii3-mcp' => []]];
+    }
+
+    public function aTagPatternIsMatchedWithoutAWarning(): void
+    {
+        $visibility = new DeclarativeToolVisibility(deny: ['tag:admin']);
+        $tool = $this->toolWithTags('op', ['admin']);
+
+        Assert::false(WarningsAsErrors::around(static fn(): bool => $visibility->isVisible($tool, null)));
     }
 
     /**

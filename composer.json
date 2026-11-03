@@ -104,7 +104,10 @@
         ],
         "cs": "php-cs-fixer fix --dry-run --diff --config=.php-cs-fixer.php",
         "cs:fix": "php-cs-fixer fix --diff --config=.php-cs-fixer.php",
-        "mutation": "infection --threads=max",
+        "mutation": [
+            "Composer\\Config::disableProcessTimeout",
+            "infection --threads=max --with-uncovered"
+        ],
         "psalm": "psalm --no-cache",
         "rector": "rector process --dry-run",
         "rector:fix": "rector process",

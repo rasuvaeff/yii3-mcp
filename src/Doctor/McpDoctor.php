@@ -82,8 +82,9 @@ final readonly class McpDoctor
         private int $requestStateKeyBytes = 0,
     ) {}
 
-    public function diagnose(bool $probeUpstream = false): DoctorReport
-    {
+    public function diagnose(
+        bool $probeUpstream = false,
+    ): DoctorReport {
         return new DoctorReport([
             $this->checkEndpointSecret(),
             $this->checkAllowedHost(),

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Mutation testing (`composer mutation`) now counts code that no test is
+  attributed to (`--with-uncovered`; Infection runs the `Unit` suite only).
+  Overall MSI 82% -> 98% against the unchanged `minMsi` of 97. New tests
+  cover `OperationRequestBuilder`, `OperationResponseDecoder`, `RequestEra`,
+  the session-ownership edge cases of `McpAction`, `McpTester` pagination
+  against a misbehaving peer, `McpDoctor` failure paths and the bounded
+  stream readers; `#[Covers]` was added where tests already ran the code.
+  Two behaviour-neutral source edits: signatures with defaults are laid out
+  one parameter per line, and the dry-run flag and the cache-key digest are
+  read into a local variable.
+
 ## 4.1.1 — 2026-10-10
 
 - Stateless SSE streams (`subscriptions/listen`) are sent frame by frame

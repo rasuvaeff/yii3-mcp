@@ -26,8 +26,10 @@ final readonly class InputSchemaBuilder
     /**
      * @return array{type: 'object', properties: array<string, mixed>|\stdClass, required: list<string>}
      */
-    public function build(Operation $operation, bool $dryRunnable = false): array
-    {
+    public function build(
+        Operation $operation,
+        bool $dryRunnable = false,
+    ): array {
         $properties = [];
         $required = [];
 

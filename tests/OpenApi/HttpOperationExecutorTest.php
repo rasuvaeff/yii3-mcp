@@ -21,6 +21,8 @@ use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationRequestBuilder;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationResponseDecoder;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\Tests\Support\EndlessStream;
 use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDelegatedHeaderProvider;
@@ -40,6 +42,8 @@ use function Rasuvaeff\Understudy\when;
 #[Covers(HttpOperationExecutor::class)]
 #[Covers(OperationFailedException::class)]
 #[Covers(InvalidToolArgumentException::class)]
+#[Covers(OperationRequestBuilder::class)]
+#[Covers(OperationResponseDecoder::class)]
 final class HttpOperationExecutorTest
 {
     private const string SEGMENT_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.';

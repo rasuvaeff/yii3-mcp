@@ -16,17 +16,22 @@ use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DisabledTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ElicitingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\HandlerConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\HeaderParamToolConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingNotificationHandler;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ScriptedRequestHandler;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
 #[Test]
 #[Covers(McpTester::class)]
 #[Covers(McpErrorException::class)]
+#[Covers(McpServerFactory::class)]
 final class McpTesterTest
 {
     public function initializeReturnsServerInfo(): void
@@ -192,6 +197,104 @@ final class McpTesterTest
         Assert::same($caught->errorCode, -32602);
     }
 
+    public function theHandshakeEndsWithTheInitializedNotification(): void
+    {
+        $notifications = new RecordingNotificationHandler();
+        $tester = $this->testerWith(new HandlerConfigurator(notificationHandlers: [$notifications]));
+
+        $tester->initialize();
+
+        Assert::same($notifications->methods, ['notifications/initialized']);
+    }
+
+    public function requestIdsAreUniquePositiveAndIncreasing(): void
+    {
+        $handler = new ScriptedRequestHandler('tools/list', [[], [], []]);
+        $tester = $this->testerWith(new HandlerConfigurator(requestHandlers: [$handler]));
+
+        $tester->listTools();
+        $tester->listTools();
+        $tester->listTools();
+
+        $ids = array_map(static fn($request): int|string => $request->getId(), $handler->requests);
+
+        Assert::same(count($ids), 3);
+        Assert::true(is_int($ids[0]) && $ids[0] > 1, 'the first id follows the initialize request');
+        Assert::true($ids[1] > $ids[0] && $ids[2] > $ids[1]);
+    }
+
+    public function listsFollowCursorsUntilTheLastPage(): void
+    {
+        $handler = new ScriptedRequestHandler('tools/list', [
+            ['tools' => [['name' => 'a']], 'nextCursor' => 'page-2'],
+            ['tools' => [['name' => 'b']], 'nextCursor' => 'page-3'],
+            ['tools' => [['name' => 'c']]],
+        ]);
+
+        $tools = $this->testerWith(new HandlerConfigurator(requestHandlers: [$handler]))->listTools();
+
+        Assert::same(array_column($tools, 'name'), ['a', 'b', 'c']);
+        Assert::same(
+            array_map(static fn($request): mixed => $request->jsonSerialize()['params']['cursor'] ?? null, $handler->requests),
+            [null, 'page-2', 'page-3'],
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $firstPage
+     */
+    #[DataProvider('pagesWithoutAUsableCursorProvider')]
+    public function aCursorThatIsNotANonEmptyStringEndsThePagination(array $firstPage): void
+    {
+        $handler = new ScriptedRequestHandler('tools/list', [$firstPage, ['tools' => [['name' => 'never']]]]);
+
+        $tools = $this->testerWith(new HandlerConfigurator(requestHandlers: [$handler]))->listTools();
+
+        Assert::same(array_column($tools, 'name'), ['a']);
+        Assert::same(count($handler->requests), 1);
+    }
+
+    public static function pagesWithoutAUsableCursorProvider(): iterable
+    {
+        yield 'absent' => [['tools' => [['name' => 'a']]]];
+        yield 'null' => [['tools' => [['name' => 'a']], 'nextCursor' => null]];
+        yield 'empty string' => [['tools' => [['name' => 'a']], 'nextCursor' => '']];
+        yield 'integer' => [['tools' => [['name' => 'a']], 'nextCursor' => 7]];
+        yield 'boolean' => [['tools' => [['name' => 'a']], 'nextCursor' => true]];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $pages
+     */
+    #[DataProvider('cyclingPagesProvider')]
+    public function aCursorTheServerRepeatsFailsInsteadOfLoopingForever(array $pages, string $repeated): void
+    {
+        $handler = new ScriptedRequestHandler('prompts/list', $pages);
+        $tester = $this->testerWith(new HandlerConfigurator(requestHandlers: [$handler]));
+
+        $caught = null;
+
+        try {
+            $tester->listPrompts();
+        } catch (RuntimeException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), sprintf('MCP pagination for "prompts/list" returned repeated cursor "%s"', $repeated));
+    }
+
+    public static function cyclingPagesProvider(): iterable
+    {
+        yield 'the same cursor twice in a row' => [
+            [['prompts' => [], 'nextCursor' => 'x'], ['prompts' => [], 'nextCursor' => 'x']],
+            'x',
+        ];
+        yield 'a cycle back to the first cursor' => [
+            [['prompts' => [], 'nextCursor' => 'a'], ['prompts' => [], 'nextCursor' => 'b'], ['prompts' => [], 'nextCursor' => 'a']],
+            'a',
+        ];
+    }
+
     /**
      * A server with the modern era switched off answers a 2026-07-28 client
      * with "unsupported protocol version" — such a client does not fall back
@@ -292,6 +395,17 @@ final class McpTesterTest
             streamFactory: $factory,
             protocolVersion: $protocolVersion,
         );
+    }
+
+    private function testerWith(HandlerConfigurator $configurator): McpTester
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+        ))->create([], [$configurator]);
+
+        return new McpTester($server, $factory, $factory, $factory);
     }
 
     private function modern(bool $withManyCapabilities = false, ?int $paginationLimit = null): McpTester

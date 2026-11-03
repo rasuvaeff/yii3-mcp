@@ -14,6 +14,7 @@ use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\UnreadableFileStreamWrapper;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -244,6 +245,25 @@ final class SchemaSnapshotTest
         Assert::string($caught->getMessage())->contains('MCP_SNAPSHOT_RECORD=1');
         // verify never creates the file — a lost snapshot must stay an error.
         Assert::false(is_file($this->path));
+    }
+
+    public function verifyThrowsWhenAnExistingSnapshotCannotBeRead(): void
+    {
+        stream_wrapper_register('mcp-unreadable', UnreadableFileStreamWrapper::class);
+        // the failed open raises a warning of its own: silence it for this call
+        set_error_handler(static fn(): bool => true);
+        $caught = null;
+
+        try {
+            SchemaSnapshot::verify($this->tester(), 'mcp-unreadable://snapshot.json');
+        } catch (RuntimeException $caught) {
+        } finally {
+            restore_error_handler();
+            stream_wrapper_unregister('mcp-unreadable');
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), 'Cannot read MCP schema snapshot from "mcp-unreadable://snapshot.json"');
     }
 
     public function verifyThrowsOnDrift(): void

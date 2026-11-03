@@ -11,7 +11,9 @@ use Rasuvaeff\Yii3Mcp\McpListCommand;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\HandlerConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ManyCapabilitiesConfigurator;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ScriptedRequestHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\UnicodeDescriptionTool;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -80,6 +82,38 @@ final class McpListCommandTest
         Assert::string($display)->contains('code-review');
         Assert::string($display)->contains('diff*, focus');
         Assert::false(str_contains($display, 'focus*'));
+    }
+
+    /**
+     * A peer's list is data from outside: a malformed argument entry or
+     * schema is skipped, never allowed to hide the entries after it or to
+     * take the whole listing down.
+     */
+    public function malformedPromptArgumentsAndSchemasDoNotHideTheWellFormedOnes(): void
+    {
+        $handlers = new HandlerConfigurator(requestHandlers: [
+            new ScriptedRequestHandler('prompts/list', [[
+                'prompts' => [['name' => 'odd', 'arguments' => ['not an argument', ['name' => 'topic', 'required' => true], 7, ['name' => 'tone']]]],
+            ]]),
+            new ScriptedRequestHandler('tools/list', [[
+                'tools' => [
+                    ['name' => 'shapeless', 'inputSchema' => 'not a schema'],
+                    ['name' => 'plain', 'inputSchema' => ['properties' => ['x' => ['type' => 'string']], 'required' => ['x', 5]]],
+                ],
+            ]]),
+        ]);
+        $server = (new McpServerFactory(
+            container: new SimpleContainer(),
+            sessionStore: new InMemorySessionStore(),
+        ))->create([], [$handlers]);
+        $tester = $this->command($server);
+
+        Assert::same($tester->execute([]), Command::SUCCESS);
+
+        $display = $tester->getDisplay();
+        Assert::same(preg_match('/odd\s+topic\*, tone/', $display), 1);
+        Assert::same(preg_match('/plain\s+x\*/', $display), 1);
+        Assert::string($display)->contains('shapeless');
     }
 
     public function printsNoneForEverySectionOfAnEmptyServer(): void

@@ -44,6 +44,27 @@ final class PrivateFileSessionStoreTest
         Assert::same(substr(sprintf('%o', (int) fileperms($this->directory)), -3), '700');
     }
 
+    public function parentDirectoriesCreatedAlongTheWayAreOwnerOnlyToo(): void
+    {
+        $base = $this->freshDirectory();
+        $previousUmask = umask(0);
+
+        try {
+            new PrivateFileSessionStore($base . '/outer/inner');
+        } finally {
+            umask($previousUmask);
+        }
+
+        try {
+            // the explicit chmod only reaches the leaf: the parents carry the
+            // mode mkdir() was asked for
+            Assert::same(substr(sprintf('%o', (int) fileperms($base . '/outer')), -3), '700');
+        } finally {
+            @rmdir($base . '/outer/inner');
+            @rmdir($base . '/outer');
+        }
+    }
+
     public function sessionFilesAreClampedToOwnerOnly(): void
     {
         $store = new PrivateFileSessionStore($this->freshDirectory());

@@ -13,8 +13,10 @@ use Rasuvaeff\Yii3Mcp\OpenApi\OutputSchemaProjector;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\ToolNameValidator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\WarningsAsErrors;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 
@@ -930,6 +932,76 @@ final class SpecIndexTest
         ]);
 
         Assert::same($index->get('op')->tags, []);
+    }
+
+    public function arrayParameterWithAllowReservedIsRejected(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter([
+                'name' => 'q',
+                'in' => 'query',
+                'allowReserved' => true,
+                'schema' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), 'Operation "op" parameter "q" uses unsupported allowReserved=true');
+    }
+
+    #[DataProvider('scalarDocumentProvider')]
+    public function fromJsonRejectsADocumentThatIsNotAnObject(string $json): void
+    {
+        $caught = null;
+
+        try {
+            SpecIndex::fromJson($json);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), 'OpenAPI document must decode to an object');
+    }
+
+    public static function scalarDocumentProvider(): iterable
+    {
+        yield 'number' => ['5'];
+        yield 'string' => ['"openapi"'];
+        yield 'null' => ['null'];
+    }
+
+    public function aNonArrayParameterEntryDoesNotHideTheOnesAfterIt(): void
+    {
+        $index = new SpecIndex([
+            'paths' => ['/x' => ['get' => [
+                'operationId' => 'op',
+                'parameters' => [
+                    'not a parameter',
+                    ['name' => 'q', 'in' => 'query', 'schema' => ['type' => 'string']],
+                ],
+            ]]],
+        ]);
+
+        Assert::same(array_column($index->get('op')->parameters, 'name'), ['q']);
+    }
+
+    public function malformedTagsAndAParameterWithoutARequiredKeyIndexWithoutWarnings(): void
+    {
+        $index = WarningsAsErrors::around(static fn(): SpecIndex => new SpecIndex([
+            'paths' => ['/x' => ['get' => [
+                'operationId' => 'op',
+                'tags' => 'not-a-list',
+                'parameters' => [['name' => 'q', 'in' => 'query', 'schema' => ['type' => 'string']]],
+            ]]],
+        ]));
+
+        $operation = WarningsAsErrors::around(static fn() => $index->get('op'));
+
+        Assert::same($operation->tags, []);
+        Assert::false($operation->parameters[0]['required']);
     }
 
     public function parameterWithAnEmptyNameIsSkipped(): void

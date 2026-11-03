@@ -96,6 +96,29 @@ final class CompactToolResultFormatterTest
     }
 
     /**
+     * An array of nothing but Content is the tool's own, finished answer: the
+     * SDK serves it untouched — keys included — and so does the compact
+     * formatter. Rebuilding it as a list would change what the client reads.
+     *
+     * @param array<array-key, TextContent> $result
+     */
+    #[DataProvider('allContentArrayProvider')]
+    public function anAllContentArrayIsServedExactlyAsTheSdkServesIt(array $result): void
+    {
+        $content = $this->format($result)->content;
+
+        Assert::same($content, $this->reference()->formatResult($result));
+        Assert::same($content, $result);
+    }
+
+    public static function allContentArrayProvider(): iterable
+    {
+        yield 'a list' => [[new TextContent('one'), new TextContent('two')]];
+        yield 'sparse integer keys' => [[7 => new TextContent('one'), 9 => new TextContent('two')]];
+        yield 'string keys' => [['first' => new TextContent('one'), 'second' => new TextContent('two')]];
+    }
+
+    /**
      * A tool may answer with links to resources instead of their bodies
      * (SDK 0.8 ResourceLink) — they pass through as content, untouched, and
      * are not mistaken for structured data.

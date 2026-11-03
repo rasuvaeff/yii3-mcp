@@ -10,6 +10,7 @@ use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -24,6 +25,7 @@ use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ReadOnlyDirectoryStreamWrapper;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingRequestHandler;
 use RuntimeException;
 use Testo\Assert;
@@ -153,6 +155,75 @@ final class McpDoctorTest
         Assert::false($report->healthy());
         Assert::same($report->exitCode(), 3);
         Assert::string($this->check($report, 'session_directory')->details)->contains($file);
+    }
+
+    public function readOnlySessionDirectoryFailsTheWritabilityCheck(): void
+    {
+        stream_wrapper_register('mcp-readonly', ReadOnlyDirectoryStreamWrapper::class);
+
+        try {
+            $check = $this->check($this->doctor(sessionDir: 'mcp-readonly://sessions')->diagnose(), 'session_directory');
+        } finally {
+            stream_wrapper_unregister('mcp-readonly');
+        }
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::same($check->details, 'Session directory "mcp-readonly://sessions" is not writable');
+    }
+
+    public function serviceThatThrowsOnResolutionIsReportedWithItsFeatureAndCause(): void
+    {
+        $container = new class implements ContainerInterface {
+            #[\Override]
+            public function has(string $id): bool
+            {
+                return true;
+            }
+
+            #[\Override]
+            public function get(string $id): never
+            {
+                throw new RuntimeException('no ' . $id);
+            }
+        };
+
+        $check = $this->check($this->doctor(container: $container)->diagnose(), 'service_http_message_responsefactoryinterface');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)
+            ->contains('Resolving Psr\\Http\\Message\\ResponseFactoryInterface for McpAction, McpListCommand/McpTester threw ')
+            ->contains('no Psr\\Http\\Message\\ResponseFactoryInterface');
+    }
+
+    public function aServiceRequiredTwiceForTheSameFeatureIsListedOnce(): void
+    {
+        $factory = new Psr17Factory();
+        $doctor = new McpDoctor(
+            container: new SimpleContainer([
+                ClientInterface::class => $this->client(),
+                RequestFactoryInterface::class => $factory,
+                ServerRequestFactoryInterface::class => $factory,
+                ResponseFactoryInterface::class => $factory,
+                StreamFactoryInterface::class => $factory,
+            ]),
+            sessionStore: new InMemorySessionStore(),
+            endpointSecret: 'test-secret',
+            sessionDirectory: $this->sessionDir,
+            openApiSpecPath: '',
+            httpEntryPointEnabled: false,
+            consoleEntryPointEnabled: false,
+            openApiOperationsEnabled: true,
+            openApiInProcess: true,
+            openApiInProcessHandler: ServerRequestFactoryInterface::class,
+        );
+
+        $check = $this->check($doctor->diagnose(), 'service_http_message_serverrequestfactoryinterface');
+
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::same(
+            $check->details,
+            'Psr\\Http\\Message\\ServerRequestFactoryInterface is available for OpenAPI in-process execution',
+        );
     }
 
     public function throwingSessionStoreFailsWithStorageExitCode(): void
@@ -292,6 +363,27 @@ final class McpDoctorTest
 
         Assert::same($this->check($report, 'session_directory')->status, CheckStatus::Pass);
         Assert::same(substr(sprintf('%o', (int) fileperms($this->sessionDir)), -3), '700');
+    }
+
+    public function parentsCreatedForAMissingSessionDirectoryAreOwnerOnlyToo(): void
+    {
+        $previousUmask = umask(0);
+
+        try {
+            $report = $this->doctor(sessionDir: $this->sessionDir . '/outer/inner')->diagnose();
+        } finally {
+            umask($previousUmask);
+        }
+
+        try {
+            Assert::same($this->check($report, 'session_directory')->status, CheckStatus::Pass);
+            // the explicit chmod only reaches the leaf: the parents carry the
+            // mode mkdir() was asked for
+            Assert::same(substr(sprintf('%o', (int) fileperms($this->sessionDir . '/outer')), -3), '700');
+        } finally {
+            @rmdir($this->sessionDir . '/outer/inner');
+            @rmdir($this->sessionDir . '/outer');
+        }
     }
 
     public function groupReadableSessionDirectoryFailsTheConfidentialityCheck(): void
@@ -675,6 +767,7 @@ final class McpDoctorTest
         string $specPath = '',
         ?ClientInterface $httpClient = null,
         bool $withServer = true,
+        ?ContainerInterface $container = null,
         array $headers = [],
         array $clientIds = [],
         string $expectedHttpHost = '',
@@ -703,7 +796,7 @@ final class McpDoctorTest
         }
 
         return new McpDoctor(
-            container: new SimpleContainer($definitions),
+            container: $container ?? new SimpleContainer($definitions),
             sessionStore: $store ?? new InMemorySessionStore(),
             endpointSecret: $secret,
             sessionDirectory: $sessionDir ?? $this->sessionDir,

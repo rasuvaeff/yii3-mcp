@@ -86,8 +86,12 @@ final readonly class HttpOperationExecutor implements OperationExecutorInterface
      *                          only when the operation was never renamed
      */
     #[\Override]
-    public function execute(Operation $operation, array $arguments, bool $dryRunnable = false, ?string $toolName = null): mixed
-    {
+    public function execute(
+        Operation $operation,
+        array $arguments,
+        bool $dryRunnable = false,
+        ?string $toolName = null,
+    ): mixed {
         // everything the CALLER reads names the tool it actually called: a
         // renamed operation's operationId is exactly what the rename hid
         // from the client, so quoting it back gives an agent a
@@ -101,7 +105,10 @@ final readonly class HttpOperationExecutor implements OperationExecutorInterface
         // even when the executor is reached directly
         $this->builder->assertDryRunFlag($arguments, $dryRunnable, $served);
 
-        if ($dryRunnable && ($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false) === true) {
+        /** @var mixed $dryRun */
+        $dryRun = $arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false;
+
+        if ($dryRunnable && $dryRun === true) {
             return $this->builder->dryRunPreview($operation, $arguments, $served);
         }
 
