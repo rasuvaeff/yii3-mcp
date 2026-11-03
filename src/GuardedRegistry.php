@@ -169,8 +169,10 @@ final readonly class GuardedRegistry implements RegistryInterface
     }
 
     #[\Override]
-    public function getResource(string $uri, bool $includeTemplates = true): ResourceReference|ResourceTemplateReference
-    {
+    public function getResource(
+        string $uri,
+        bool $includeTemplates = true,
+    ): ResourceReference|ResourceTemplateReference {
         return $this->inner->getResource($uri, $includeTemplates);
     }
 

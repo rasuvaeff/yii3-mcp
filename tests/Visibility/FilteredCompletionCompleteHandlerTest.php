@@ -111,6 +111,18 @@ final class FilteredCompletionCompleteHandlerTest
         Assert::same($result['completion']['values'] ?? null, ['apac']);
     }
 
+    public function resourceVisibilityAloneLeavesPromptCompletionsAlone(): void
+    {
+        $result = $this->complete(
+            $this->tester(resourceVisibility: new DenyResourceVisibility(hiddenTemplates: ['app://other/{id}'])),
+            ['type' => 'ref/prompt', 'name' => 'review'],
+            'focus',
+            'se',
+        );
+
+        Assert::same($result['completion']['values'] ?? null, ['security']);
+    }
+
     public function withoutAnyVisibilityCompletionIsUntouched(): void
     {
         $result = $this->complete(

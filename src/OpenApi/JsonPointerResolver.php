@@ -43,8 +43,10 @@ final class JsonPointerResolver
      *
      * @return array<array-key, mixed>
      */
-    public function resolve(array $node, int $refDepth = 0): array
-    {
+    public function resolve(
+        array $node,
+        int $refDepth = 0,
+    ): array {
         if (++$this->resolvedNodes > self::MAX_RESOLVED_NODES) {
             throw new InvalidSpecException(sprintf(
                 'OpenAPI document exceeds the reference-resolution budget of %d nodes',

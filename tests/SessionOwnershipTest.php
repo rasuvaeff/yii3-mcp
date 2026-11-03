@@ -15,10 +15,13 @@ use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ScriptedSessionStore;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StubStream;
+use Rasuvaeff\Yii3Mcp\Tests\Support\WarningsAsErrors;
 use Symfony\Component\Uid\Uuid;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
@@ -244,6 +247,120 @@ final class SessionOwnershipTest
         $response = $action->handle($this->initializeRequest('client-a'));
 
         Assert::same($response->getStatusCode(), 200);
+    }
+
+    public function foreignClientIsPassedToTheSdkWhenTheSessionIsMissingFromTheStore(): void
+    {
+        $serverStore = new ScriptedSessionStore();
+        $action = $this->actionOver(ownershipStore: $serverStore, serverStore: $serverStore);
+
+        $response = $action->handle($this->callRequest(Uuid::v4()->toRfc4122(), clientId: 'client-b'));
+
+        // a missing session passes the guard so the SDK answers with its own
+        // regular 404: the SDK is consulted, the guard does not answer for it
+        Assert::same($response->getStatusCode(), 404);
+        Assert::true($serverStore->existsCalls > 0);
+    }
+
+    #[DataProvider('unusableSessionDataProvider')]
+    public function sessionWithUnusableDataIsRefusedBeforeTheSdkIsConsulted(string $stored): void
+    {
+        $ownershipStore = new ScriptedSessionStore();
+        $ownershipStore->readOverride = $stored;
+        $serverStore = new ScriptedSessionStore();
+        $action = $this->actionOver($ownershipStore, $serverStore);
+
+        // refusing unusable data must not lean on PHP warnings to get there
+        $response = WarningsAsErrors::around(
+            fn() => $action->handle($this->callRequest(Uuid::v4()->toRfc4122(), clientId: 'client-b')),
+        );
+
+        Assert::same($response->getStatusCode(), 404);
+        Assert::same($serverStore->existsCalls, 0);
+        Assert::same($this->tool->calls, 0);
+    }
+
+    public static function unusableSessionDataProvider(): iterable
+    {
+        yield 'not json' => ['{not json'];
+        yield 'json scalar' => ['5'];
+        yield 'json string' => ['"client-b"'];
+        yield 'json null' => ['null'];
+        yield 'empty' => [''];
+    }
+
+    /**
+     * Stamping only ever adds the owner to a decodable array that has none:
+     * whatever the ownership store hands back, nothing is written for it.
+     */
+    #[DataProvider('unstampableSessionProvider')]
+    public function ownerIsNotStampedIntoDataThatCannotTakeIt(string|false|null $stored): void
+    {
+        $ownershipStore = new ScriptedSessionStore();
+        $ownershipStore->readOverride = $stored;
+        $action = $this->actionOver($ownershipStore, new InMemorySessionStore());
+
+        $response = WarningsAsErrors::around(fn() => $action->handle($this->initializeRequest('client-a')));
+
+        // the session itself was created: stamping was reached and declined
+        Assert::same($response->getStatusCode(), 200);
+        Assert::true($response->getHeaderLine('Mcp-Session-Id') !== '');
+        Assert::same($ownershipStore->writes, []);
+    }
+
+    public static function unstampableSessionProvider(): iterable
+    {
+        yield 'unreadable' => [false];
+        yield 'not json' => ['{not json'];
+        yield 'json scalar' => ['5'];
+        yield 'json null' => ['null'];
+        yield 'already owned' => [json_encode(['rasuvaeff' => ['yii3-mcp' => ['client-id' => 'client-x']]], JSON_THROW_ON_ERROR)];
+    }
+
+    public function ownerIsStampedIntoADecodableSessionWithoutAnOwner(): void
+    {
+        $ownershipStore = new ScriptedSessionStore();
+        $ownershipStore->readOverride = '{"initialized":true}';
+        $action = $this->actionOver($ownershipStore, new InMemorySessionStore());
+
+        $action->handle($this->initializeRequest('client-a'));
+
+        Assert::same(count($ownershipStore->writes), 1);
+        Assert::same(
+            json_decode($ownershipStore->writes[0], associative: true, flags: JSON_THROW_ON_ERROR),
+            ['initialized' => true, 'rasuvaeff' => ['yii3-mcp' => ['client-id' => 'client-a']]],
+        );
+    }
+
+    private function actionOver(SessionStoreInterface $ownershipStore, SessionStoreInterface $serverStore): McpAction
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([CountingTool::class => $this->tool]),
+            sessionStore: $serverStore,
+        ))->create([CountingTool::class]);
+
+        return new McpAction(
+            server: $server,
+            responseFactory: $factory,
+            streamFactory: $factory,
+            sessionStore: $ownershipStore,
+        );
+    }
+
+    private function callRequest(string $sessionId, ?string $clientId): ServerRequest
+    {
+        $request = $this->request(
+            [
+                'jsonrpc' => '2.0',
+                'id' => 2,
+                'method' => 'tools/call',
+                'params' => ['name' => 'count.up', 'arguments' => new \stdClass()],
+            ],
+            sessionId: $sessionId,
+        );
+
+        return $clientId === null ? $request : $request->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, $clientId);
     }
 
     private function initialize(?string $clientId): string

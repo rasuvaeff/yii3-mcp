@@ -10,6 +10,7 @@ use Mcp\Capability\Registry\ToolReference;
 use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Schema\Result\InputRequiredResult;
 use Mcp\Schema\Tool;
 use Mcp\Server;
 use Mcp\Server\Session\InMemorySessionStore;
@@ -25,6 +26,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDecorator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ListToolConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ReadyResultTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
@@ -353,6 +355,68 @@ final class InterceptingReferenceHandlerTest
 
         Assert::instanceOf($result, CallToolResult::class);
         Assert::null($result instanceof CallToolResult ? $result->structuredContent : 'not a result');
+    }
+
+    public function theHandlerItselfRefusesAnInvisibleToolWithoutRunningIt(): void
+    {
+        $inner = new class implements ReferenceHandlerInterface {
+            public bool $ran = false;
+
+            #[\Override]
+            public function handle(ElementReference $reference, array $arguments): mixed
+            {
+                $this->ran = true;
+
+                return 'ran';
+            }
+        };
+        $handler = new InterceptingReferenceHandler(
+            inner: $inner,
+            interceptors: [],
+            visibility: new DenyListVisibility(hidden: ['ids']),
+        );
+        $reference = new ToolReference(
+            new Tool(name: 'ids', title: null, inputSchema: ['type' => 'object', 'properties' => new \stdClass()], description: null, annotations: null),
+            static fn(): string => 'ran',
+        );
+
+        $caught = null;
+
+        try {
+            $handler->handle($reference, ['_session' => new FakeSession()]);
+        } catch (ToolCallException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), 'Tool "ids" is not available in this session');
+        Assert::false($inner->ran);
+    }
+
+    public function anAskIsReturnedUntouchedEvenWhenResultsAreFormatted(): void
+    {
+        $ask = new InputRequiredResult(requestState: 'state');
+        $handler = new InterceptingReferenceHandler(
+            inner: new readonly class ($ask) implements ReferenceHandlerInterface {
+                public function __construct(
+                    private InputRequiredResult $ask,
+                ) {}
+
+                #[\Override]
+                public function handle(ElementReference $reference, array $arguments): mixed
+                {
+                    return $this->ask;
+                }
+            },
+            interceptors: [],
+            compactToolResults: true,
+            resultDecorators: [new IdentityDecorator()],
+        );
+        $reference = new ToolReference(
+            new Tool(name: 'ids', title: null, inputSchema: ['type' => 'object', 'properties' => new \stdClass()], description: null, annotations: null),
+            static fn(): string => 'unused',
+        );
+
+        Assert::same($handler->handle($reference, []), $ask);
     }
 
     public static function outsideARequestProvider(): iterable

@@ -52,6 +52,29 @@ final class OutputBufferReleasingStreamTest
         Assert::same($stream->getMetadata('mode'), 'w+b');
     }
 
+    public function closeClosesTheInnerStream(): void
+    {
+        $inner = Stream::create('payload');
+        $stream = new OutputBufferReleasingStream($inner);
+
+        $stream->close();
+
+        // a closed PSR-7 stream has no size and no position left
+        Assert::null($inner->getSize());
+        Assert::null($stream->getSize());
+    }
+
+    public function detachHandsOverTheInnerResource(): void
+    {
+        $inner = Stream::create('payload');
+        $stream = new OutputBufferReleasingStream($inner);
+
+        $resource = $stream->detach();
+
+        Assert::true(is_resource($resource));
+        Assert::null($inner->getSize());
+    }
+
     /**
      * @param \Closure(OutputBufferReleasingStream): string $consume
      */

@@ -20,6 +20,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\DenyResourceVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\IdentityDecorator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\LinkingDecorator;
+use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingPromptInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingResourceInterceptor;
 use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
@@ -204,6 +205,29 @@ final class McpServerAssemblerTest
         $resolver = new McpServerComponentResolver(container: new SimpleContainer([]), params: $params);
 
         Assert::instanceOf($resolver->resolve()->visibility, DeclarativeToolVisibility::class);
+    }
+
+    public function aServiceOfTheWrongTypeFailsTheBuildNamingTheExpectedClass(): void
+    {
+        $params = $this->params();
+        $params['configurators'] = [RecordingConfigurator::class];
+        $resolver = new McpServerComponentResolver(
+            container: new SimpleContainer([RecordingConfigurator::class => new \stdClass()]),
+            params: $params,
+        );
+
+        $caught = null;
+
+        try {
+            $resolver->resolve();
+        } catch (\LogicException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same(
+            $caught->getMessage(),
+            sprintf('Service "%1$s" must be an instance of %1$s', RecordingConfigurator::class),
+        );
     }
 
     /**

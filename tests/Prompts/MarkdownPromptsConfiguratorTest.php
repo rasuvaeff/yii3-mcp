@@ -18,6 +18,7 @@ use Rasuvaeff\Yii3Mcp\Prompts\PromptFile;
 use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Rasuvaeff\Yii3Mcp\Tests\Support\ThrowingStreamWrapper;
+use Rasuvaeff\Yii3Mcp\Tests\Support\WarningsAsErrors;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -299,6 +300,19 @@ final class MarkdownPromptsConfiguratorTest
         }
     }
 
+    public function aScalarArgumentsKeyMeansNoArgumentsAndNoWarning(): void
+    {
+        $path = $this->writeTempPromptFile("---\narguments: not-a-list\n---\nBody\n");
+
+        try {
+            $file = WarningsAsErrors::around(static fn(): PromptFile => PromptFile::parse($path));
+
+            Assert::same($file->arguments, []);
+        } finally {
+            unlink($path);
+        }
+    }
+
     public function anArgumentWithoutAnExplicitRequiredKeyDefaultsToFalse(): void
     {
         $path = $this->writeTempPromptFile(<<<'MD'
@@ -432,6 +446,32 @@ final class MarkdownPromptsConfiguratorTest
         ]);
 
         Assert::string($this->messageText($result))->contains(str_repeat('A', 50));
+    }
+
+    public function aNegativeBudgetIsRefusedByTheConfigurator(): void
+    {
+        $caught = null;
+
+        try {
+            new MarkdownPromptsConfigurator(__DIR__, maxResultBytes: -1);
+        } catch (\InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), 'Max result bytes must not be negative, -1 given');
+    }
+
+    public function aNegativeBudgetIsRefusedByThePromptHandler(): void
+    {
+        $caught = null;
+
+        try {
+            new FilePromptHandler(content: 'text', argumentNames: [], maxResultBytes: -7);
+        } catch (\InvalidArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same($caught->getMessage(), 'Max result bytes must not be negative, -7 given');
     }
 
     private function amplifyTester(int $maxResultBytes): McpTester

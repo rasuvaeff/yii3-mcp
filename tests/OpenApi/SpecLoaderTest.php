@@ -15,8 +15,11 @@ use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
+use Rasuvaeff\Yii3Mcp\Tests\Support\EndlessStream;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OpenApiFixture;
+use Rasuvaeff\Yii3Mcp\Tests\Support\StalledStream;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StubStream;
+use Rasuvaeff\Yii3Mcp\Tests\Support\WarningsAsErrors;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -231,6 +234,18 @@ final class SpecLoaderTest
         verify(fn() => $writeClient->sendRequest(Arg::any()));
     }
 
+    public function aCacheThatThrowsOnReadFallsBackToHttpWithoutAWarning(): void
+    {
+        $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
+        $cache = Understudy::for(CacheInterface::class);
+        when(fn() => $cache->get(Arg::any()))->throws(new RuntimeException('cache down'));
+        $loader = $this->loader($this->client(body: $body), cache: $cache, cacheTtl: 60);
+
+        $index = WarningsAsErrors::around(static fn(): SpecIndex => $loader->fromUrl('https://api.test/openapi.json'));
+
+        Assert::same($index->get('getBlogTags')->operationId, 'getBlogTags');
+    }
+
     public function malformedCachedDocumentFallsBackToHttp(): void
     {
         $body = json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR);
@@ -362,6 +377,48 @@ final class SpecLoaderTest
         Assert::same(strlen($json), $bytes);
 
         return $json;
+    }
+
+    public function sizelessEndlessSpecBodyIsAbandonedAtTheDocumentLimit(): void
+    {
+        $stream = new EndlessStream();
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->returns(new Response(200, [], $stream));
+
+        $caught = null;
+
+        try {
+            $this->loader($client)->fromUrl('https://api.test/openapi.json');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::same(
+            $caught->getMessage(),
+            sprintf('OpenAPI document at "https://api.test/openapi.json" exceeds the %d-byte limit', SpecIndex::MAX_DOCUMENT_BYTES),
+        );
+        // 8192-byte reads: the limit is a whole number of them, so the read
+        // that reaches it exactly is allowed and the next one crosses it
+        Assert::same($stream->servedBytes, SpecIndex::MAX_DOCUMENT_BYTES + 8_192);
+    }
+
+    public function stalledSpecBodyEndsTheReadInsteadOfPollingForever(): void
+    {
+        $stream = new StalledStream(chunks: ['{"openapi":']);
+        $client = Understudy::for(ClientInterface::class);
+        when(fn() => $client->sendRequest(Arg::any()))->returns(new Response(200, [], $stream));
+
+        $caught = null;
+
+        try {
+            $this->loader($client)->fromUrl('https://api.test/openapi.json');
+        } catch (InvalidSpecException $caught) {
+        }
+
+        // what arrived before the stall is all the document there is: a
+        // truncated one, which does not parse
+        Assert::notNull($caught);
+        Assert::same($stream->polls, 2);
     }
 
     /**

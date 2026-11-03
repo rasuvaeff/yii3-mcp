@@ -16,6 +16,7 @@ use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionRequestAttributesInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\InProcessScopeInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
+use Rasuvaeff\Yii3Mcp\OpenApi\OperationRequestBuilder;
 use Rasuvaeff\Yii3Mcp\OpenApi\OperationResponseDecoder;
 use Rasuvaeff\Yii3Mcp\OpenApi\Psr15OperationExecutor;
 use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
@@ -39,6 +40,8 @@ use function Rasuvaeff\Understudy\when;
 #[Covers(Psr15OperationExecutor::class)]
 #[Covers(OperationFailedException::class)]
 #[Covers(InvalidToolArgumentException::class)]
+#[Covers(OperationRequestBuilder::class)]
+#[Covers(OperationResponseDecoder::class)]
 final class Psr15OperationExecutorTest
 {
     public function buildsTheSameRequestTheHttpExecutorWouldSend(): void

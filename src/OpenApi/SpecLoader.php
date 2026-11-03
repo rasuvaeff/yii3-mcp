@@ -144,11 +144,9 @@ final readonly class SpecLoader
 
         ksort($headers);
 
-        return self::KEY_PREFIX . substr(
-            hash('sha256', $url . "\0" . json_encode($headers, JSON_THROW_ON_ERROR)),
-            0,
-            self::KEY_HASH_LENGTH,
-        );
+        $digest = hash('sha256', $url . "\0" . json_encode($headers, JSON_THROW_ON_ERROR));
+
+        return self::KEY_PREFIX . substr($digest, 0, self::KEY_HASH_LENGTH);
     }
 
     private function readCache(string $key): ?string

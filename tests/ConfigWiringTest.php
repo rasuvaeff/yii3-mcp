@@ -75,6 +75,7 @@ use function Rasuvaeff\Understudy\when;
 #[Test]
 #[Covers(ExecutionIdentity::class)]
 #[Covers(McpServerComponentResolver::class)]
+#[Covers(McpServerFactory::class)]
 #[Covers(\Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory::class)]
 final class ConfigWiringTest
 {
@@ -549,6 +550,106 @@ final class ConfigWiringTest
     }
 
     /**
+     * The mirror of the test above: with every optional `openapi` key OMITTED
+     * the resolver's own fallbacks apply — no cache is resolved (the container
+     * binds none), a write operation is exposed, upstream error bodies reach
+     * the caller.
+     */
+    public function omittedOptionalOpenApiKeysUseTheDocumentedDefaults(): void
+    {
+        $client = new FakeHttpClient(statusCode: 500, body: 'upstream says boom');
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['createSubscriber'];
+        unset(
+            $mcp['openapi']['spec_headers'],
+            $mcp['openapi']['cache_ttl'],
+            $mcp['openapi']['safe_methods_only'],
+            $mcp['openapi']['opaque_errors'],
+        );
+
+        try {
+            $result = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->callTool('createSubscriber', ['body' => ['email' => 'a@b.test']]);
+        } catch (\RuntimeException $failure) {
+            $result = ['isError' => true, 'content' => [['text' => $failure->getMessage()]]];
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::same($client->requestCount, 1);
+        Assert::string($result['content'][0]['text'])->contains('upstream says boom');
+    }
+
+    /**
+     * The URL branch has one more fallback: an omitted `cache_ttl` is "no
+     * cache" — a negative or positive stand-in would be refused by the loader
+     * or would demand a cache the container does not bind.
+     */
+    public function omittedCacheTtlOnAUrlSpecMeansNoCache(): void
+    {
+        $client = new FakeHttpClient(body: json_encode(OpenApiFixture::spec(), JSON_THROW_ON_ERROR));
+        $psr17 = new Psr17Factory();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = 'https://spec.test/openapi.json';
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['getBlogTags'];
+        unset($mcp['openapi']['cache_ttl']);
+
+        $this->bridgeTester($params, new SimpleContainer([
+            ClientInterface::class => $client,
+            RequestFactoryInterface::class => $psr17,
+            StreamFactoryInterface::class => $psr17,
+        ]), $psr17);
+
+        // the document was fetched (once, for the build) and nothing cached it
+        Assert::same($client->requestCount, 1);
+        Assert::same((string) $client->requests[0]->getUri(), 'https://spec.test/openapi.json');
+    }
+
+    public function opaqueErrorsKeepTheUpstreamErrorBodyFromTheCaller(): void
+    {
+        $client = new FakeHttpClient(statusCode: 500, body: 'upstream says boom');
+        $psr17 = new Psr17Factory();
+        $path = $this->writeSpecFile();
+
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tools'] = [];
+        $mcp['openapi']['spec_path'] = $path;
+        $mcp['openapi']['base_url'] = 'https://api.test/';
+        $mcp['openapi']['operations'] = ['createSubscriber'];
+        $mcp['openapi']['opaque_errors'] = true;
+
+        try {
+            $result = $this->bridgeTester($params, new SimpleContainer([
+                ClientInterface::class => $client,
+                RequestFactoryInterface::class => $psr17,
+                StreamFactoryInterface::class => $psr17,
+            ]), $psr17)->callTool('createSubscriber', ['body' => ['email' => 'a@b.test']]);
+        } catch (\RuntimeException $failure) {
+            $result = ['isError' => true, 'content' => [['text' => $failure->getMessage()]]];
+        } finally {
+            @unlink($path);
+        }
+
+        Assert::string($result['content'][0]['text'])->contains('failed with HTTP 500');
+        Assert::false(str_contains($result['content'][0]['text'], 'upstream says boom'));
+    }
+
+    /**
      * The URL branch of the spec source, with the two keys only it reads:
      * `spec_headers` (its own credential scope) and `cache_ttl`.
      */
@@ -574,6 +675,10 @@ final class ConfigWiringTest
             StreamFactoryInterface::class => $psr17,
             CacheInterface::class => $cache,
         ]), $psr17)->callTool('getBlogTags');
+
+        // the spec fetch (the first request) carries the spec scope only…
+        Assert::same($client->requests[0]->getHeaderLine('X-Spec-Token'), 'spec-only');
+        Assert::same($client->requests[0]->getHeaderLine('X-Api-Token'), '');
 
         // the operation call carries the operation scope only…
         Assert::same($client->lastRequest?->getHeaderLine('X-Api-Token'), 'api-only');
@@ -781,6 +886,31 @@ final class ConfigWiringTest
         $second = $tester->callTool('greet', ['name' => 'Yii']);
 
         Assert::string($second['content'][0]['text'] ?? '')->contains('budget of 1 per 3600 seconds is exhausted');
+    }
+
+    public function theBudgetWindowIsReadFromTheConfiguration(): void
+    {
+        $params = $this->params();
+        $mcp = &$params['rasuvaeff/yii3-mcp'];
+        $mcp['tool_call_budget']['calls'] = 1;
+        $mcp['tool_call_budget']['window'] = 120;
+        $mcp['tools'] = [GreetingTool::class];
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[Server::class]['definition'];
+        $container = new SimpleContainer([
+            GreetingTool::class => new GreetingTool(prefix: 'Hi'),
+            CacheInterface::class => new FakeCache(),
+        ]);
+
+        /** @var Server $server */
+        $server = $definition(new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()), $container);
+        $psr17 = new Psr17Factory();
+        $tester = new McpTester($server, $psr17, $psr17, $psr17, ProtocolVersion::V2026_07_28);
+        $tester->callTool('greet', ['name' => 'Yii']);
+        $second = $tester->callTool('greet', ['name' => 'Yii']);
+
+        Assert::string($second['content'][0]['text'] ?? '')->contains('budget of 1 per 120 seconds is exhausted');
     }
 
     public function promptsPathWiresTheMarkdownPromptsConfigurator(): void

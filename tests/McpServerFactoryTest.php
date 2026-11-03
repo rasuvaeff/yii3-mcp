@@ -36,6 +36,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\InvalidNameTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyPromptTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyResourceTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\OnlyTemplateTool;
+use Rasuvaeff\Yii3Mcp\Tests\Support\ProbingNotificationBus;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingLogger;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StaticOnlyTool;
@@ -415,6 +416,53 @@ final class McpServerFactoryTest
         $body = (string) $server->run(new StreamableHttpTransport($request, $psr17, $psr17))->getBody();
 
         Assert::same(str_contains($body, 'does not match the body value'), $refused);
+    }
+
+    /**
+     * The configured bus is what a stateless subscriptions/listen stream
+     * reads: the stream asks it for a cursor before waiting for updates.
+     */
+    public function aListenStreamReadsTheBusTheFactoryWasGiven(): void
+    {
+        $bus = new ProbingNotificationBus();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([]),
+            sessionStore: new InMemorySessionStore(),
+            notificationBus: $bus,
+            subscriptionLifetime: 0.05,
+        ))->create([]);
+        $psr17 = new Psr17Factory();
+        $request = $psr17->createServerRequest('POST', '/mcp')
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Accept', 'application/json, text/event-stream')
+            ->withHeader('MCP-Protocol-Version', '2026-07-28')
+            ->withHeader('Mcp-Method', 'subscriptions/listen')
+            ->withBody($psr17->createStream(json_encode([
+                'jsonrpc' => '2.0',
+                'id' => 'listen-1',
+                'method' => 'subscriptions/listen',
+                'params' => [
+                    '_meta' => [
+                        'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                        'io.modelcontextprotocol/clientCapabilities' => new \stdClass(),
+                    ],
+                    'notifications' => ['resourceSubscriptions' => ['app://item/1']],
+                ],
+            ], JSON_THROW_ON_ERROR)));
+
+        $response = $server->run(new StreamableHttpTransport($request, $psr17, $psr17));
+
+        // the stream writes its frames straight to the output and ends the
+        // moment the bus fails; the buffer keeps the frames out of the report
+        ob_start();
+
+        try {
+            $response->getBody()->getContents();
+        } finally {
+            ob_end_clean();
+        }
+
+        Assert::same($bus->cursorCalls, 1);
     }
 
     public static function headerValidationProvider(): iterable
