@@ -163,6 +163,36 @@ final class ToolResultTextFormatterTest
     /**
      * @param array<string, mixed>|null $outputSchema
      */
+    /**
+     * SEP-2106, as the SDK's CallToolHandler: a scalar or null structured
+     * value is sent with its JSON text as the content.
+     */
+    public function aPrimitiveStructuredValueCarriesItsJsonText(): void
+    {
+        $scalar = ToolResultTextFormatter::format(42, $this->reference(['type' => 'integer']), ProtocolVersion::V2026_07_28);
+
+        Assert::same($scalar->structuredContent, 42);
+        Assert::same(count($scalar->content), 1);
+        Assert::same($scalar->content[0] instanceof TextContent ? $scalar->content[0]->text : null, '42');
+
+        $null = ToolResultTextFormatter::format(null, $this->reference(['type' => 'null']), ProtocolVersion::V2026_07_28);
+
+        Assert::true($null->hasStructuredContent());
+        Assert::same($null->content[0] instanceof TextContent ? $null->content[0]->text : null, 'null');
+    }
+
+    public function prettyIndentsAndCompactDoesNot(): void
+    {
+        $result = ['city' => 'Rome', 'tags' => ['a/b', 'ü']];
+
+        $pretty = ToolResultTextFormatter::format($result, $this->reference(), ProtocolVersion::V2025_11_25, pretty: true);
+        $compact = ToolResultTextFormatter::format($result, $this->reference(), ProtocolVersion::V2025_11_25);
+
+        Assert::same($pretty->content[0] instanceof TextContent ? $pretty->content[0]->text : null, json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        Assert::same($compact->content[0] instanceof TextContent ? $compact->content[0]->text : null, '{"city":"Rome","tags":["a/b","ü"]}');
+        Assert::same($pretty->structuredContent, $result);
+    }
+
     private function reference(?array $outputSchema = null): ToolReference
     {
         return new ToolReference(

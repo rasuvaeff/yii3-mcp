@@ -139,6 +139,22 @@ final class CachingToolCallInterceptorTest
         Assert::same($calls, 2);
     }
 
+    public function anEmptyObjectAndAnEmptyListAreDifferentArguments(): void
+    {
+        $interceptor = new CachingToolCallInterceptor($this->keyedCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        $interceptor->intercept($this->context('cachedTool', ['filter' => new \stdClass()]), $handler);
+        $interceptor->intercept($this->context('cachedTool', ['filter' => []]), $handler);
+
+        Assert::same($calls, 2);
+    }
+
     public function differentArgumentsGetDifferentCacheEntries(): void
     {
         $interceptor = new CachingToolCallInterceptor($this->keyedCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');

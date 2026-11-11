@@ -56,6 +56,8 @@ final class BearerTokenMiddlewareTest
 
     private ClientInterface $http;
 
+    private RequestFactoryInterface $requests;
+
     private RecordingInterceptor $interceptor;
 
     #[BeforeTest]
@@ -63,10 +65,15 @@ final class BearerTokenMiddlewareTest
     {
         $this->issuer = new FakeIssuer();
         $this->interceptor = new RecordingInterceptor();
+        // the container's request factory builds the discovery and JWKS
+        // requests (the SDK would otherwise discover one by itself)
+        $this->requests = Understudy::for(RequestFactoryInterface::class);
+        when(fn() => $this->requests->createRequest(Arg::any(), Arg::any()))
+            ->answers(static fn(\Rasuvaeff\Understudy\Invocation $call): RequestInterface => new \Nyholm\Psr7\Request((string) $call->arg(0), (string) $call->arg(1)));
         $this->http = Understudy::for(ClientInterface::class);
-        when(fn() => $this->http->sendRequest(self::get(FakeIssuer::DISCOVERY_URL)))
+        when(fn() => $this->http->sendRequest($this->get(FakeIssuer::DISCOVERY_URL)))
             ->returns(new Response(200, ['Content-Type' => 'application/json'], $this->issuer->discoveryDocument()));
-        when(fn() => $this->http->sendRequest(self::get(FakeIssuer::JWKS_URL)))
+        when(fn() => $this->http->sendRequest($this->get(FakeIssuer::JWKS_URL)))
             ->returns(new Response(200, ['Content-Type' => 'application/json'], $this->issuer->jwks()));
     }
 
@@ -91,8 +98,9 @@ final class BearerTokenMiddlewareTest
         Assert::string((string) $response->getBody())->contains('Hello, Yii!');
         Assert::same($this->interceptor->lastContext?->clientId, serialize([FakeIssuer::ISSUER, 'agent-1', 'user-1']));
         // discovery and the key set are fetched once and then cached
-        verify(fn() => $this->http->sendRequest(self::get(FakeIssuer::DISCOVERY_URL)), times: 1);
-        verify(fn() => $this->http->sendRequest(self::get(FakeIssuer::JWKS_URL)), times: 1);
+        verify(fn() => $this->http->sendRequest($this->get(FakeIssuer::DISCOVERY_URL)), times: 1);
+        verify(fn() => $this->http->sendRequest($this->get(FakeIssuer::JWKS_URL)), times: 1);
+        verify(fn() => $this->requests->createRequest('GET', FakeIssuer::DISCOVERY_URL), times: 1);
     }
 
     public function theIdentityCanBeTheSubjectOrTheClient(): void
@@ -191,6 +199,45 @@ final class BearerTokenMiddlewareTest
         Assert::instanceOf($handler, ProtectedResourceMetadataHandler::class);
     }
 
+    public function anExplicitIssuerIsUsedInsteadOfTheFirstServer(): void
+    {
+        $guard = $this->guard(['authorization_servers' => ['https://other.example.com', FakeIssuer::ISSUER], 'issuer' => FakeIssuer::ISSUER]);
+
+        Assert::same($this->handle($guard, $this->initialize($this->issuer->token()))->getStatusCode(), 200);
+    }
+
+    public function everyScopeOfAToolIsRequired(): void
+    {
+        $guard = $this->guard(['scopes' => ['tools' => ['other' => ['x'], 'greet' => ['mcp:read', 'mcp:write']]]]);
+        $partial = $this->issuer->token(['scope' => 'mcp:read']);
+        $sessionId = $this->handle($guard, $this->initialize($partial))->getHeaderLine('Mcp-Session-Id');
+
+        Assert::same($this->handle($guard, $this->callGreet($partial, $sessionId))->getStatusCode(), 403);
+
+        $full = $this->issuer->token(['scope' => 'mcp:read mcp:write']);
+        $sessionId = $this->handle($guard, $this->initialize($full))->getHeaderLine('Mcp-Session-Id');
+        Assert::same($this->handle($guard, $this->callGreet($full, $sessionId))->getStatusCode(), 200);
+    }
+
+    /**
+     * No clock skew is tolerated unless configured: a token expiring this
+     * very second is already expired.
+     */
+    public function noLeewayByDefault(): void
+    {
+        $now = time();
+
+        Assert::same($this->handle($this->guard(), $this->initialize($this->issuer->token(['exp' => $now, 'iat' => $now - 60])))->getStatusCode(), 401);
+        Assert::same($this->handle($this->guard(['leeway' => 30]), $this->initialize($this->issuer->token(['exp' => $now, 'iat' => $now - 60])))->getStatusCode(), 200);
+    }
+
+    public function theMetadataListsEveryAuthorizationServer(): void
+    {
+        $servers = $this->factory(['authorization_servers' => [FakeIssuer::ISSUER, 'https://second.example.com']])->metadata()->jsonSerialize()['authorization_servers'] ?? null;
+
+        Assert::same($servers, [FakeIssuer::ISSUER, 'https://second.example.com']);
+    }
+
     public function anUnknownIdentityFailsAtConstruction(): void
     {
         Expect::exception(\InvalidArgumentException::class)->withMessage('Unsupported OAuth identity "email"; supported: principal, client_id, subject');
@@ -222,14 +269,14 @@ final class BearerTokenMiddlewareTest
             container: new SimpleContainer([
                 ResponseFactoryInterface::class => $psr17,
                 StreamFactoryInterface::class => $psr17,
-                RequestFactoryInterface::class => $psr17,
+                RequestFactoryInterface::class => $this->requests,
                 ClientInterface::class => $this->http,
                 CacheItemPoolInterface::class => new ArrayCachePool(),
             ]),
         );
     }
 
-    private static function get(string $url): mixed
+    private function get(string $url): mixed
     {
         return Arg::satisfies(
             static fn(mixed $request): bool => $request instanceof RequestInterface && (string) $request->getUri() === $url,
@@ -248,8 +295,8 @@ final class BearerTokenMiddlewareTest
         ))->create([GreetingTool::class], [], [$this->interceptor]);
         $action = new McpAction(server: $server, responseFactory: $psr17, streamFactory: $psr17, sessionStore: $store);
 
-        return $guard->process($request, new class ($action) implements RequestHandlerInterface {
-            public function __construct(private readonly McpAction $action) {}
+        return $guard->process($request, new readonly class ($action) implements RequestHandlerInterface {
+            public function __construct(private McpAction $action) {}
 
             #[\Override]
             public function handle(ServerRequestInterface $request): ResponseInterface

@@ -24,6 +24,7 @@
     },
     "require": {
         "php": "8.3 - 8.5",
+        "composer-runtime-api": "^2.0",
         "mcp/sdk": "~0.10.0",
         "psr/cache": "^2.0 || ^3.0",
         "psr/container": "^2.0",

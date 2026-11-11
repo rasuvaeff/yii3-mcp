@@ -56,6 +56,13 @@ final class OAuthComponentFactoryTest
         yield 'cache of the wrong type' => [[...self::VALID, 'cache' => 'not-a-validator'], 'rasuvaeff/yii3-mcp oauth.cache must resolve to Psr\Cache\CacheItemPoolInterface (it caches the issuer metadata and the signing keys)'];
     }
 
+    public function aContainerEntryOfTheWrongTypeIsNamed(): void
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessage('The container entry Psr\Http\Message\ResponseFactoryInterface is not an instance of it');
+
+        $this->factory(self::VALID, [ResponseFactoryInterface::class => new \stdClass()])->metadataHandler();
+    }
+
     public function noRequiredScopeMeansNoPolicy(): void
     {
         Assert::null($this->factory([...self::VALID, 'scopes' => ['implies' => ['a' => ['b']]]])->scopePolicy());

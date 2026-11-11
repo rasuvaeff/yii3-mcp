@@ -37,8 +37,8 @@ final readonly class FakeIssuer
 
         $this->privateKey = $privateKey;
         $this->publicKey = [
-            'n' => self::base64Url((string) $details['rsa']['n']),
-            'e' => self::base64Url((string) $details['rsa']['e']),
+            'n' => $this->base64Url((string) $details['rsa']['n']),
+            'e' => $this->base64Url((string) $details['rsa']['e']),
         ];
     }
 
@@ -79,7 +79,7 @@ final readonly class FakeIssuer
         ], JSON_THROW_ON_ERROR);
     }
 
-    private static function base64Url(string $bytes): string
+    private function base64Url(string $bytes): string
     {
         return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
     }

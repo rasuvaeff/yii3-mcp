@@ -110,6 +110,16 @@
     //    forever, and the test would have to leave a non-removable output
     //    buffer in the shared test process.
     //
+    // J. 5.0 (SDK 0.10, OAuth):
+    //    - OAuth/OAuthComponentFactory.php:141 Throw_ (`firebase/php-jwt`
+    //      missing): the library is a dev dependency, so the class always
+    //      exists in the test process; without it the SDK would fail later
+    //      with a class-not-found error, the message is the only difference.
+    //    - ToolResultTextFormatter.php:77 ReturnRemoval (`[]` -> `'[]'`
+    //      text): the general path ends in `json_encode([])`, which is the
+    //      same `'[]'`. Kept as a branch only to mirror the SDK's
+    //      ToolResultFormatter::format() line for line.
+    //
     // Mutants that are only ever "Timed Out" are infinite loops/recursion by
     // construction (Utf8 backing-over loop, McpTester::listAll() do-while,
     // JsonPointerResolver depth/node budget, the bounded stream readers fed an

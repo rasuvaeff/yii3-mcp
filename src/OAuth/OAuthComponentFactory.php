@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\OAuth;
 
+use Composer\InstalledVersions;
 use Mcp\Server\Transport\Http\Middleware\AuthorizationMiddleware;
 use Mcp\Server\Transport\Http\OAuth\AuthorizationTokenValidatorInterface;
 use Mcp\Server\Transport\Http\OAuth\JwtTokenValidator;
@@ -29,8 +30,8 @@ use Psr\Log\NullLogger;
  */
 final readonly class OAuthComponentFactory
 {
-    /** Class the SDK's JwtTokenValidator needs at runtime (firebase/php-jwt) */
-    private const string JWT_LIBRARY = 'Firebase\JWT\JWT';
+    /** Package the SDK's JwtTokenValidator needs at runtime, only suggested by this one */
+    private const string JWT_PACKAGE = 'firebase/php-jwt';
 
     /**
      * @param array<string, mixed> $params the `rasuvaeff/yii3-mcp` `oauth` block
@@ -109,7 +110,7 @@ final readonly class OAuthComponentFactory
 
         $unknown = array_diff(array_keys($scopes), ['default', 'methods', 'tools', 'implies']);
         if ($unknown !== []) {
-            throw new \InvalidArgumentException(sprintf('Unknown rasuvaeff/yii3-mcp oauth.scopes key(s): %s; supported: default, methods, tools, implies', implode(', ', array_map(strval(...), $unknown))));
+            throw new \InvalidArgumentException(sprintf('Unknown rasuvaeff/yii3-mcp oauth.scopes key(s): %s; supported: default, methods, tools, implies', implode(', ', $unknown)));
         }
 
         $default = $this->stringList($scopes['default'] ?? [], 'oauth.scopes.default');
@@ -137,7 +138,7 @@ final readonly class OAuthComponentFactory
             return $validator;
         }
 
-        if (!class_exists(self::JWT_LIBRARY)) {
+        if (!InstalledVersions::isInstalled(self::JWT_PACKAGE)) {
             throw new \LogicException('OAuth JWT validation needs firebase/php-jwt: composer require firebase/php-jwt (or set rasuvaeff/yii3-mcp oauth.validator to your own token validator)');
         }
 

@@ -434,7 +434,7 @@ final class McpServerFactoryTest
                 ++$this->wrapped;
 
                 return function () use ($handler): mixed {
-                    $this->insideFiber = \Fiber::getCurrent() === null ? 'no fiber' : 'fiber';
+                    $this->insideFiber = \Fiber::getCurrent() instanceof \Fiber ? 'fiber' : 'no fiber';
 
                     return $handler();
                 };

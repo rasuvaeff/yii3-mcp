@@ -271,6 +271,27 @@ final class SessionOwnershipTest
         Assert::same($this->tool->calls, 1);
     }
 
+    /**
+     * A principal set in front (OAuth) wins: the client id does not
+     * overwrite it, so two clients of one principal share its sessions as
+     * far as the SDK is concerned.
+     */
+    public function aPrincipalSetInFrontIsKept(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([CountingTool::class => $this->tool]),
+            sessionStore: $this->store,
+        ))->create([CountingTool::class]);
+        $action = new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory);
+        $principal = \Mcp\Server\Transport\StreamableHttpTransport::PRINCIPAL_ATTRIBUTE;
+
+        $sessionId = $action->handle($this->initializeRequest('client-a')->withAttribute($principal, 'front'))->getHeaderLine('Mcp-Session-Id');
+
+        Assert::same($action->handle($this->callRequest($sessionId, 'client-b')->withAttribute($principal, 'front'))->getStatusCode(), 200);
+        Assert::same($action->handle($this->callRequest($sessionId, 'client-b'))->getStatusCode(), 404);
+    }
+
     public function foreignClientIsPassedToTheSdkWhenTheSessionIsMissingFromTheStore(): void
     {
         $serverStore = new ScriptedSessionStore();
