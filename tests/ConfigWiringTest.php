@@ -8,12 +8,11 @@ use Closure;
 use LogicException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Extension\Apps\McpApps;
-use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Schema\Notification\ResourceUpdatedNotification;
 use Mcp\Schema\Tool;
-use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
@@ -133,7 +132,7 @@ final class ConfigWiringTest
         Assert::same($params['rasuvaeff/yii3-mcp']['visibility'], ['deny' => [], 'allow' => []]);
         Assert::same($params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'], 0);
         Assert::same($params['rasuvaeff/yii3-mcp']['cache']['tools'], []);
-        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'pretty');
+        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'compact');
         Assert::same($params['rasuvaeff/yii3-mcp']['openapi']['executor'], 'http');
     }
 
@@ -153,14 +152,25 @@ final class ConfigWiringTest
         ]);
     }
 
-    public function resultJsonDefaultsToPrettyPrintedText(): void
+    public function resultJsonDefaultsToCompactText(): void
     {
         $params = $this->params();
 
-        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'pretty');
+        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'compact');
 
         // the default must stay byte-identical to the SDK's own formatting —
-        // pretty text with structuredContent for an array result
+        // compact text (SDK 0.10) with structuredContent for an array result
+        $result = $this->weatherResult($params);
+
+        Assert::same($result['content'][0]['text'], '{"city":"Rome","temperature":21,"conditions":"sunny"}');
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Rome', 'temperature' => 21, 'conditions' => 'sunny']);
+    }
+
+    public function prettyResultJsonIndentsArrayTools(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['result_json'] = 'pretty';
+
         $result = $this->weatherResult($params);
 
         Assert::string($result['content'][0]['text'])->contains("\n");
@@ -1291,7 +1301,7 @@ final class ConfigWiringTest
         Assert::same($params['rasuvaeff/yii3-mcp']['protocol_version'], '');
         Assert::same(
             $this->serverTester($params)->initialize()['protocolVersion'] ?? null,
-            MessageInterface::PROTOCOL_VERSION->value,
+            ProtocolVersion::latestHandshake()->value,
         );
 
         $params['rasuvaeff/yii3-mcp']['protocol_version'] = '2025-06-18';

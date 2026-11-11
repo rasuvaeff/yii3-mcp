@@ -144,7 +144,7 @@ final class OpenApiServerConfiguratorTest
             'jsonrpc' => '2.0',
             'id' => 4,
             'method' => 'tools/call',
-            'params' => ['name' => 'getBlogTags', 'arguments' => []],
+            'params' => ['name' => 'getBlogTags', 'arguments' => new \stdClass()],
         ], $sessionId);
 
         $body = $this->decode($response);
@@ -197,7 +197,7 @@ final class OpenApiServerConfiguratorTest
             'jsonrpc' => '2.0',
             'id' => 11,
             'method' => 'tools/call',
-            'params' => ['name' => 'blog_tags_list', 'arguments' => []],
+            'params' => ['name' => 'blog_tags_list', 'arguments' => new \stdClass()],
         ], $sessionId);
         Assert::false(isset($this->decode($callResponse)['error']));
 
@@ -205,7 +205,7 @@ final class OpenApiServerConfiguratorTest
             'jsonrpc' => '2.0',
             'id' => 12,
             'method' => 'tools/call',
-            'params' => ['name' => 'getBlogTags', 'arguments' => []],
+            'params' => ['name' => 'getBlogTags', 'arguments' => new \stdClass()],
         ], $sessionId);
         $body = $this->decode($oldNameResponse);
         Assert::true(isset($body['error']) || ($body['result']['isError'] ?? false) === true);
@@ -617,7 +617,7 @@ final class OpenApiServerConfiguratorTest
             'jsonrpc' => '2.0',
             'id' => 20,
             'method' => 'tools/call',
-            'params' => ['name' => 'blog_tags_list', 'arguments' => []],
+            'params' => ['name' => 'blog_tags_list', 'arguments' => new \stdClass()],
         ], $sessionId);
 
         $text = json_encode($this->decode($response), JSON_THROW_ON_ERROR);
@@ -676,7 +676,7 @@ final class OpenApiServerConfiguratorTest
             'jsonrpc' => '2.0',
             'id' => 22,
             'method' => 'tools/call',
-            'params' => ['name' => 'final_name', 'arguments' => []],
+            'params' => ['name' => 'final_name', 'arguments' => new \stdClass()],
         ], $sessionId);
 
         $text = json_encode($this->decode($response), JSON_THROW_ON_ERROR);
@@ -742,7 +742,7 @@ final class OpenApiServerConfiguratorTest
             'jsonrpc' => '2.0',
             'id' => 24,
             'method' => 'tools/call',
-            'params' => ['name' => 'getBlogTags', 'arguments' => []],
+            'params' => ['name' => 'getBlogTags', 'arguments' => new \stdClass()],
         ], $sessionId);
 
         $body = $this->decode($response);
@@ -823,7 +823,7 @@ final class OpenApiServerConfiguratorTest
     {
         $request = new ServerRequest(
             method: 'POST',
-            uri: '/mcp',
+            uri: 'http://localhost/mcp',
             headers: [
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json, text/event-stream',

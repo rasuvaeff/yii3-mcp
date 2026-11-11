@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Mcp\Capability\Attribute\McpTool;
 use Mcp\Schema\Tool;
+use Mcp\Server\Capability\Attribute\McpTool;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;

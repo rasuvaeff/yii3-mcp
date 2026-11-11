@@ -141,7 +141,7 @@ final class SessionOwnershipTest
     {
         $request = (new ServerRequest(
             method: 'POST',
-            uri: '/mcp',
+            uri: 'http://localhost/mcp',
             headers: ['Content-Type' => 'application/json', 'Accept' => 'application/json, text/event-stream'],
             body: new StubStream(content: 'x', throwOnRead: true),
         ))->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-a');
@@ -186,7 +186,7 @@ final class SessionOwnershipTest
     {
         $sessionId = $this->initialize('client-a');
 
-        $delete = (new ServerRequest(method: 'DELETE', uri: '/mcp'))
+        $delete = (new ServerRequest(method: 'DELETE', uri: 'http://localhost/mcp'))
             ->withHeader('Mcp-Session-Id', $sessionId)
             ->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-b');
 
@@ -201,7 +201,7 @@ final class SessionOwnershipTest
     {
         $sessionId = $this->initialize('client-a');
 
-        $delete = (new ServerRequest(method: 'DELETE', uri: '/mcp'))
+        $delete = (new ServerRequest(method: 'DELETE', uri: 'http://localhost/mcp'))
             ->withHeader('Mcp-Session-Id', $sessionId)
             ->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-a');
 
@@ -414,7 +414,7 @@ final class SessionOwnershipTest
     {
         $request = new ServerRequest(
             method: 'POST',
-            uri: '/mcp',
+            uri: 'http://localhost/mcp',
             headers: [
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json, text/event-stream',

@@ -6,7 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
 use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Implementation;
-use Mcp\Server\Stateless\RequestMeta;
+use Mcp\Schema\RequestMeta;
 use Rasuvaeff\Yii3Mcp\Interceptor\ClientInfoResolver;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Testo\Assert;

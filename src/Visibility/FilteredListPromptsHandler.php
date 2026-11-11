@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Visibility;
 
-use Mcp\Capability\RegistryInterface;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
-use Mcp\Schema\Prompt;
 use Mcp\Schema\Request\ListPromptsRequest;
 use Mcp\Schema\Result\ListPromptsResult;
+use Mcp\Server\Capability\RegistryInterface;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 
@@ -49,7 +48,7 @@ final readonly class FilteredListPromptsHandler implements RequestHandlerInterfa
         $visible = [];
 
         foreach ($page->references as $prompt) {
-            if ($prompt instanceof Prompt && $this->visibility->isVisible($prompt, $session)) {
+            if ($this->visibility->isVisible($prompt, $session)) {
                 $visible[] = $prompt;
             }
         }

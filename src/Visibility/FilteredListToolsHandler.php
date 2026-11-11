@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Visibility;
 
-use Mcp\Capability\RegistryInterface;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\ListToolsRequest;
 use Mcp\Schema\Result\ListToolsResult;
-use Mcp\Schema\Tool;
+use Mcp\Server\Capability\RegistryInterface;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 
@@ -49,7 +48,7 @@ final readonly class FilteredListToolsHandler implements RequestHandlerInterface
         $visible = [];
 
         foreach ($page->references as $tool) {
-            if ($tool instanceof Tool && $this->visibility->isVisible($tool, $session)) {
+            if ($this->visibility->isVisible($tool, $session)) {
                 $visible[] = $tool;
             }
         }

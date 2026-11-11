@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Apps;
 
-use Mcp\Exception\LogicException;
 use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Schema\Extension\Apps\UiResourceContentMeta;
 use Mcp\Schema\Extension\Apps\UiResourceCsp;
 use Mcp\Schema\Extension\Apps\UiResourcePermissions;
-use Mcp\Server;
+use Mcp\Server\Exception\LogicException;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Apps\AppDefinition;

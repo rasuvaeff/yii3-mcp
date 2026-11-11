@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp;
 
-use Mcp\Capability\Registry\PromptReference;
-use Mcp\Capability\Registry\ResourceReference;
-use Mcp\Capability\Registry\ResourceTemplateReference;
-use Mcp\Capability\Registry\ToolReference;
-use Mcp\Capability\RegistryInterface;
 use Mcp\Schema\Page;
 use Mcp\Schema\Prompt;
 use Mcp\Schema\ResourceDefinition;
 use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\Tool;
+use Mcp\Server\Capability\Registry\PromptReference;
+use Mcp\Server\Capability\Registry\ResourceReference;
+use Mcp\Server\Capability\Registry\ResourceTemplateReference;
+use Mcp\Server\Capability\Registry\ToolReference;
+use Mcp\Server\Capability\RegistryInterface;
 use Rasuvaeff\Yii3Mcp\Exception\DuplicateCapabilityException;
 
 /**
@@ -112,6 +112,12 @@ final readonly class GuardedRegistry implements RegistryInterface
     public function unregisterPrompt(string $name): void
     {
         $this->inner->unregisterPrompt($name);
+    }
+
+    #[\Override]
+    public function publishesListChanges(): bool
+    {
+        return $this->inner->publishesListChanges();
     }
 
     #[\Override]

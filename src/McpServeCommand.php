@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp;
 
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Transport\StdioTransport;
 use Mcp\Server\Transport\TransportInterface;
 use Symfony\Component\Console\Attribute\AsCommand;

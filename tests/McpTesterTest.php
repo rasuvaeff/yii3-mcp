@@ -6,8 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Enum\ProtocolVersion;
-use Mcp\Schema\JsonRpc\MessageInterface;
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -51,7 +50,7 @@ final class McpTesterTest
     {
         $result = $this->tester()->initialize();
 
-        Assert::same($result['protocolVersion'], MessageInterface::PROTOCOL_VERSION->value);
+        Assert::same($result['protocolVersion'], ProtocolVersion::latestHandshake()->value);
     }
 
     public function listsToolsWithImplicitInitialize(): void

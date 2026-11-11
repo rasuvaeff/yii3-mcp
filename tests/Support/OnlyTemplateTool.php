@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Capability\Attribute\McpResourceTemplate;
+use Mcp\Server\Capability\Attribute\McpResourceTemplate;
 
 final readonly class OnlyTemplateTool
 {

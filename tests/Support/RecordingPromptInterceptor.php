@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Exception\PromptGetException;
+use Mcp\Server\Exception\PromptGetException;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
 

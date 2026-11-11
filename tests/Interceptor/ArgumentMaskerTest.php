@@ -97,6 +97,27 @@ final class ArgumentMaskerTest
         ]);
     }
 
+    /**
+     * SDK 0.10 keeps JSON types: a nested object argument reaches the
+     * interceptors as \stdClass, not as an array.
+     */
+    public function masksInsideStdClassObjects(): void
+    {
+        $credentials = new \stdClass();
+        $credentials->login = 'a';
+        $credentials->password = 'secret';
+        $nested = new \stdClass();
+        $nested->token = 't';
+        $credentials->nested = $nested;
+
+        $masked = (new ArgumentMasker())->mask(['credentials' => $credentials, 'list' => [$nested]]);
+
+        Assert::same(json_encode($masked, JSON_THROW_ON_ERROR), '{"credentials":{"login":"a","password":"***","nested":{"token":"***"}},"list":[{"token":"***"}]}');
+        Assert::instanceOf($masked['credentials'], \stdClass::class);
+        // the caller's object is not changed in place
+        Assert::same($credentials->password, 'secret');
+    }
+
     public function masksInsideListsOfObjects(): void
     {
         $masked = (new ArgumentMasker())->mask([

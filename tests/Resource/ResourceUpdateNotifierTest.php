@@ -8,11 +8,12 @@ use Fiber;
 use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Notification\ResourceUpdatedNotification;
 use Mcp\Schema\Request\PingRequest;
+use Mcp\Schema\RequestMeta;
 use Mcp\Server\RequestContext;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Session\SessionInterface;
-use Mcp\Server\Stateless\RequestMeta;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
+use Mcp\Server\Suspension\NotificationSuspension;
 use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Testo\Assert;
@@ -36,14 +37,15 @@ final class ResourceUpdateNotifierTest
         $session = $this->subscribedSession('app://counter');
         $sent = $this->send($session, 'app://counter');
 
-        Assert::instanceOf($sent['notification'] ?? null, ResourceUpdatedNotification::class);
-        Assert::same($sent['type'] ?? null, 'notification');
+        Assert::instanceOf($sent, NotificationSuspension::class);
+        \assert($sent instanceof NotificationSuspension);
+        Assert::instanceOf($sent->notification, ResourceUpdatedNotification::class);
     }
 
     public function theNotificationCarriesTheChangedUri(): void
     {
         $sent = $this->send($this->subscribedSession('app://orders/42'), 'app://orders/42');
-        $notification = $sent['notification'] ?? null;
+        $notification = $sent?->notification;
 
         Assert::instanceOf($notification, ResourceUpdatedNotification::class);
         \assert($notification instanceof ResourceUpdatedNotification);
@@ -155,13 +157,13 @@ final class ResourceUpdateNotifierTest
     /**
      * @return array<string, mixed>|null the value the gateway suspended with, or null if nothing was sent
      */
-    private function send(SessionInterface $session, string $uri): ?array
+    private function send(SessionInterface $session, string $uri): ?NotificationSuspension
     {
         $fiber = new Fiber(fn() => $this->notifier()->notify($uri, $this->context($session)));
         /** @var mixed $suspended */
         $suspended = $fiber->start();
 
-        return is_array($suspended) ? $suspended : null;
+        return $suspended instanceof NotificationSuspension ? $suspended : null;
     }
 
     /**

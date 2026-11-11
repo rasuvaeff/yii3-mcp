@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use Mcp\Schema\Implementation;
+use Mcp\Schema\RequestMeta;
 use Mcp\Server\Session\SessionInterface;
-use Mcp\Server\Stateless\RequestMeta;
 
 /**
  * Where the client named itself depends on the protocol era: the handshake

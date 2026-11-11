@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
 use Mcp\Schema\Content\ResourceLink;
+use Mcp\Schema\Enum\StructuredContent;
 use Mcp\Schema\Result\CallToolResult;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
@@ -29,7 +30,7 @@ final class LinkingDecorator implements ToolResultDecoratorInterface
         return new CallToolResult(
             [...$result->content, new ResourceLink(uri: 'app://' . $this->name, name: $this->name)],
             $result->isError,
-            $result->structuredContent,
+            $result->hasStructuredContent() ? $result->structuredContent : StructuredContent::Absent,
             $result->meta,
         );
     }

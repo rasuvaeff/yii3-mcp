@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
+use Mcp\Schema\RequestMeta;
 use Mcp\Server\Session\SessionInterface;
 use Mcp\Server\Stateless\InputContext;
-use Mcp\Server\Stateless\RequestMeta;
 
 /**
  * Which protocol era the request in flight belongs to, read off the session

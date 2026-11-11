@@ -10,10 +10,10 @@ namespace Rasuvaeff\Yii3Mcp\Interceptor;
  * Implementations run in configured order (first = outermost) and decide
  * whether to call $next: auditing, tracing, ACL.
  *
- * Throw {@see \Mcp\Exception\PromptGetException} to reject the call with a
+ * Throw {@see \Mcp\Server\Exception\PromptGetException} to reject the call with a
  * client-visible message; any other exception becomes an opaque internal
  * error. To pretend the prompt does not exist, throw
- * {@see \Mcp\Exception\PromptNotFoundException}.
+ * {@see \Mcp\Server\Exception\PromptNotFoundException}.
  *
  * @api
  */

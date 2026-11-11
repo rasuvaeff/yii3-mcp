@@ -105,12 +105,11 @@ return [
             'subscription_lifetime' => 30,
         ],
         // how array/object tool results are encoded into the text content the
-        // agent reads: 'pretty' (default, the SDK's own formatting) or
-        // 'compact' — no indentation, JSON_UNESCAPED_SLASHES |
-        // JSON_UNESCAPED_UNICODE (~3x fewer bytes; structuredContent is still
-        // produced for array results). An unsupported value fails at config
-        // load.
-        'result_json' => 'pretty',
+        // agent reads: 'compact' (default, the SDK's own encoding since 0.10:
+        // no indentation, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) or
+        // 'pretty' — indented, ~3x more bytes; structuredContent is produced
+        // either way. An unsupported value fails at config load.
+        'result_json' => 'compact',
         // guard against a tool result burning an agent's context window
         // (0 = unlimited). A string result over the limit is truncated with
         // a marker; any other result (array/object) is rejected outright —

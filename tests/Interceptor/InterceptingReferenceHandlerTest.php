@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
-use Mcp\Capability\Registry\ElementReference;
-use Mcp\Capability\Registry\ReferenceHandlerInterface;
-use Mcp\Capability\Registry\ToolReference;
-use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\InputRequiredResult;
 use Mcp\Schema\Tool;
-use Mcp\Server;
+use Mcp\Server\Capability\Registry\ElementReference;
+use Mcp\Server\Capability\Registry\ReferenceHandlerInterface;
+use Mcp\Server\Capability\Registry\ToolReference;
+use Mcp\Server\Exception\ToolCallException;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Understudy\Arg;
@@ -93,10 +93,11 @@ final class InterceptingReferenceHandlerTest
         $factory = new Psr17Factory();
 
         // an interceptor installs the SAME decorator; with compact mode off
-        // its array results must keep the SDK's pretty formatting
+        // its array results are pretty-printed by the package
         $server = (new McpServerFactory(
             container: new SimpleContainer([StructuredWeatherTool::class => new StructuredWeatherTool()]),
             sessionStore: new InMemorySessionStore(),
+            compactToolResults: false,
         ))->create([StructuredWeatherTool::class], [], [new RecordingInterceptor()]);
 
         $result = (new McpTester($server, $factory, $factory, $factory))->callTool('weather', ['city' => 'Rome']);
@@ -333,7 +334,7 @@ final class InterceptingReferenceHandlerTest
      * formatter falls back to the newest handshake revision's rules.
      */
     #[DataProvider('outsideARequestProvider')]
-    public function compactResultOutsideARequestUsesHandshakeRules(array $arguments): void
+    public function formattedResultOutsideARequestUsesHandshakeRules(array $arguments): void
     {
         $handler = new InterceptingReferenceHandler(
             inner: new class implements ReferenceHandlerInterface {
@@ -344,7 +345,7 @@ final class InterceptingReferenceHandlerTest
                 }
             },
             interceptors: [],
-            compactToolResults: true,
+            compactToolResults: false,
         );
         $reference = new ToolReference(
             new Tool(name: 'ids', title: null, inputSchema: ['type' => 'object', 'properties' => new \stdClass()], description: null, annotations: null),

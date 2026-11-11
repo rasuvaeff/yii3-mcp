@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
 use InvalidArgumentException;
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\ToolCallException;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Testo\Assert;

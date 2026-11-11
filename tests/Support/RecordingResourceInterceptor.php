@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Exception\ResourceReadException;
+use Mcp\Server\Exception\ResourceReadException;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
 

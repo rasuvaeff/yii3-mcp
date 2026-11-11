@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
-use Mcp\Exception\PromptGetException;
-use Mcp\Exception\PromptNotFoundException;
-use Mcp\Exception\ResourceReadException;
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\PromptGetException;
+use Mcp\Server\Exception\PromptNotFoundException;
+use Mcp\Server\Exception\ResourceReadException;
+use Mcp\Server\Exception\ToolCallException;
 use Rasuvaeff\Yii3Mcp\Interceptor\CallOutcome;
 use RuntimeException;
 use Testo\Assert;

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Visibility;
 
-use Mcp\Capability\RegistryInterface;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\ListResourceTemplatesRequest;
-use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\Result\ListResourceTemplatesResult;
+use Mcp\Server\Capability\RegistryInterface;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 
@@ -50,7 +49,7 @@ final readonly class FilteredListResourceTemplatesHandler implements RequestHand
         $visible = [];
 
         foreach ($page->references as $template) {
-            if ($template instanceof ResourceTemplate && $this->visibility->isTemplateVisible($template, $session)) {
+            if ($this->visibility->isTemplateVisible($template, $session)) {
                 $visible[] = $template;
             }
         }

@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
 use Mcp\Schema\Enum\ProtocolVersion;
-use Mcp\Schema\JsonRpc\MessageInterface;
-use Mcp\Server;
 use Mcp\Server\Builder;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Transport\StreamableHttpTransport;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -393,7 +392,7 @@ final class McpServerFactoryTest
             headerValidation: $validation,
         ))->create([GreetingTool::class]);
         $psr17 = new Psr17Factory();
-        $request = $psr17->createServerRequest('POST', '/mcp')
+        $request = $psr17->createServerRequest('POST', 'http://localhost/mcp')
             ->withHeader('Content-Type', 'application/json')
             ->withHeader('Accept', 'application/json, text/event-stream')
             ->withHeader('MCP-Protocol-Version', '2026-07-28')
@@ -425,14 +424,18 @@ final class McpServerFactoryTest
     public function aListenStreamReadsTheBusTheFactoryWasGiven(): void
     {
         $bus = new ProbingNotificationBus();
+        // a resource is needed: since SDK 0.10 a server without resources
+        // does not offer resources.subscribe, and a listen stream that can
+        // carry nothing is acknowledged with an empty filter and closed
+        // without touching the bus
         $server = (new McpServerFactory(
-            container: new SimpleContainer([]),
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
             sessionStore: new InMemorySessionStore(),
             notificationBus: $bus,
             subscriptionLifetime: 0.05,
-        ))->create([]);
+        ))->create([GreetingTool::class]);
         $psr17 = new Psr17Factory();
-        $request = $psr17->createServerRequest('POST', '/mcp')
+        $request = $psr17->createServerRequest('POST', 'http://localhost/mcp')
             ->withHeader('Content-Type', 'application/json')
             ->withHeader('Accept', 'application/json, text/event-stream')
             ->withHeader('MCP-Protocol-Version', '2026-07-28')
@@ -560,7 +563,7 @@ final class McpServerFactoryTest
     {
         Assert::same(
             $this->tester($this->factory()->create([GreetingTool::class]))->initialize()['protocolVersion'] ?? null,
-            MessageInterface::PROTOCOL_VERSION->value,
+            ProtocolVersion::latestHandshake()->value,
         );
 
         Assert::same(

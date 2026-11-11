@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Mcp\Schema\Enum\ProtocolVersion;
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
@@ -43,7 +43,7 @@ $protocolVersion = $protocolVersionParam === ''
 
 // Same fail-early contract for the result-JSON knob: a typo like "compct"
 // would otherwise silently serve pretty-printed results forever.
-$resultJson = (string) ($params['rasuvaeff/yii3-mcp']['result_json'] ?? McpServerFactory::RESULT_JSON_PRETTY);
+$resultJson = (string) ($params['rasuvaeff/yii3-mcp']['result_json'] ?? McpServerFactory::RESULT_JSON_COMPACT);
 $compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETTY, McpServerFactory::RESULT_JSON_COMPACT], true)
     ? $resultJson === McpServerFactory::RESULT_JSON_COMPACT
     : throw new InvalidArgumentException(sprintf(

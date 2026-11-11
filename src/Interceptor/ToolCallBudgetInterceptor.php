@@ -6,7 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
 use Closure;
 use InvalidArgumentException;
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\ToolCallException;
 use Mcp\Server\Session\SessionInterface;
 use Psr\SimpleCache\CacheInterface;
 

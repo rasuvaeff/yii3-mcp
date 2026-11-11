@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp;
 
-use Mcp\Capability\Attribute\McpPrompt;
-use Mcp\Capability\Attribute\McpResource;
-use Mcp\Capability\Attribute\McpResourceTemplate;
-use Mcp\Capability\Attribute\McpTool;
-use Mcp\Capability\Registry;
-use Mcp\Capability\Registry\ReferenceHandler;
 use Mcp\Schema\Enum\ProtocolVersion;
-use Mcp\Server;
 use Mcp\Server\Builder;
+use Mcp\Server\Capability\Attribute\McpPrompt;
+use Mcp\Server\Capability\Attribute\McpResource;
+use Mcp\Server\Capability\Attribute\McpResourceTemplate;
+use Mcp\Server\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Registry;
+use Mcp\Server\Capability\Registry\ReferenceHandler;
 use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\CompletionCompleteHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
+use Mcp\Server\Server;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\NotificationBusInterface;
 use Mcp\Server\Wire\CachePolicy;
@@ -65,10 +65,10 @@ final readonly class McpServerFactory
      *                                              the client's revision when supported
      * @param SubscriptionManagerInterface|null $subscriptionManager backs resources/subscribe; pass the SAME
      *                                                               instance {@see ResourceUpdateNotifier} reads
-     * @param bool $compactToolResults encode array/object tool results as compact JSON text
-     *                                 instead of the SDK's pretty-printed one (~3x fewer bytes in
-     *                                 the text an agent reads); `structuredContent` keeps being
-     *                                 produced for array results
+     * @param bool $compactToolResults compact JSON text for array/object tool results, the SDK's
+     *                                 own encoding since 0.10 (default); false pretty-prints it
+     *                                 (~3x more bytes in the text an agent reads);
+     *                                 `structuredContent` is produced either way
      * @param bool $modernEra also serve the stateless 2026-07-28 era on the same endpoint;
      *                        false answers its requests with "unsupported protocol version"
      * @param bool $headerValidation reject a stateless-era request whose standard headers
@@ -95,7 +95,7 @@ final readonly class McpServerFactory
         private int $paginationLimit = self::DEFAULT_PAGINATION_LIMIT,
         private ?ProtocolVersion $protocolVersion = null,
         private ?SubscriptionManagerInterface $subscriptionManager = null,
-        private bool $compactToolResults = false,
+        private bool $compactToolResults = true,
         private bool $modernEra = true,
         private bool $headerValidation = true,
         private ?NotificationBusInterface $notificationBus = null,
@@ -248,7 +248,7 @@ final readonly class McpServerFactory
 
         $referenceHandler = null;
 
-        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility || $this->compactToolResults || $resultDecoratorList !== []) {
+        if ($interceptorList !== [] || $promptInterceptorList !== [] || $resourceInterceptorList !== [] || $anyVisibility || !$this->compactToolResults || $resultDecoratorList !== []) {
             // the decorator wraps EVERY registration path: [class, method]
             // references, closures and explicit handler objects all execute
             // through the reference handler

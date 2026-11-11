@@ -93,10 +93,28 @@ final readonly class ArgumentMasker
             }
 
             /** @var mixed */
-            $masked[$key] = is_array($value) ? $this->mask($value) : $value;
+            $masked[$key] = $this->maskValue($value);
         }
 
         return $masked;
+    }
+
+    /**
+     * Since SDK 0.10 nested JSON objects in tool arguments arrive as
+     * \stdClass (JSON types are kept), so objects are walked like arrays —
+     * a secret one level down an object must not reach a log.
+     */
+    private function maskValue(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            return $this->mask($value);
+        }
+
+        if ($value instanceof \stdClass) {
+            return (object) $this->mask(get_object_vars($value));
+        }
+
+        return $value;
     }
 
     private function isSensitive(string $key): bool

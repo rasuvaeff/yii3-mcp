@@ -10,8 +10,7 @@ use Mcp\Client\Stateless\ToolCatalog;
 use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Implementation;
-use Mcp\Schema\JsonRpc\MessageInterface;
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Transport\StreamableHttpTransport;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -222,7 +221,7 @@ final class McpTester
      */
     private function protocolVersion(): string
     {
-        return ($this->protocolVersion ?? MessageInterface::PROTOCOL_VERSION)->value;
+        return ($this->protocolVersion ?? ProtocolVersion::latestHandshake())->value;
     }
 
     private function isModern(): bool
@@ -255,7 +254,7 @@ final class McpTester
         }
 
         $request = $this->requestFactory
-            ->createServerRequest('POST', '/mcp')
+            ->createServerRequest('POST', 'http://localhost/mcp')
             ->withHeader('Content-Type', 'application/json')
             ->withHeader('Accept', 'application/json, text/event-stream')
             ->withBody($this->streamFactory->createStream(json_encode($payload, JSON_THROW_ON_ERROR)));

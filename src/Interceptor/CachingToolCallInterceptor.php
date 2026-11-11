@@ -155,6 +155,10 @@ final readonly class CachingToolCallInterceptor implements ToolCallInterceptorIn
         foreach ($value as $key => $item) {
             if (is_array($item)) {
                 $value[$key] = $this->canonicalized($item);
+            } elseif ($item instanceof \stdClass) {
+                // SDK 0.10 keeps nested JSON objects as \stdClass: order their
+                // keys too, or {"a":1,"b":2} and {"b":2,"a":1} miss each other
+                $value[$key] = (object) $this->canonicalized(get_object_vars($item));
             }
         }
 

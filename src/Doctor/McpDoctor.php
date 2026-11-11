@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Doctor;
 
 use Mcp\Schema\Extension\Apps\McpApps;
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Stateless\RequestStateCodec;
 use Psr\Container\ContainerInterface;

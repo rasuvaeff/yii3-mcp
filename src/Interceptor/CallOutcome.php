@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
-use Mcp\Exception\PromptGetException;
-use Mcp\Exception\ResourceReadException;
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\PromptGetException;
+use Mcp\Server\Exception\ResourceReadException;
+use Mcp\Server\Exception\ToolCallException;
 use Throwable;
 
 /**
