@@ -10,7 +10,7 @@ namespace Rasuvaeff\Yii3Mcp\Interceptor;
  * Implementations run in configured order (first = outermost) and decide
  * whether to call $next: tracing, rate limiting, ACL, budgets.
  *
- * Throw {@see \Mcp\Exception\ToolCallException} to reject the call with a
+ * Throw {@see \Mcp\Server\Exception\ToolCallException} to reject the call with a
  * regular MCP tool-error envelope; any other exception becomes an opaque
  * internal error.
  *

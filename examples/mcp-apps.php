@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use Mcp\Capability\Attribute\McpResource;
-use Mcp\Capability\Attribute\McpTool;
 use Mcp\Schema\Content\TextResourceContents;
 use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Schema\Extension\Apps\UiResourceContentMeta;
 use Mcp\Schema\Extension\Apps\UiResourceCsp;
 use Mcp\Schema\Extension\Apps\UiResourcePermissions;
 use Mcp\Schema\Extension\Apps\UiToolMeta;
+use Mcp\Server\Capability\Attribute\McpResource;
+use Mcp\Server\Capability\Attribute\McpTool;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Apps\AppDefinition;

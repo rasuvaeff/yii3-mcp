@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support\SessionBudget;
 
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\ToolCallException;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;

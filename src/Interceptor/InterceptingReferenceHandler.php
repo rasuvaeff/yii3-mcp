@@ -4,24 +4,24 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
-use Mcp\Capability\Registry\ElementReference;
-use Mcp\Capability\Registry\PromptReference;
-use Mcp\Capability\Registry\ReferenceHandlerInterface;
-use Mcp\Capability\Registry\ResourceReference;
-use Mcp\Capability\Registry\ResourceTemplateReference;
-use Mcp\Capability\Registry\ToolReference;
-use Mcp\Exception\PromptNotFoundException;
-use Mcp\Exception\ResourceNotFoundException;
-use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\InputRequiredResult;
+use Mcp\Server\Capability\Registry\ElementReference;
+use Mcp\Server\Capability\Registry\PromptReference;
+use Mcp\Server\Capability\Registry\ReferenceHandlerInterface;
+use Mcp\Server\Capability\Registry\ResourceReference;
+use Mcp\Server\Capability\Registry\ResourceTemplateReference;
+use Mcp\Server\Capability\Registry\ToolReference;
+use Mcp\Server\Exception\PromptNotFoundException;
+use Mcp\Server\Exception\ResourceNotFoundException;
+use Mcp\Server\Exception\ToolCallException;
 use Mcp\Server\RequestContext;
 use Mcp\Server\Session\SessionInterface;
-use Rasuvaeff\Yii3Mcp\CompactToolResultFormatter;
 use Rasuvaeff\Yii3Mcp\Exception\SessionOwnershipException;
 use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
+use Rasuvaeff\Yii3Mcp\ToolResultTextFormatter;
 use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
@@ -34,13 +34,12 @@ use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
  * and a hidden prompt/resource is reported as not found, indistinguishable
  * from a missing one.
  *
- * With $compactToolResults on, tool results are also re-encoded here as
- * compact JSON text ({@see CompactToolResultFormatter}) — the SDK's own
- * formatter pretty-prints array results, which costs an agent ~3x context
- * tokens for the same payload. With result decorators configured, the
- * pretty result is built here too — exactly as the SDK's CallToolHandler
- * would — so every {@see ToolResultDecoratorInterface} gets a formatted
- * {@see CallToolResult}.
+ * With $compactToolResults off, tool results are re-encoded here as
+ * pretty-printed JSON text ({@see ToolResultTextFormatter}) — since SDK 0.10
+ * the SDK itself encodes them compactly. With result decorators configured,
+ * the result is built here in either mode — exactly as the SDK's
+ * CallToolHandler would — so every {@see ToolResultDecoratorInterface} gets a
+ * formatted {@see CallToolResult}.
  *
  * The client identity of a call comes FROM THE SESSION first
  * ({@see self::CLIENT_ID_SESSION_KEY} — the immutable owner
@@ -73,9 +72,8 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
      * @param list<ToolCallInterceptorInterface> $interceptors applied in order, first = outermost
      * @param list<PromptGetInterceptorInterface> $promptInterceptors applied in order, first = outermost
      * @param list<ResourceReadInterceptorInterface> $resourceInterceptors applied in order, first = outermost
-     * @param bool $compactToolResults encode array/object tool results as compact JSON text
-     *                                ({@see CompactToolResultFormatter}); pretty-printing stays the
-     *                                default for backward compatibility
+     * @param bool $compactToolResults compact JSON text, the SDK's own encoding (default); false
+     *                                pretty-prints it ({@see ToolResultTextFormatter})
      * @param list<ToolResultDecoratorInterface> $resultDecorators applied in order to the formatted result
      *                                                             of every successful tools/call
      */
@@ -87,7 +85,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         private array $resourceInterceptors = [],
         private ?PromptVisibilityInterface $promptVisibility = null,
         private ?ResourceVisibilityInterface $resourceVisibility = null,
-        private bool $compactToolResults = false,
+        private bool $compactToolResults = true,
         private array $resultDecorators = [],
     ) {}
 
@@ -157,7 +155,7 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
         // results are built HERE, deliberately: after the interceptor chain
         // (every interceptor — RBAC, audit, the cache, the size limit — keeps
         // seeing the raw handler result it was written against) and before
-        // the SDK's CallToolHandler, which skips BOTH its pretty formatter and
+        // the SDK's CallToolHandler, which skips BOTH its formatter and
         // structured-content extraction for a ready CallToolResult. A handler
         // that already returned one keeps it untouched, exactly as the SDK
         // would.
@@ -165,24 +163,18 @@ final readonly class InterceptingReferenceHandler implements ReferenceHandlerInt
             return $this->decorated($result, $context);
         }
 
-        if ($this->compactToolResults) {
-            return $this->decorated(
-                CompactToolResultFormatter::format($result, $reference, $this->protocolVersion($arguments, $session)),
-                $context,
-            );
-        }
-
-        // pretty without decorators: the raw result goes on and the SDK
-        // formats it — the path stays exactly what it was
-        if ($this->resultDecorators === []) {
+        // compact without decorators: the raw result goes on and the SDK
+        // formats it (compact is the SDK's own encoding since 0.10)
+        if ($this->compactToolResults && $this->resultDecorators === []) {
             return $result;
         }
 
-        // the SDK's own pretty path, verbatim (CallToolHandler::handle)
         return $this->decorated(
-            new CallToolResult(
-                $reference->formatResult($result),
-                structuredContent: $reference->extractStructuredContent($result, $this->protocolVersion($arguments, $session)),
+            ToolResultTextFormatter::format(
+                $result,
+                $reference,
+                $this->protocolVersion($arguments, $session),
+                pretty: !$this->compactToolResults,
             ),
             $context,
         );

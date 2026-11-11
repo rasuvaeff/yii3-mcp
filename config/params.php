@@ -96,8 +96,61 @@ return [
         'request_state' => [
             'key' => '',
             'ttl' => 600,
+            // rotation: old keys that still verify a state but no longer
+            // sign one (move the old key here when setting a new 'key')
+            'previous_keys' => [],
+            // tie a state to its originating request and client id; a
+            // replayed state does not verify
+            'bind' => true,
+        ],
+        // OAuth 2.1 resource server (the alternative to endpoint_secret):
+        // route [BearerTokenMiddleware, McpAction] and serve
+        // ProtectedResourceMetadataHandler at the well-known path the
+        // resource derives (/.well-known/oauth-protected-resource/<path>).
+        // Validation, challenges and scopes are the SDK's own.
+        'oauth' => [
+            // canonical URI of the endpoint, e.g. https://mcp.example.com/mcp
+            // ('' = OAuth not configured; the guard then fails to build)
+            'resource' => '',
+            // issuers whose tokens this server accepts (at least one)
+            'authorization_servers' => [],
+            // expected `iss`; '' = the first authorization server
+            'issuer' => '',
+            // accepted `aud` values; [] = the resource
+            'audience' => [],
+            'algorithms' => ['RS256'],
+            // required `typ` header, e.g. 'at+jwt' (RFC 9068); '' skips it
+            'token_type' => '',
+            // tolerated clock skew, seconds
+            'leeway' => 0,
+            'scope_claim' => 'scope',
+            // advertised in the metadata and the 401 challenge
+            'scopes_supported' => [],
+            // required scopes: on every request, per JSON-RPC method, per
+            // tool name; implies is a hierarchy (a granted key grants its list)
+            'scopes' => [
+                'default' => [],
+                'methods' => [],
+                'tools' => [],
+                'implies' => [],
+            ],
+            // what becomes the client id: 'principal' (issuer + client +
+            // subject), 'client_id' or 'subject'
+            'identity' => 'principal',
+            // service id of an AuthorizationTokenValidatorInterface ('' = JWT
+            // through the issuer's discovery document; needs firebase/php-jwt)
+            'validator' => '',
+            // service id of the PSR-6 pool for issuer metadata and signing
+            // keys ('' = Psr\Cache\CacheItemPoolInterface)
+            'cache' => '',
+            'resource_name' => '',
+            'resource_documentation' => '',
         ],
         'notifications' => [
+            // what carries resource updates to stateless listen streams:
+            // '' (none), 'memory' (one long-running process), 'psr16' or
+            // 'psr6' (the container's cache — publisher and listener are
+            // different PHP-FPM workers)
             'bus' => '',
             // seconds a listen stream is held open (0 = until the client or
             // the runtime ends it); under PHP-FPM a stream holds a worker for
@@ -105,12 +158,11 @@ return [
             'subscription_lifetime' => 30,
         ],
         // how array/object tool results are encoded into the text content the
-        // agent reads: 'pretty' (default, the SDK's own formatting) or
-        // 'compact' — no indentation, JSON_UNESCAPED_SLASHES |
-        // JSON_UNESCAPED_UNICODE (~3x fewer bytes; structuredContent is still
-        // produced for array results). An unsupported value fails at config
-        // load.
-        'result_json' => 'pretty',
+        // agent reads: 'compact' (default, the SDK's own encoding since 0.10:
+        // no indentation, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) or
+        // 'pretty' — indented, ~3x more bytes; structuredContent is produced
+        // either way. An unsupported value fails at config load.
+        'result_json' => 'compact',
         // guard against a tool result burning an agent's context window
         // (0 = unlimited). A string result over the limit is truncated with
         // a marker; any other result (array/object) is rejected outright —

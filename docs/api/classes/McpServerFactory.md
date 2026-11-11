@@ -34,7 +34,7 @@ create(
     iterable $resourceInterceptors,
     ?Visibility\PromptVisibilityInterface $promptVisibility,
     ?Visibility\ResourceVisibilityInterface $resourceVisibility,
-): Mcp\Server
+): Mcp\Server\Server
 ```
 
 - `$interceptors` — tool-call chain, first = outermost

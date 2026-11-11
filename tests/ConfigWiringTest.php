@@ -8,12 +8,11 @@ use Closure;
 use LogicException;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Extension\Apps\McpApps;
-use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Schema\Notification\ResourceUpdatedNotification;
 use Mcp\Schema\Tool;
-use Mcp\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
@@ -133,7 +132,7 @@ final class ConfigWiringTest
         Assert::same($params['rasuvaeff/yii3-mcp']['visibility'], ['deny' => [], 'allow' => []]);
         Assert::same($params['rasuvaeff/yii3-mcp']['limits']['tool_result_bytes'], 0);
         Assert::same($params['rasuvaeff/yii3-mcp']['cache']['tools'], []);
-        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'pretty');
+        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'compact');
         Assert::same($params['rasuvaeff/yii3-mcp']['openapi']['executor'], 'http');
     }
 
@@ -153,14 +152,25 @@ final class ConfigWiringTest
         ]);
     }
 
-    public function resultJsonDefaultsToPrettyPrintedText(): void
+    public function resultJsonDefaultsToCompactText(): void
     {
         $params = $this->params();
 
-        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'pretty');
+        Assert::same($params['rasuvaeff/yii3-mcp']['result_json'], 'compact');
 
         // the default must stay byte-identical to the SDK's own formatting —
-        // pretty text with structuredContent for an array result
+        // compact text (SDK 0.10) with structuredContent for an array result
+        $result = $this->weatherResult($params);
+
+        Assert::same($result['content'][0]['text'], '{"city":"Rome","temperature":21,"conditions":"sunny"}');
+        Assert::same($result['structuredContent'] ?? null, ['city' => 'Rome', 'temperature' => 21, 'conditions' => 'sunny']);
+    }
+
+    public function prettyResultJsonIndentsArrayTools(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['result_json'] = 'pretty';
+
         $result = $this->weatherResult($params);
 
         Assert::string($result['content'][0]['text'])->contains("\n");
@@ -766,6 +776,23 @@ final class ConfigWiringTest
         }
     }
 
+    public function psr6BusStoresInTheContainersPool(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'psr6';
+        $pool = new \Rasuvaeff\Yii3Mcp\Tests\Support\ArrayCachePool();
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[NotificationBusInterface::class];
+        $bus = $definition($pool);
+
+        Assert::instanceOf($bus, \Mcp\Server\Subscription\Psr6NotificationBus::class);
+        $cursor = $bus->cursor();
+        $bus->publish(new ResourceUpdatedNotification('app://x'));
+        [$notifications] = $bus->since($cursor);
+        Assert::same(count($notifications), 1);
+    }
+
     public function unknownNotificationBusFailsAtConfigLoad(): void
     {
         $params = $this->params();
@@ -1291,7 +1318,7 @@ final class ConfigWiringTest
         Assert::same($params['rasuvaeff/yii3-mcp']['protocol_version'], '');
         Assert::same(
             $this->serverTester($params)->initialize()['protocolVersion'] ?? null,
-            MessageInterface::PROTOCOL_VERSION->value,
+            ProtocolVersion::latestHandshake()->value,
         );
 
         $params['rasuvaeff/yii3-mcp']['protocol_version'] = '2025-06-18';
@@ -1865,6 +1892,51 @@ final class ConfigWiringTest
         $psr17 = new Psr17Factory();
 
         return (new McpTester($server, $psr17, $psr17, $psr17))->callTool('weather', ['city' => 'Rome']);
+    }
+
+    /**
+     * OAuth is opt-in: the package ships it unconfigured, and building the
+     * guard from those defaults fails naming the param instead of serving
+     * requests without a token check.
+     */
+    public function oauthGuardIsDefinedButUnconfiguredByDefault(): void
+    {
+        $params = $this->params();
+        $psr17 = new \Nyholm\Psr7\Factory\Psr17Factory();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['oauth']['resource'], '');
+        Assert::same($params['rasuvaeff/yii3-mcp']['oauth']['identity'], 'principal');
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[\Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware::class]['definition'];
+        $container = new SimpleContainer([
+            \Psr\Http\Message\ResponseFactoryInterface::class => $psr17,
+            \Psr\Http\Message\StreamFactoryInterface::class => $psr17,
+        ]);
+
+        Expect::exception(\InvalidArgumentException::class)->withMessage('OAuth is not configured: set rasuvaeff/yii3-mcp oauth.resource to the canonical URI of the MCP endpoint (e.g. https://mcp.example.com/mcp)');
+
+        $definition($container);
+    }
+
+    public function oauthMetadataHandlerIsBuiltFromParams(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['oauth']['resource'] = 'https://mcp.example.com/mcp';
+        $params['rasuvaeff/yii3-mcp']['oauth']['authorization_servers'] = ['https://auth.example.com'];
+        $psr17 = new \Nyholm\Psr7\Factory\Psr17Factory();
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[\Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler::class]['definition'];
+        $handler = $definition(new SimpleContainer([
+            \Psr\Http\Message\ResponseFactoryInterface::class => $psr17,
+            \Psr\Http\Message\StreamFactoryInterface::class => $psr17,
+        ]));
+        \assert($handler instanceof \Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler);
+
+        $body = (string) $handler->handle(new \Nyholm\Psr7\ServerRequest('GET', 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp'))->getBody();
+
+        Assert::string($body)->contains('"resource":"https://mcp.example.com/mcp"');
     }
 
     private function params(): array

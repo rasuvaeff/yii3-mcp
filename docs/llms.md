@@ -59,8 +59,8 @@ composer require rasuvaeff/yii3-mcp
 ### Declaring tools (SDK attributes on ordinary Yii3 services)
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
-use Mcp\Capability\Attribute\McpResource;
+use Mcp\Server\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpResource;
 
 final readonly class OrderTools
 {
@@ -197,7 +197,7 @@ $factory = new McpServerFactory(
     version: '1.0.0',
     logger: null,                      // ?LoggerInterface
 );
-$server = $factory->create([OrderTools::class]);  // Mcp\Server
+$server = $factory->create([OrderTools::class]);  // Mcp\Server\Server
 // throws Rasuvaeff\Yii3Mcp\Exception\InvalidToolClassException on unknown
 // class or class without capability attributes
 ```
@@ -411,7 +411,7 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
 ### Argument autocompletion (completion/complete)
 
 ```php
-use Mcp\Capability\Attribute\CompletionProvider;
+use Mcp\Server\Capability\Attribute\CompletionProvider;
 
 #[McpPrompt(name: 'review')]
 public function review(
@@ -426,7 +426,7 @@ public function report(
 ```
 
 - Exactly ONE of `values` / `enum` / `provider` per argument (the SDK attribute
-  throws otherwise). `provider` is a `Mcp\Capability\Completion\ProviderInterface`
+  throws otherwise). `provider` is a `Mcp\Server\Capability\Completion\ProviderInterface`
   FQCN resolved through the DI container, so it can query application services.
 - The `completions` capability is advertised automatically; no params key.
 - Completions respect `prompt_visibility` / `resource_visibility`: a hidden
@@ -558,7 +558,7 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 // params: 'interceptors' => [MyInterceptor::class]  — DI-resolved, first = outermost.
 // Wraps EVERY tools/call (attribute tools, OpenAPI bridge, configurators);
 // prompts/resources have their OWN chains (see "Hooks for prompts and resources").
-// throw Mcp\Exception\ToolCallException => MCP tool-error envelope (agent sees reason);
+// throw Mcp\Server\Exception\ToolCallException => MCP tool-error envelope (agent sees reason);
 // other exceptions => opaque internal error.
 // Manual wiring: $factory->create($tools, $configurators, $interceptors).
 
@@ -677,7 +677,7 @@ use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;  // isVisible(Reso
 // params (all DI-resolved; interceptor lists first = outermost):
 // 'prompt_interceptors' => [...], 'resource_interceptors' => [...],
 // 'prompt_visibility' => FQCN|'', 'resource_visibility' => FQCN|''
-// Rejecting: throw Mcp\Exception\PromptGetException / ResourceReadException
+// Rejecting: throw Mcp\Server\Exception\PromptGetException / ResourceReadException
 //   => client sees the message.
 // Hiding: visibility (or throw PromptNotFoundException/ResourceNotFoundException)
 //   => "not found", indistinguishable from a missing capability; the call never

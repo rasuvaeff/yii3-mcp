@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Capability\Attribute\McpPrompt;
-use Mcp\Capability\Attribute\McpResource;
-use Mcp\Capability\Attribute\McpResourceTemplate;
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpPrompt;
+use Mcp\Server\Capability\Attribute\McpResource;
+use Mcp\Server\Capability\Attribute\McpResourceTemplate;
+use Mcp\Server\Capability\Attribute\McpTool;
 use RuntimeException;
 
 final readonly class GreetingTool

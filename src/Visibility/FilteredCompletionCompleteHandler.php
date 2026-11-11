@@ -4,10 +4,6 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Visibility;
 
-use Mcp\Capability\Registry\ResourceTemplateReference;
-use Mcp\Capability\RegistryInterface;
-use Mcp\Exception\PromptNotFoundException;
-use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
@@ -15,6 +11,10 @@ use Mcp\Schema\PromptReference;
 use Mcp\Schema\Request\CompletionCompleteRequest;
 use Mcp\Schema\ResourceReference;
 use Mcp\Schema\Result\CompletionCompleteResult;
+use Mcp\Server\Capability\Registry\ResourceTemplateReference;
+use Mcp\Server\Capability\RegistryInterface;
+use Mcp\Server\Exception\PromptNotFoundException;
+use Mcp\Server\Exception\ResourceNotFoundException;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 

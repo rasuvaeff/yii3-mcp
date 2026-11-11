@@ -31,7 +31,8 @@ container.
 | Requirement | Version |
 |-------------|---------|
 | PHP | 8.3 – 8.5 |
-| `mcp/sdk` | `~0.8.1` (experimental until 1.0 — hence the tilde pin) |
+| `mcp/sdk` | `~0.10.0` (experimental until 1.0 — hence the tilde pin) |
+| `firebase/php-jwt` | optional, `^7.0`: JWT validation for the OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
 | `ext-fileinfo` | required by the SDK |
 
@@ -76,7 +77,7 @@ Tools are ordinary Yii3 services. Capability methods are annotated with the
 SDK's own attributes — this package invents no protocol structures:
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
 {
@@ -242,6 +243,14 @@ unchanged:
 - More than one ask per call carries earlier answers between rounds in a
   signed `requestState`: set `request_state.key` (at least 32 bytes, from the
   environment). Without it the first ask works and a second fails the call.
+- The state is **bound** (`request_state.bind`, on by default) to the request
+  it was minted for — method, tool, a digest of the arguments, the OAuth
+  principal — and to the resolved client id: a state replayed by another
+  client, or for other arguments, does not verify. States minted before the
+  binding was switched on stop verifying once.
+- **Rotation**: move the old key to `request_state.previous_keys` when setting
+  a new `key` — previous keys still verify a state but never sign one, so
+  calls in flight survive the switch; drop the old key after `ttl`.
 - Every round is a `tools/call`: interceptors run each round and the
   tool-call budget counts each one (one ask costs two). The answers are not
   signed, so a budget skipping "retries" could be bypassed by any client.
@@ -253,7 +262,12 @@ unchanged:
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    'request_state' => ['key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '', 'ttl' => 600],
+    'request_state' => [
+        'key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '',
+        'ttl' => 600,
+        'previous_keys' => [],   // old keys during a rotation
+        'bind' => true,          // tie a state to its request and client
+    ],
 ],
 ```
 
@@ -316,6 +330,10 @@ An MCP client connects with the secret header:
     }
 }
 ```
+
+Clients that authenticate with OAuth 2.1 instead route
+`BearerTokenMiddleware` in front of the action — see
+[OAuth 2.1 resource server](#oauth-21-resource-server).
 
 ### stdio for local development
 
@@ -441,6 +459,14 @@ with the same 404 the SDK uses for a missing one, indistinguishable from an
 expired session. Deployments without client identity (network-ACL-only) are
 unaffected.
 
+Since SDK 0.10 the SDK binds a handshake-era session to its **principal** as
+well: `McpAction` hands it the resolved client id
+(`StreamableHttpTransport::PRINCIPAL_ATTRIBUTE`, unless a front middleware
+such as `BearerTokenMiddleware` already set one), so a foreign client is
+refused even where the package's own guard is inert (no session store passed
+to `McpAction`). A session opened before the upgrade carries no principal and
+is answered 404 once; the client simply initializes again.
+
 ### Prompts from Markdown files
 
 Prompts are content, not code — keep them in a directory and every `*.md`
@@ -494,7 +520,7 @@ variable. Declare the source with the SDK's `#[CompletionProvider]` — no
 yii3-mcp API is involved:
 
 ```php
-use Mcp\Capability\Attribute\CompletionProvider;
+use Mcp\Server\Capability\Attribute\CompletionProvider;
 
 #[McpPrompt(name: 'review')]
 public function review(
@@ -512,7 +538,7 @@ public function report(
 |---|---|
 | `values: [...]` | a fixed list, prefix-matched |
 | `enum: BackedEnum::class` | the enum's cases |
-| `provider: Foo::class` | a `Mcp\Capability\Completion\ProviderInterface`, **resolved through the DI container** — so it can query a repository or a feature-flag service |
+| `provider: Foo::class` | a `Mcp\Server\Capability\Completion\ProviderInterface`, **resolved through the DI container** — so it can query a repository or a feature-flag service |
 
 Exactly one of the three per argument; the capability is advertised
 automatically. Completions obey `prompt_visibility` / `resource_visibility`:
@@ -542,12 +568,18 @@ authorization in the visibility filter, not in an interceptor.
     // stateless era: reject requests whose standard headers contradict the body
     'header_validation' => true,
     // how array/object tool results are encoded into the text the agent
-    // reads: 'pretty' (default, the SDK's own formatting) or 'compact' —
-    // no indentation, ~3x fewer bytes; structuredContent is unaffected.
+    // reads: 'compact' (default, the SDK's own encoding since 0.10) or
+    // 'pretty' — indented, ~3x more bytes; structuredContent is unaffected.
     // An unsupported value fails at config load.
-    'result_json' => 'pretty',
+    'result_json' => 'compact',
 ],
 ```
+
+A container binding of `Mcp\Server\Fiber\FiberContextInterface` is
+autowired into `McpServerFactory` and handed to the SDK's
+`Builder::setFiberContext()`: it carries execution context — the active
+OpenTelemetry context, a correlation id — into the fibers tool, prompt and
+resource handlers run in. Nothing is bound by default.
 
 ### Resource subscriptions
 
@@ -575,9 +607,10 @@ public function cancel(string $orderId, RequestContext $context): string
 ```php
 'rasuvaeff/yii3-mcp' => [
     'notifications' => [
-        // '' = none (listen streams carry nothing), 'psr16' = through the
-        // container's PSR-16 cache (PHP-FPM: publisher and listener are
-        // different workers), 'memory' = one process (stdio, persistent runtimes)
+        // '' = none (listen streams carry nothing), 'psr16' / 'psr6' =
+        // through the container's PSR-16 cache / PSR-6 pool (PHP-FPM:
+        // publisher and listener are different workers), 'memory' = one
+        // process (stdio, persistent runtimes)
         'bus' => 'psr16',
         // seconds a listen stream is held open; under PHP-FPM it holds a worker
         // that long — keep it below max_execution_time
@@ -705,7 +738,7 @@ run once per round (see "Server-initiated communication").
 ],
 ```
 
-Throwing `Mcp\Exception\ToolCallException` from an interceptor rejects the
+Throwing `Mcp\Server\Exception\ToolCallException` from an interceptor rejects the
 call with a regular MCP tool-error envelope (the agent sees the reason);
 any other exception becomes an opaque internal error.
 
@@ -718,7 +751,9 @@ replaces the values of sensitive keys (`password`/`pass`/`pwd`, `secret`,
 `api-key`/`x-api-key`, `access_token`/`refresh_token`/`id_token`/
 `session_token`/`auth_token` (and the kebab spelling `access-token`),
 `client_secret`, `private_key`, `credit_card` by default; case-insensitive, so
-`ApiKey`/`X-Api-Key` match too, at **every** nesting level) with `***`:
+`ApiKey`/`X-Api-Key` match too, at **every** nesting level — arrays and the
+`\stdClass` objects SDK 0.10 hands over for nested JSON objects alike) with
+`***`:
 
 ```php
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
@@ -792,31 +827,32 @@ arrays/objects it counts the JSON-encoded bytes. It bounds what reaches the
 agent's context window — worker memory during production of the result is
 bounded separately by `openapi.max_response_bytes`.
 
-#### Compact JSON tool results
+#### Compact and pretty JSON tool results
 
-The SDK serializes an array or object tool result with `JSON_PRETTY_PRINT`,
-which is ~3x the bytes of the same payload compact — a `search` page of 20
-cards costs the agent tens of kilobytes of pure indentation. Opting into
-compact text:
+Since SDK 0.10 the SDK itself encodes an array or object tool result as
+compact JSON, and that is the package default. Pretty-printed text is ~3x
+the bytes of the same payload — a `search` page of 20 cards costs the agent
+tens of kilobytes of pure indentation — but stays available for clients
+whose users read raw tool output:
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    // 'pretty' (default, byte-identical to the SDK's own formatting) or
-    // 'compact': array/object results are encoded without indentation, with
-    // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE. Anything else fails
-    // at config load.
-    'result_json' => 'compact',
+    // 'compact' (default, byte-identical to the SDK's own encoding:
+    // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) or 'pretty': the
+    // package re-encodes array/object results with JSON_PRETTY_PRINT.
+    // Anything else fails at config load.
+    'result_json' => 'pretty',
 ],
 ```
 
-What changes — and what deliberately does not:
+What `pretty` changes — and what deliberately does not:
 
 - only the **text content** of array/object results is re-encoded; string,
   int, float, bool and `null` results, and results that are already SDK
-  `Content` objects, are served exactly as before;
+  `Content` objects, are served exactly as in `compact`;
 - `structuredContent` is still produced for array results (an
-  `outputSchema`-declaring tool keeps its structured output) — the compact
-  text is simply the JSON encoding of that same payload;
+  `outputSchema`-declaring tool keeps its structured output) — the pretty
+  text is simply the indented JSON encoding of that same payload;
 - interceptors, the tool-result cache and `limits.tool_result_bytes` all
   keep seeing the **raw** handler result: the conversion happens after the
   interceptor chain, right before the SDK would have formatted the result.
@@ -881,6 +917,7 @@ per item of a search result, an image, a note.
 
 ```php
 use Mcp\Schema\Content\ResourceLink;
+use Mcp\Schema\Enum\StructuredContent;
 use Mcp\Schema\Result\CallToolResult;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
@@ -899,7 +936,13 @@ final readonly class CreatorLinks implements ToolResultDecoratorInterface
             $links[] = new ResourceLink(uri: 'app://creator/' . $item['slug'], name: $item['slug']);
         }
 
-        return new CallToolResult([...$result->content, ...$links], $result->isError, $result->structuredContent, $result->meta);
+        return new CallToolResult(
+            [...$result->content, ...$links],
+            $result->isError,
+            // since SDK 0.10 an explicit null is SENT as structuredContent: pass Absent when there is none
+            $result->hasStructuredContent() ? $result->structuredContent : StructuredContent::Absent,
+            $result->meta,
+        );
     }
 }
 ```
@@ -918,16 +961,19 @@ final readonly class CreatorLinks implements ToolResultDecoratorInterface
 - What a decorator adds does not count against `limits.tool_result_bytes`,
   which measures the raw result inside the chain.
 - Keep `structuredContent` unless the tool's `outputSchema` still describes
-  the new value: clients validate it.
+  the new value: clients validate it. When building a new `CallToolResult`,
+  pass `StructuredContent::Absent` for a result without structured content —
+  a plain `null` is sent as `"structuredContent": null`.
 - A multi round-trip ask (`input_required`) is never decorated; the final
   round's result is. A `ToolCallException` never reaches a decorator (the
   SDK turns it into an error envelope after the handler); a handler that
   returns `CallToolResult::error()` itself does — check `$result->isError`.
-- In `pretty` mode the package builds the result exactly as the SDK would
-  (`formatResult()` + `extractStructuredContent()` for the request's
-  revision), but only when at least one decorator is configured; the
-  SDK's warning about a value that cannot be `structuredContent` despite an
-  `outputSchema` is not logged on that path (nor in `compact` mode).
+- With decorators (and always in `pretty` mode) the package builds the
+  result exactly as the SDK's `CallToolHandler` would — structured content
+  through the SDK's `extractStructuredContent()` for the request's revision,
+  a primitive structured value carried as its JSON text (SEP-2106) — in the
+  configured encoding; the SDK's warning about a value that cannot be
+  `structuredContent` despite an `outputSchema` is not logged on that path.
 - `McpServerFactory::create(resultDecorators: [...])` takes them directly
   without `yiisoft/config`.
 
@@ -1118,8 +1164,8 @@ policy never accidentally applies to a prompt:
   and client id; `Interceptor\ResourceReadContext` carries the URI, the RFC
   6570 variables extracted from a template (with the matched `uriTemplate`)
   and the same identity fields.
-- Rejecting: throw `Mcp\Exception\PromptGetException` /
-  `Mcp\Exception\ResourceReadException` — the client sees the message.
+- Rejecting: throw `Mcp\Server\Exception\PromptGetException` /
+  `Mcp\Server\Exception\ResourceReadException` — the client sees the message.
   Hiding: visibility (or a thrown `*NotFoundException`) reports the
   capability as **not found**, indistinguishable from a missing one — a
   client that guesses a hidden prompt name or resource URI learns nothing,
@@ -1718,6 +1764,7 @@ build (the SDK rejects a duplicate extension id).
 | `Exception\SessionOwnershipException` | a capability call arrived with a client identity different from the session's immutable owner (fail-closed) |
 | `Exception\DuplicateCapabilityException` | two capability registrations resolved to one identity — the build fails instead of the SDK's silent last-write-wins |
 | `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; an empty secret rejects every request with an explanatory 503 — an unprotected endpoint must be an explicit decision; resolves the client id via `Identity\SecretResolverInterface` |
+| `OAuth\BearerTokenMiddleware` | OAuth 2.1 resource-server guard over the SDK's `AuthorizationMiddleware`: token, audience, issuer and scopes checked, the token's identity (principal / client_id / subject) becomes the client id; a token without that claim gets 401 |
 | `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver` | several clients per endpoint + secret rotation (multiple active secrets per client id); constant-time comparison, the raw secret never travels past the middleware |
 | `Interceptor\ToolCallLimiterInterface` / `Interceptor\RateLimitInterceptor` | port + adapter delegating per-client/per-tool limits to the application's rate limiter; fail-closed on limiter outage |
 | `McpServeCommand` | `mcp:serve` — stdio transport for local MCP clients |
@@ -1753,20 +1800,106 @@ build (the SDK rejects a duplicate extension id).
 | `Apps\McpAppsConfigurator` | announces the MCP Apps extension and registers declarative `ui://` app resources (`apps` params) |
 | `Apps\AppDefinition` | one declarative app: `ui://` URI, name, HTML (string or `Closure(): string`) and its `UiResourceContentMeta` |
 
+## OAuth 2.1 resource server
+
+The alternative to shared secrets: the MCP endpoint accepts access tokens an
+authorization server issued for it (MCP authorization spec, RFC 9728
+metadata, RFC 6750 challenges). Validation, the `WWW-Authenticate`
+challenges and the per-method/per-tool scopes are the SDK's own
+`AuthorizationMiddleware`; `OAuth\BearerTokenMiddleware` wraps it and turns
+the token's identity into the **client id**, so session ownership,
+visibility, the tool-call budget, the result cache key and the
+audit/RBAC/telemetry bridges work exactly as with `client_secrets`.
+
+```bash
+composer require firebase/php-jwt   # JWT validation; not needed with your own validator
+```
+
+```php
+// config/params.php
+'rasuvaeff/yii3-mcp' => [
+    'oauth' => [
+        // canonical URI of the endpoint; '' = OAuth not configured
+        'resource' => 'https://mcp.example.com/mcp',
+        // issuers whose tokens are accepted (at least one)
+        'authorization_servers' => ['https://auth.example.com'],
+        'issuer' => '',              // expected `iss`; '' = the first authorization server
+        'audience' => [],            // accepted `aud`; [] = the resource
+        'algorithms' => ['RS256'],
+        'token_type' => '',          // required `typ`, e.g. 'at+jwt' (RFC 9068); '' skips the check
+        'leeway' => 0,               // tolerated clock skew, seconds
+        'scope_claim' => 'scope',
+        'scopes_supported' => ['mcp'],   // advertised in the metadata and the 401 challenge
+        'scopes' => [
+            'default' => ['mcp'],                         // every request
+            'methods' => ['tools/call' => ['mcp:tools']], // per JSON-RPC method
+            'tools' => ['order.cancel' => ['orders:write']], // per tool name
+            'implies' => ['orders:admin' => ['orders:write']], // a granted key grants its list
+        ],
+        // what becomes the client id: 'principal' (issuer + client + subject),
+        // 'client_id' (client_id, falling back to azp) or 'subject' (sub)
+        'identity' => 'principal',
+        'validator' => '',   // service id of your own AuthorizationTokenValidatorInterface
+        'cache' => '',       // service id of a PSR-6 pool; '' = Psr\Cache\CacheItemPoolInterface
+        'resource_name' => 'Orders',
+        'resource_documentation' => 'https://example.com/docs/mcp',
+    ],
+],
+```
+
+```php
+// config/routes.php
+use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
+use Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware;
+
+Route::methods(['POST', 'GET', 'DELETE', 'OPTIONS'], '/mcp')
+    ->middleware(BearerTokenMiddleware::class)
+    ->action(McpAction::class),
+// RFC 9728: the path the resource derives — /.well-known/oauth-protected-resource + the endpoint path
+Route::get('/.well-known/oauth-protected-resource/mcp')
+    ->action(ProtectedResourceMetadataHandler::class),
+```
+
+- **Validation.** Without `oauth.validator` the token is a JWT checked against
+  the issuer's keys: the SDK reads the issuer's discovery document
+  (`/.well-known/oauth-authorization-server`, then `openid-configuration`),
+  fetches its JWKS and caches both in the PSR-6 pool (rate-limited key
+  refresh). Uses the container's PSR-18 `ClientInterface` and
+  `RequestFactoryInterface` when bound. Opaque tokens or introspection:
+  bind your own `Mcp\Server\Transport\Http\OAuth\AuthorizationTokenValidatorInterface`
+  and name it in `oauth.validator`.
+- **Answers.** No or another scheme → 401 with `resource_metadata="…"`; an
+  invalid, expired, foreign-audience or foreign-issuer token → 401
+  `invalid_token`; a missing scope → 403 `insufficient_scope` with the
+  required scopes; the keys cannot be fetched → 503 with `Retry-After`.
+- **Identity.** A token without the claim `identity` names (e.g. no `sub` with
+  `'subject'`) is refused with 401 `invalid_token` — never served
+  anonymously. With `'principal'` the client id is an opaque string of
+  issuer, client and subject; pick `'client_id'` or `'subject'` when RBAC
+  roles or audit records should name it readably.
+- **Sessions** are bound to the token's principal by the SDK and to the client
+  id by the package; the validated `AccessToken` is available to a handler
+  through `RequestContext::getAccessToken()` (scopes, claims).
+- **Misconfiguration fails at build**, naming the param: no `resource`, no
+  authorization server, an unknown `scopes` key, a validator or cache service
+  of the wrong type, missing `firebase/php-jwt`. The package ships OAuth
+  unconfigured; resolving `BearerTokenMiddleware` from the defaults throws
+  instead of letting requests through.
+
 ## Security
 
 - **The endpoint is trusted-only.** MCP tools execute application code;
   treat the endpoint like an admin API. Ship it behind
-  `SharedSecretMiddleware` (an empty secret rejects every request with an
+  `SharedSecretMiddleware` or `OAuth\BearerTokenMiddleware` (an empty secret rejects every request with an
   explanatory 503) or an explicit network ACL.
 - Tool errors are returned as MCP error envelopes by the SDK — internals are
   not leaked as 500 traces.
 - The core registers **no tools by default**; every exposed operation is an
   explicit entry in `params['rasuvaeff/yii3-mcp']['tools']`.
 - **Sessions are bound to the client that created them** (immutable owner
-  stamped at `initialize`, verified before every POST/DELETE): a leaked
-  `Mcp-Session-Id` alone does not let another authenticated client act in —
-  or destroy — a foreign session. Session files are owner-only (`0700` dir,
+  stamped at `initialize`, verified before every POST/DELETE, and the SDK's own
+  principal binding behind it): a leaked `Mcp-Session-Id` alone does not let
+  another authenticated client act in — or destroy — a foreign session. Session files are owner-only (`0700` dir,
   `0600` files) in an application-specific directory.
 - **Capability names are unique across the whole server, enforced.** A
   collision between any registration paths (attribute tools, configurators,
@@ -1779,8 +1912,12 @@ build (the SDK rejects a duplicate extension id).
   substituted prompts (`limits.prompt_result_bytes`, arithmetic pre-check),
   spec documents (10 MiB + `$ref` depth/node budget) and tool results
   (`limits.tool_result_bytes`).
-- OAuth from the MCP authorization spec is deliberately out of scope until it
-  stabilizes; shared-secret/ACL only.
+- **OAuth 2.1** through `OAuth\BearerTokenMiddleware` (the SDK's resource
+  server pieces): token, audience, issuer and scopes are checked before the
+  transport runs; see [OAuth 2.1 resource server](#oauth-21-resource-server).
+- Nested tool arguments are masked at every depth, objects included
+  (`ArgumentMasker`), and a multi round-trip `requestState` is bound to its
+  request and client.
 
 ## Examples
 
@@ -1818,6 +1955,14 @@ $tester->listPrompts();               // every prompt definition
 $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // any raw JSON-RPC method
 ```
+
+Without a revision the tester speaks the newest **handshake** revision
+(`ProtocolVersion::latestHandshake()`; the SDK's
+`MessageInterface::PROTOCOL_VERSION` is the stateless 2026-07-28 since 0.9).
+It addresses `http://localhost/mcp`, so the request carries a `Host` the
+SDK's DNS-rebinding guard allows — a request without one is refused since
+SDK 0.9 — and sends empty tool arguments as `{}` (a JSON array is refused
+with `-32602`).
 
 Pass a revision as the fifth argument to test a specific protocol era, and
 `ClientCapabilities` as the sixth to test a tool that asks the user

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Elicitation\BooleanSchemaDefinition;
 use Mcp\Schema\Elicitation\ElicitationSchema;
+use Mcp\Server\Exception\ToolCallException;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 

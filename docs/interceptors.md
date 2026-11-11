@@ -37,7 +37,7 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 ],
 ```
 
-Throwing `Mcp\Exception\ToolCallException` from an interceptor rejects the
+Throwing `Mcp\Server\Exception\ToolCallException` from an interceptor rejects the
 call with a regular MCP tool-error envelope (the agent sees the reason); any
 other exception becomes an opaque internal error.
 
@@ -47,8 +47,8 @@ interfaces so a tool policy never accidentally applies to a prompt:
 `PromptGetContext`) and `Interceptor\ResourceReadInterceptorInterface`
 (`resource_interceptors`, sees `ResourceReadContext` — carries the URI and,
 for a template match, the extracted RFC 6570 variables). Rejecting from
-either throws `Mcp\Exception\PromptGetException` /
-`Mcp\Exception\ResourceReadException`; `completion/complete` is **not**
+either throws `Mcp\Server\Exception\PromptGetException` /
+`Mcp\Server\Exception\ResourceReadException`; `completion/complete` is **not**
 wrapped by any of these chains — see
 [Visibility: completions](/visibility#completions-obey-the-same-filters).
 

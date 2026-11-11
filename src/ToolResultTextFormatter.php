@@ -4,36 +4,37 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp;
 
-use Mcp\Capability\Registry\ToolReference;
 use Mcp\Schema\Content\Content;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Server\Capability\Registry\ToolReference;
 
 /**
- * Builds a ready {@see CallToolResult} with compact JSON text — the same
- * branching as the SDK's ToolResultFormatter plus
- * ToolReference::extractStructuredContent(), minus JSON_PRETTY_PRINT.
+ * Builds a ready {@see CallToolResult} exactly as the SDK's CallToolHandler
+ * would for a raw tool result, with the JSON text either compact (the SDK's
+ * own encoding since 0.10) or pretty-printed.
  *
- * The SDK's CallToolHandler skips BOTH formatting and structured-content
- * extraction when the reference handler already returns a CallToolResult,
- * which is exactly why this exists: pretty-printed tool results cost an
- * agent ~3x context tokens for an array payload, and the workaround of
- * returning a pre-encoded string loses structuredContent.
+ * The package needs its own copy for two reasons: the `pretty` result_json
+ * mode (the SDK stopped pretty-printing in 0.10), and result decorators,
+ * which need a formatted result BEFORE the SDK's CallToolHandler sees it —
+ * the handler skips BOTH formatting and structured-content extraction for a
+ * ready CallToolResult.
  *
- * The text branches must stay a mirror of the SDK formatter (Content
- * pass-through, mixed-array per-item formatting, scalar/null/bool special
- * cases) — on an SDK pin bump, re-diff against ToolResultFormatter::format().
- * structuredContent is NOT mirrored: it is delegated to the SDK's own
- * ToolReference::extractStructuredContent(), whose rules depend on the
- * protocol revision (a list is structured content only from 2026-07-28 on).
+ * Mirrors, branch for branch: CallToolHandler::handle() (a null or scalar
+ * structuredContent is sent as its JSON text, SEP-2106) and the SDK's
+ * ToolResultFormatter::format() (Content pass-through, mixed-array per-item
+ * formatting, scalar/null/bool sentinels). structuredContent itself is NOT
+ * mirrored: it is delegated to ToolReference::extractStructuredContent(),
+ * whose rules depend on the protocol revision. On an SDK pin bump, re-diff
+ * both SDK methods.
  *
  * @internal
  */
-final readonly class CompactToolResultFormatter
+final readonly class ToolResultTextFormatter
 {
     /**
-     * The SDK's own flags for tool results, minus JSON_PRETTY_PRINT.
+     * The SDK's own flags for tool results.
      */
     private const int JSON_FLAGS = JSON_UNESCAPED_SLASHES
         | JSON_UNESCAPED_UNICODE
@@ -42,22 +43,30 @@ final readonly class CompactToolResultFormatter
 
     /**
      * @param mixed $toolExecutionResult the raw value returned by the tool's PHP method
+     * @param bool $pretty indent the JSON text (structured content is unaffected)
      */
     public static function format(
         mixed $toolExecutionResult,
         ToolReference $reference,
         ProtocolVersion $protocolVersion,
+        bool $pretty = false,
     ): CallToolResult {
-        return new CallToolResult(
-            self::content($toolExecutionResult),
-            structuredContent: $reference->extractStructuredContent($toolExecutionResult, $protocolVersion),
-        );
+        $flags = $pretty ? self::JSON_FLAGS | JSON_PRETTY_PRINT : self::JSON_FLAGS;
+        /** @var mixed $structuredContent */
+        $structuredContent = $reference->extractStructuredContent($toolExecutionResult, $protocolVersion);
+
+        // SEP-2106: a primitive structuredContent carries its serialized JSON in content
+        $content = $structuredContent === null || is_scalar($structuredContent)
+            ? [new TextContent(json_encode($structuredContent, $flags))]
+            : self::content($toolExecutionResult, $flags);
+
+        return new CallToolResult($content, structuredContent: $structuredContent);
     }
 
     /**
      * @return Content[]
      */
-    private static function content(mixed $toolExecutionResult): array
+    private static function content(mixed $toolExecutionResult, int $flags): array
     {
         if ($toolExecutionResult instanceof Content) {
             return [$toolExecutionResult];
@@ -93,7 +102,7 @@ final readonly class CompactToolResultFormatter
                     if ($item instanceof Content) {
                         $result[] = $item;
                     } else {
-                        $result = array_merge($result, self::content($item));
+                        $result = array_merge($result, self::content($item, $flags));
                     }
                 }
 
@@ -113,6 +122,6 @@ final readonly class CompactToolResultFormatter
             return [new TextContent($toolExecutionResult)];
         }
 
-        return [new TextContent(json_encode($toolExecutionResult, self::JSON_FLAGS))];
+        return [new TextContent(json_encode($toolExecutionResult, $flags))];
     }
 }

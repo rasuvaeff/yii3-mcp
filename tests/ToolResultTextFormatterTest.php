@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
-use Mcp\Capability\Registry\ToolReference;
 use Mcp\Schema\Content\ResourceLink;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\Enum\StructuredContent;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Tool;
+use Mcp\Server\Capability\Registry\ToolReference;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
-use Rasuvaeff\Yii3Mcp\CompactToolResultFormatter;
+use Rasuvaeff\Yii3Mcp\ToolResultTextFormatter;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Data\DataProvider;
@@ -20,8 +21,8 @@ use Testo\Expect;
 use Testo\Test;
 
 #[Test]
-#[Covers(CompactToolResultFormatter::class)]
-final class CompactToolResultFormatterTest
+#[Covers(ToolResultTextFormatter::class)]
+final class ToolResultTextFormatterTest
 {
     public function arrayResultBecomesSingleCompactTextWithStructuredContent(): void
     {
@@ -156,12 +157,42 @@ final class CompactToolResultFormatterTest
         ProtocolVersion $version = ProtocolVersion::V2025_11_25,
         ?array $outputSchema = null,
     ): CallToolResult {
-        return CompactToolResultFormatter::format($result, $this->reference($outputSchema), $version);
+        return ToolResultTextFormatter::format($result, $this->reference($outputSchema), $version);
     }
 
     /**
      * @param array<string, mixed>|null $outputSchema
      */
+    /**
+     * SEP-2106, as the SDK's CallToolHandler: a scalar or null structured
+     * value is sent with its JSON text as the content.
+     */
+    public function aPrimitiveStructuredValueCarriesItsJsonText(): void
+    {
+        $scalar = ToolResultTextFormatter::format(42, $this->reference(['type' => 'integer']), ProtocolVersion::V2026_07_28);
+
+        Assert::same($scalar->structuredContent, 42);
+        Assert::same(count($scalar->content), 1);
+        Assert::same($scalar->content[0] instanceof TextContent ? $scalar->content[0]->text : null, '42');
+
+        $null = ToolResultTextFormatter::format(null, $this->reference(['type' => 'null']), ProtocolVersion::V2026_07_28);
+
+        Assert::true($null->hasStructuredContent());
+        Assert::same($null->content[0] instanceof TextContent ? $null->content[0]->text : null, 'null');
+    }
+
+    public function prettyIndentsAndCompactDoesNot(): void
+    {
+        $result = ['city' => 'Rome', 'tags' => ['a/b', 'ü']];
+
+        $pretty = ToolResultTextFormatter::format($result, $this->reference(), ProtocolVersion::V2025_11_25, pretty: true);
+        $compact = ToolResultTextFormatter::format($result, $this->reference(), ProtocolVersion::V2025_11_25);
+
+        Assert::same($pretty->content[0] instanceof TextContent ? $pretty->content[0]->text : null, json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        Assert::same($compact->content[0] instanceof TextContent ? $compact->content[0]->text : null, '{"city":"Rome","tags":["a/b","ü"]}');
+        Assert::same($pretty->structuredContent, $result);
+    }
+
     private function reference(?array $outputSchema = null): ToolReference
     {
         return new ToolReference(
@@ -203,10 +234,12 @@ final class CompactToolResultFormatterTest
     {
         $reference = $this->reference($outputSchema);
 
-        Assert::same(
-            CompactToolResultFormatter::format($result, $reference, $version)->structuredContent,
-            $reference->extractStructuredContent($result, $version),
-        );
+        $formatted = ToolResultTextFormatter::format($result, $reference, $version);
+        /** @var mixed $expected */
+        $expected = $reference->extractStructuredContent($result, $version);
+
+        Assert::same($formatted->hasStructuredContent(), $expected !== StructuredContent::Absent);
+        Assert::same($formatted->structuredContent, $expected === StructuredContent::Absent ? null : $expected);
     }
 
     public static function structuredContentAgreesWithTheSdkProvider(): iterable

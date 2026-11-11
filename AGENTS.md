@@ -10,9 +10,12 @@ in params, `McpServerFactory` reads the SDK's `#[McpTool]`/`#[McpResource]`
 attributes off their public methods and registers `[class, method]` handlers
 so instances are resolved through the Yii3 DI container. `McpAction` (PSR-15)
 serves the Streamable HTTP transport; `McpServeCommand` serves stdio;
-`SharedSecretMiddleware` guards the endpoint.
+`SharedSecretMiddleware` guards the endpoint (or `OAuth\BearerTokenMiddleware`
+for OAuth 2.1 bearer tokens).
 
 Public API: `McpServerFactory`, `McpAction`, `SharedSecretMiddleware`,
+`OAuth\BearerTokenMiddleware` (`OAuth\AuthorizedRequestHandler` and
+`OAuth\OAuthComponentFactory` are @internal),
 `McpServeCommand`, `McpListCommand`, `McpDoctorCommand`,
 `Doctor\{McpDoctor, DoctorReport, CheckResult, CheckStatus, CheckCategory}`,
 `Identity\{SecretResolverInterface, StaticSecretResolver;
@@ -85,28 +88,39 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   prose. `yiisoft/yii-console` is deliberately NOT a dependency: the params key
   is inert in an application without the console component. Any new console
   command joins that same block; do not move registration into `di.php`.
-- **`result_json => 'compact'` converts the tool result in
-  `InterceptingReferenceHandler::handleTool()`, AFTER the interceptor chain and
-  BEFORE the SDK's `CallToolHandler`** — the SDK skips both its pretty formatter
-  and `extractStructuredContent()` for a reference handler that already returns
-  a `CallToolResult`, which is the entire mechanism. The placement is
+- **`result_json` defaults to `'compact'`, which since SDK 0.10 IS the SDK's
+  own encoding; `'pretty'` (and any configured decorator) makes
+  `InterceptingReferenceHandler::handleTool()` build the result itself, AFTER
+  the interceptor chain and BEFORE the SDK's `CallToolHandler`** — the SDK
+  skips both its formatter and `extractStructuredContent()` for a reference
+  handler that already returns a `CallToolResult`, which is the entire
+  mechanism. Compact WITHOUT decorators returns the raw result and lets the
+  SDK format — never build it in-package unconditionally. The placement is
   load-bearing: interceptors (RBAC/audit), the cache and the size limit must
   keep seeing the RAW handler result they were written against.
-  `CompactToolResultFormatter` (@internal) must stay a branch-for-branch mirror
-  of the SDK's `ToolResultFormatter::format()` TEXT branches (Content
-  pass-through, mixed-array per-item formatting, scalar/null/bool sentinels,
-  `JSON_INVALID_UTF8_SUBSTITUTE`); re-diff it on every SDK pin bump.
+  `ToolResultTextFormatter` (@internal, was `CompactToolResultFormatter`)
+  must stay a branch-for-branch mirror of the SDK's
+  `CallToolHandler::handle()` (a null or scalar structured value is sent as
+  its JSON text, SEP-2106) and `ToolResultFormatter::format()` TEXT branches
+  (Content pass-through, mixed-array per-item formatting, scalar/null/bool
+  sentinels, `JSON_INVALID_UTF8_SUBSTITUTE`), differing only in
+  `JSON_PRETTY_PRINT` for `pretty`; re-diff both on every SDK pin bump.
+  `McpServerFactory` installs the handler when `result_json` is `pretty`.
   `structuredContent` is NOT mirrored but delegated to
   `ToolReference::extractStructuredContent($result, $protocolVersion)`: since
   SDK 0.8 the rule depends on the revision (a list is structured content only
   from 2026-07-28 on; before it strict clients reject the whole call). The 0.7
   copy of those rules drifted the moment 0.8 changed them —
-  `structuredContentAgreesWithTheSdk` compares the two per revision. A ready
+  `structuredContentAgreesWithTheSdk` compares the two per revision. Since
+  0.10 the SDK returns `StructuredContent::Absent` for "none" and
+  `CallToolResult` sends an explicit `null`: anything that rebuilds a result
+  (decorators, tests) passes `hasStructuredContent() ? structuredContent :
+  StructuredContent::Absent`. A ready
   `InputRequiredResult` (multi round-trip ask) passes through unformatted.
   Its property test compares the text with `json_encode(structuredContent)` at
   the ENCODING level on purpose: PHP decodes JSON numbers without a decimal
   point as ints, so `0.0` does not survive `json_decode(json_encode(0.0))` as a
-  float — true for the SDK's pretty path alike (PHP 8.5 encodes `0.0` as `0`).
+  float — true for the SDK's own path alike (PHP 8.5 encodes `0.0` as `0`).
 - **The two OpenAPI executors share `OperationRequestBuilder` and
   `OperationResponseDecoder` and must never grow transport-specific logic that
   the other one misses.** Everything a caller can observe before the send
@@ -139,19 +153,18 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   ACL bypass. Never reorder without preserving this.
 - **Result decorators run AFTER the chain and AFTER formatting, and never
   change anything by their mere presence.** `InterceptingReferenceHandler`
-  formats first (compact mode: `CompactToolResultFormatter`; pretty mode with
-  decorators: the SDK's own `formatResult()` + `extractStructuredContent()`
-  for the request's revision — a verbatim copy of `CallToolHandler`'s
-  branch), then hands the `CallToolResult` to each decorator in order. Pretty
-  mode WITHOUT decorators still returns the raw result and lets the SDK
-  format — never build it in-package unconditionally. An
+  formats first (`ToolResultTextFormatter` in the configured encoding — a
+  copy of `CallToolHandler`'s branch), then hands the `CallToolResult` to each
+  decorator in order. Compact mode WITHOUT decorators still returns the raw
+  result and lets the SDK format — never build it in-package
+  unconditionally. An
   `InputRequiredResult` returns before formatting and is never decorated.
   `McpServerFactory::create()` installs the handler when decorators alone are
   configured (otherwise they would be silently ignored). The regression guard
   is `ToolResultDecoratorTest::anIdentityDecoratorChangesNothing` — every
   result shape × both eras × both `result_json` modes compared whole against
   a server without decorators; re-run it on every SDK pin bump, it is what
-  proves the pretty copy still matches the SDK.
+  proves the in-package copy still matches the SDK.
 - **`ToolCallBudgetInterceptor` counts in two places, by era, and the
   stateless one is the reason the class exists.** Handshake era: in the
   session (initialize → TTL). Stateless 2026-07-28 era: the SDK hands every
@@ -247,14 +260,17 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   output buffers.
 - **A `text/event-stream` response leaves `McpAction` wrapped in
   `OutputBufferReleasingStream` (@internal), and the wrapper must stay.** The
-  SDK's stateless `StatelessResponder::sse()` (0.8.1) writes frames with
-  `flush()` but no `ob_flush()`; the `output_buffering` buffer PHP opens before
+  SDK's stateless `StatelessResponder::sse()` wrote frames with `flush()` but
+  no `ob_flush()` up to 0.8.1; the `output_buffering` buffer PHP opens before
   the application (4096 by default) and `yiisoft/psr-emitter` (ends only buffers
   above the level it recorded) would hold a whole `subscriptions/listen`
   stream until it closes (#74). The wrapper ends buffers right before the
-  SDK's callback writes; it never reads the stream itself. Fixed upstream
-  (modelcontextprotocol/php-sdk#520, `@ob_flush()` in `sse()`, merged
-  2026-10-05, not in 0.8.1): drop the wrapper once the pin includes it.
+  SDK's callback writes; it never reads the stream itself. SDK 0.10 carries the
+  upstream fix (modelcontextprotocol/php-sdk#520, `@ob_flush()` in `sse()`),
+  but `ob_flush()` only pushes the TOP buffer into the one below it — with
+  nested buffers (PHP's own `output_buffering` plus an application or emitter
+  buffer) the frame still waits. The wrapper stays until a runtime test under
+  PHP-FPM shows the SDK alone delivers frame by frame.
 - **`Resource\ResourceUpdateNotifier` has two delivery paths, one per era,
   and the SDK joins them nowhere.** The notification bus (SDK 0.8) feeds ONLY
   stateless `subscriptions/listen` streams; handshake sessions still get an
@@ -482,8 +498,17 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   regression guard. CSP domains themselves are passed through verbatim — the
   host enforces the policy and `definitions` is application-owned config, not
   client input.
-- **`mcp/sdk` is pinned `~0.8.1` (tilde, not caret).** There is no separately
-  maintained 3.x line. The SDK is experimental
+- **`mcp/sdk` is pinned `~0.10.0` (tilde, not caret).** There is no separately
+  maintained 4.x line. The 0.8 → 0.10 bump (5.0) moved every SDK class
+  (`Mcp\Server\Server`, `Mcp\Server\Capability\*`, `Mcp\Server\Exception\*`,
+  `Mcp\Schema\RequestMeta`), added `SessionInterface::isUnreadable()` and
+  `RegistryInterface::publishesListChanges()` (`GuardedRegistry` forwards it),
+  made a missing `Host` a 403, bumped `MessageInterface::PROTOCOL_VERSION` to
+  2026-07-28 (the tester uses `ProtocolVersion::latestHandshake()`), refuses
+  `tools/call` arguments that are not a JSON object, keeps nested JSON
+  objects as `\stdClass` (`ArgumentMasker` and the cache key walk them),
+  encodes results compactly and suspends with `NotificationSuspension`
+  objects. The SDK is experimental
   until 1.0; minors are breaking. Bumping the pin is a deliberate act: re-run
   the full test suite (it exercises real SDK behavior end-to-end) and expect
   API drift. After SDK 1.0 → `^1.0` and a major of this package. The 0.6.0 →
@@ -518,9 +543,13 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   application-specific default directory (`Session\SessionDirectory`,
   derived from `server_name`); do not "simplify" either away.
 - **Sessions are bound to the client that created them; the binding is
-  immutable and enforced in TWO places — keep both.** The SDK only checks
-  that a presented session UUID exists, and the UUID leaks into proxy/client
-  logs via the HTTP header. (1) `McpAction` stamps
+  immutable and enforced in THREE places — keep all.** The session UUID leaks
+  into proxy/client logs via the HTTP header. (0) Since SDK 0.10 the SDK binds
+  a handshake-era session to its principal: `McpAction` hands it the resolved
+  client id as `StreamableHttpTransport::PRINCIPAL_ATTRIBUTE` (unless a front
+  middleware — OAuth — already set one); it is the only layer left when no
+  session store is passed to `McpAction`
+  (`theSdkRefusesAForeignClientEvenWithoutTheOwnGuard`). (1) `McpAction` stamps
   `InterceptingReferenceHandler::CLIENT_ID_SESSION_KEY` as the owner right
   AFTER the initialize response (never first-call binding — whoever replays
   a fresh session id first would claim it) and answers the SDK's own 404
@@ -554,8 +583,27 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   session's immutable owner is (it travels with the request and survives
   Fiber interleaving); the holder covers only sessionless calls and
   sessions with no recorded owner, and a holder/owner disagreement fails
-  closed. Do not read it outside `InterceptingReferenceHandler`, and never
-  store the raw secret in it.
+  closed. Do not read it outside `InterceptingReferenceHandler` and
+  `ClientBoundRequestStateBinder` (@internal), and never store the raw secret
+  in it. The binder is the one other reader because it has no session to read
+  from: on the stateless era the SDK hands a `RequestStateBinderInterface`
+  only the JSON-RPC request and an OAuth token, and behind
+  `SharedSecretMiddleware` there is no token — without the holder a
+  `requestState` minted for one client would verify for another
+  (`aStateReplayedByAnotherClientDoesNotVerify`).
+- **OAuth: a token never becomes an anonymous request.**
+  `OAuth\BearerTokenMiddleware` puts the SDK's `AuthorizationMiddleware` first
+  (validation, `WWW-Authenticate` challenges, scopes — never re-implement
+  them here) and `OAuth\AuthorizedRequestHandler` behind it turns the
+  configured identity (`principal` | `client_id` | `subject`) into
+  `SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE`; a token WITHOUT that claim is
+  answered 401 `invalid_token`, never passed on with a null client id.
+  `OAuth\OAuthComponentFactory` validates the cheap params (resource, servers,
+  scopes) BEFORE building the validator, so a typo names its param instead of
+  surfacing as a cache/HTTP failure; the package ships OAuth unconfigured and
+  resolving the guard from those defaults throws. `firebase/php-jwt` is only
+  suggested (JWT validation through `JwtTokenValidator::fromIssuer()`), so the
+  factory checks for it and names the package; `psr/cache` is required.
 - **Six classes are covered by property tests, and the properties are the
   contract — not the examples.** `Utf8::cut()` (budget, encodability, prefix
   relation), `OpenApi\ToolNameValidator` (charset + length; stated

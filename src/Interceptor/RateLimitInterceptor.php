@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Interceptor;
 
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\ToolCallException;
 
 /**
  * Delegates per-client/per-tool limits to the application's rate limiter via

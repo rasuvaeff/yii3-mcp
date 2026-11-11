@@ -141,7 +141,7 @@ final class SessionOwnershipTest
     {
         $request = (new ServerRequest(
             method: 'POST',
-            uri: '/mcp',
+            uri: 'http://localhost/mcp',
             headers: ['Content-Type' => 'application/json', 'Accept' => 'application/json, text/event-stream'],
             body: new StubStream(content: 'x', throwOnRead: true),
         ))->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-a');
@@ -186,7 +186,7 @@ final class SessionOwnershipTest
     {
         $sessionId = $this->initialize('client-a');
 
-        $delete = (new ServerRequest(method: 'DELETE', uri: '/mcp'))
+        $delete = (new ServerRequest(method: 'DELETE', uri: 'http://localhost/mcp'))
             ->withHeader('Mcp-Session-Id', $sessionId)
             ->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-b');
 
@@ -201,7 +201,7 @@ final class SessionOwnershipTest
     {
         $sessionId = $this->initialize('client-a');
 
-        $delete = (new ServerRequest(method: 'DELETE', uri: '/mcp'))
+        $delete = (new ServerRequest(method: 'DELETE', uri: 'http://localhost/mcp'))
             ->withHeader('Mcp-Session-Id', $sessionId)
             ->withAttribute(SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE, 'client-a');
 
@@ -247,6 +247,49 @@ final class SessionOwnershipTest
         $response = $action->handle($this->initializeRequest('client-a'));
 
         Assert::same($response->getStatusCode(), 200);
+    }
+
+    /**
+     * Second line: without the session store the package's own guard is
+     * inert, and the SDK's principal binding (0.10) still refuses a foreign
+     * client — the client id is handed to it as the session's principal.
+     */
+    public function theSdkRefusesAForeignClientEvenWithoutTheOwnGuard(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([CountingTool::class => $this->tool]),
+            sessionStore: $this->store,
+        ))->create([CountingTool::class]);
+        $action = new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory);
+
+        $sessionId = $action->handle($this->initializeRequest('client-a'))->getHeaderLine('Mcp-Session-Id');
+
+        Assert::same($action->handle($this->callRequest($sessionId, 'client-b'))->getStatusCode(), 404);
+        Assert::same($this->tool->calls, 0);
+        Assert::same($action->handle($this->callRequest($sessionId, 'client-a'))->getStatusCode(), 200);
+        Assert::same($this->tool->calls, 1);
+    }
+
+    /**
+     * A principal set in front (OAuth) wins: the client id does not
+     * overwrite it, so two clients of one principal share its sessions as
+     * far as the SDK is concerned.
+     */
+    public function aPrincipalSetInFrontIsKept(): void
+    {
+        $factory = new Psr17Factory();
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([CountingTool::class => $this->tool]),
+            sessionStore: $this->store,
+        ))->create([CountingTool::class]);
+        $action = new McpAction(server: $server, responseFactory: $factory, streamFactory: $factory);
+        $principal = \Mcp\Server\Transport\StreamableHttpTransport::PRINCIPAL_ATTRIBUTE;
+
+        $sessionId = $action->handle($this->initializeRequest('client-a')->withAttribute($principal, 'front'))->getHeaderLine('Mcp-Session-Id');
+
+        Assert::same($action->handle($this->callRequest($sessionId, 'client-b')->withAttribute($principal, 'front'))->getStatusCode(), 200);
+        Assert::same($action->handle($this->callRequest($sessionId, 'client-b'))->getStatusCode(), 404);
     }
 
     public function foreignClientIsPassedToTheSdkWhenTheSessionIsMissingFromTheStore(): void
@@ -414,7 +457,7 @@ final class SessionOwnershipTest
     {
         $request = new ServerRequest(
             method: 'POST',
-            uri: '/mcp',
+            uri: 'http://localhost/mcp',
             headers: [
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json, text/event-stream',

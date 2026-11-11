@@ -77,6 +77,12 @@ final class FakeSession implements SessionInterface
     }
 
     #[\Override]
+    public function isUnreadable(): bool
+    {
+        return false;
+    }
+
+    #[\Override]
     public function hydrate(array $attributes): void
     {
         $this->attributes = $attributes;

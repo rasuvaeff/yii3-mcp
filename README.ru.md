@@ -31,7 +31,8 @@ Yii3 DI-контейнер.
 | Требование | Версия |
 |------------|--------|
 | PHP | 8.3 - 8.5 |
-| `mcp/sdk` | `~0.8.1` (экспериментальный до 1.0 — отсюда tilde-пин) |
+| `mcp/sdk` | `~0.10.0` (экспериментальный до 1.0 — отсюда tilde-пин) |
+| `firebase/php-jwt` | необязательно, `^7.0`: проверка JWT для OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 через `initialize` (согласуется), 2026-07-28 stateless |
 | `ext-fileinfo` | требуется SDK |
 
@@ -75,7 +76,7 @@ composer require rasuvaeff/yii3-mcp
 собственными attributes SDK: пакет не создаёт собственных protocol structures.
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
 {
@@ -242,6 +243,15 @@ capabilities. Передавайте `RequestContext` в метод, а не в 
 - Больше одного вопроса за вызов переносят прежние ответы между раундами в
   подписанном `requestState`: задайте `request_state.key` (не короче 32 байт, из
   окружения). Без ключа первый вопрос работает, второй валит вызов.
+- Состояние **привязано** (`request_state.bind`, включено по умолчанию) к
+  запросу, для которого выпущено, — метод, tool, digest аргументов, OAuth
+  principal — и к разрешённому client id: состояние, повторённое другим
+  клиентом или с другими аргументами, не проходит проверку. Состояния,
+  выпущенные до включения привязки, один раз перестают проверяться.
+- **Ротация**: при смене `key` перенесите старый ключ в
+  `request_state.previous_keys` — прежние ключи проверяют состояние, но
+  никогда его не подписывают, так что идущие вызовы переживают смену; уберите
+  старый ключ через `ttl`.
 - Каждый раунд — это `tools/call`: interceptors выполняются на каждом раунде, и
   tool-call budget считает каждый (один вопрос стоит двух). Ответы не
   подписаны, поэтому budget, пропускающий «повторы», обходился бы любым клиентом.
@@ -253,7 +263,12 @@ capabilities. Передавайте `RequestContext` в метод, а не в 
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    'request_state' => ['key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '', 'ttl' => 600],
+    'request_state' => [
+        'key' => $_ENV['MCP_REQUEST_STATE_KEY'] ?? '',
+        'ttl' => 600,
+        'previous_keys' => [],   // старые ключи на время ротации
+        'bind' => true,          // привязать состояние к запросу и клиенту
+    ],
 ],
 ```
 
@@ -316,6 +331,10 @@ MCP-клиент подключается с секретом в заголов�
     }
 }
 ```
+
+Клиенты, которые аутентифицируются по OAuth 2.1, вместо этого ставят
+`BearerTokenMiddleware` перед action — см.
+[OAuth 2.1 resource server](#oauth-21-resource-server).
 
 ### stdio для локальной разработки
 
@@ -436,6 +455,15 @@ SDK сам проверяет лишь существование предъяв
 получает тот же 404, что и отсутствующая: неотличимо от истёкшей.
 Развёртывания без client identity (только network ACL) не затронуты.
 
+С SDK 0.10 сам SDK тоже привязывает handshake-сессию к её **principal**:
+`McpAction` передаёт ему разрешённый client id
+(`StreamableHttpTransport::PRINCIPAL_ATTRIBUTE`, если его ещё не поставил
+middleware впереди, например `BearerTokenMiddleware`), поэтому чужой клиент
+отклоняется даже там, где собственная проверка пакета не работает (в
+`McpAction` не передан session store). Сессия, открытая до обновления, не
+несёт principal и один раз получает 404; клиент просто проходит `initialize`
+заново.
+
 ### Prompts из Markdown-файлов
 
 Prompts - это content, а не code: храните их в directory, и каждый `*.md`
@@ -489,7 +517,7 @@ prompt.
 `#[CompletionProvider]` — никакого API yii3-mcp здесь не участвует:
 
 ```php
-use Mcp\Capability\Attribute\CompletionProvider;
+use Mcp\Server\Capability\Attribute\CompletionProvider;
 
 #[McpPrompt(name: 'review')]
 public function review(
@@ -507,7 +535,7 @@ public function report(
 |---|---|
 | `values: [...]` | фиксированный список, матчится по префиксу |
 | `enum: BackedEnum::class` | кейсы enum |
-| `provider: Foo::class` | `Mcp\Capability\Completion\ProviderInterface`, **резолвится через DI-контейнер** — можно ходить в репозиторий или сервис фича-флагов |
+| `provider: Foo::class` | `Mcp\Server\Capability\Completion\ProviderInterface`, **резолвится через DI-контейнер** — можно ходить в репозиторий или сервис фича-флагов |
 
 На аргумент — ровно одна из трёх форм; capability анонсируется автоматически.
 Completions подчиняются `prompt_visibility` / `resource_visibility`: промпт или
@@ -537,12 +565,18 @@ interceptor.
     // stateless-эра: отклонять запросы, чьи стандартные заголовки противоречат телу
     'header_validation' => true,
     // как array/object результаты tools кодируются в текст, который читает
-    // агент: 'pretty' (по умолчанию, форматирование самого SDK) или 'compact'
-    // — без отступов, ~3x меньше байт; на structuredContent не влияет.
+    // агент: 'compact' (по умолчанию, собственная кодировка SDK с 0.10) или
+    // 'pretty' — с отступами, ~3x больше байт; на structuredContent не влияет.
     // Неподдерживаемое значение падает на загрузке конфига.
-    'result_json' => 'pretty',
+    'result_json' => 'compact',
 ],
 ```
+
+Привязка `Mcp\Server\Fiber\FiberContextInterface` в контейнере
+автоматически попадает в `McpServerFactory` и передаётся в
+`Builder::setFiberContext()` SDK: она переносит контекст выполнения — активный
+контекст OpenTelemetry, correlation id — в fiber'ы, в которых работают
+handler'ы tools, prompts и resources. По умолчанию ничего не привязано.
 
 ### Подписки на ресурсы
 
@@ -570,9 +604,10 @@ public function cancel(string $orderId, RequestContext $context): string
 ```php
 'rasuvaeff/yii3-mcp' => [
     'notifications' => [
-        // '' = нет (listen-потоки ничего не несут), 'psr16' = через PSR-16 cache
-        // контейнера (PHP-FPM: публикующий и слушающий — разные воркеры),
-        // 'memory' = один процесс (stdio, постоянный рантайм)
+        // '' = нет (listen-потоки ничего не несут), 'psr16' / 'psr6' = через
+        // PSR-16 cache / PSR-6 pool контейнера (PHP-FPM: публикующий и
+        // слушающий — разные воркеры), 'memory' = один процесс (stdio,
+        // постоянный рантайм)
         'bus' => 'psr16',
         // сколько секунд держится listen-поток; под PHP-FPM он столько же
         // держит воркер — держите ниже max_execution_time
@@ -700,7 +735,7 @@ final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 ],
 ```
 
-Исключение `Mcp\Exception\ToolCallException` из interceptor отклоняет вызов
+Исключение `Mcp\Server\Exception\ToolCallException` из interceptor отклоняет вызов
 обычным MCP tool-error envelope, с объяснением для агента. Любое другое
 исключение становится непрозрачной internal error.
 
@@ -714,7 +749,8 @@ audit record - не должно содержать secrets. `Interceptor\Argume
 `session_token`/`auth_token` (и написание через дефис `access-token`),
 `client_secret`, `private_key`, `credit_card` по умолчанию, без учёта
 регистра - `ApiKey`/`X-Api-Key` тоже матчатся - и на **каждом** уровне
-вложенности) на `***`.
+вложенности: и в массивах, и в объектах `\stdClass`, которыми SDK 0.10
+передаёт вложенные JSON-объекты) на `***`.
 
 ```php
 use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
@@ -789,30 +825,32 @@ JSON-encoded байты. Он ограничивает то, что попада
 агента; память worker-а при ПРОИЗВОДСТВЕ результата ограничивается отдельно
 через `openapi.max_response_bytes`.
 
-#### Компактный JSON результатов tools
+#### Компактный и pretty JSON результатов tools
 
-SDK сериализует array/object результат tool с `JSON_PRETTY_PRINT` — это ~3x
-байт против компактной записи того же payload: страница поиска из 20 карточек
-стоит агенту десятки килобайт чистых отступов. Опционально:
+С SDK 0.10 сам SDK кодирует array/object результат tool компактным JSON, и
+это умолчание пакета. Pretty-текст — это ~3x байт против компактной записи
+того же payload: страница поиска из 20 карточек стоит агенту десятки
+килобайт чистых отступов, — но он доступен для клиентов, чьи пользователи
+читают сырой вывод tools:
 
 ```php
 'rasuvaeff/yii3-mcp' => [
-    // 'pretty' (по умолчанию, побайтово как у самого SDK) или 'compact':
-    // array/object результаты кодируются без отступов, с
-    // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE. Любое другое значение
-    // падает при загрузке конфига.
-    'result_json' => 'compact',
+    // 'compact' (по умолчанию, побайтово как собственная кодировка SDK:
+    // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) или 'pretty': пакет
+    // перекодирует array/object результаты с JSON_PRETTY_PRINT. Любое другое
+    // значение падает при загрузке конфига.
+    'result_json' => 'pretty',
 ],
 ```
 
-Что меняется — и что намеренно нет:
+Что меняет `pretty` — и что намеренно нет:
 
 - перекодируется только **text content** array/object результатов; string,
   int, float, bool и `null` результаты и результаты, уже являющиеся SDK
-  `Content`-объектами, отдаются ровно как раньше;
+  `Content`-объектами, отдаются ровно как в `compact`;
 - `structuredContent` по-прежнему строится для array результатов (tool с
-  `outputSchema` сохраняет структурированный вывод) — компактный текст это
-  просто JSON-кодировка того же payload;
+  `outputSchema` сохраняет структурированный вывод) — pretty-текст это
+  просто JSON-кодировка того же payload с отступами;
 - interceptors, cache tool-результатов и `limits.tool_result_bytes` видят
   **сырой** результат handler'а: конверсия происходит после цепочки
   interceptors, ровно перед тем, как SDK стал бы форматировать результат.
@@ -877,6 +915,7 @@ content рядом с ним, не повторяя форматирование
 
 ```php
 use Mcp\Schema\Content\ResourceLink;
+use Mcp\Schema\Enum\StructuredContent;
 use Mcp\Schema\Result\CallToolResult;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
@@ -895,7 +934,13 @@ final readonly class CreatorLinks implements ToolResultDecoratorInterface
             $links[] = new ResourceLink(uri: 'app://creator/' . $item['slug'], name: $item['slug']);
         }
 
-        return new CallToolResult([...$result->content, ...$links], $result->isError, $result->structuredContent, $result->meta);
+        return new CallToolResult(
+            [...$result->content, ...$links],
+            $result->isError,
+            // с SDK 0.10 явный null ОТПРАВЛЯЕТСЯ как structuredContent: без него передавайте Absent
+            $result->hasStructuredContent() ? $result->structuredContent : StructuredContent::Absent,
+            $result->meta,
+        );
     }
 }
 ```
@@ -914,17 +959,21 @@ final readonly class CreatorLinks implements ToolResultDecoratorInterface
 - Добавленное decorator'ом не считается в `limits.tool_result_bytes` -
   лимит меряет сырой результат внутри цепочки.
 - `structuredContent` не трогать, если `outputSchema` tool'а не описывает
-  новое значение: клиенты его валидируют.
+  новое значение: клиенты его валидируют. Собирая новый `CallToolResult`,
+  передавайте `StructuredContent::Absent` для результата без структурированного
+  содержимого — обычный `null` уходит как `"structuredContent": null`.
 - Вопрос многораундового вызова (`input_required`) не декорируется,
   результат последнего раунда - декорируется. `ToolCallException` до
   decorator'а не доходит (SDK превращает его в error envelope после
   handler'а); `CallToolResult::error()`, возвращённый самим handler'ом, -
   доходит, проверяйте `$result->isError`.
-- В режиме `pretty` пакет собирает результат ровно как SDK (`formatResult()`
-  + `extractStructuredContent()` для ревизии запроса), но только если
-  настроен хотя бы один decorator; предупреждение SDK о значении, которое не
-  может быть `structuredContent` при объявленном `outputSchema`, на этом пути
-  (как и в режиме `compact`) не логируется.
+- С decorators (и всегда в режиме `pretty`) пакет собирает результат ровно
+  как `CallToolHandler` SDK — structured content через
+  `extractStructuredContent()` SDK для ревизии запроса, примитивное
+  структурированное значение несётся своим JSON-текстом (SEP-2106) — в
+  настроенной кодировке; предупреждение SDK о значении, которое не может быть
+  `structuredContent` при объявленном `outputSchema`, на этом пути не
+  логируется.
 - Без `yiisoft/config` - `McpServerFactory::create(resultDecorators: [...])`.
 
 ### Client identity и ротация секретов
@@ -1115,8 +1164,8 @@ interceptor chain и visibility filter — отдельные интерфейс
 - `Interceptor\PromptGetContext` несёт имя prompt, arguments, session и
   client id; `Interceptor\ResourceReadContext` — URI, RFC 6570 variables из
   template (с совпавшим `uriTemplate`) и те же identity-поля.
-- Отклонение: бросьте `Mcp\Exception\PromptGetException` /
-  `Mcp\Exception\ResourceReadException` — клиент увидит сообщение.
+- Отклонение: бросьте `Mcp\Server\Exception\PromptGetException` /
+  `Mcp\Server\Exception\ResourceReadException` — клиент увидит сообщение.
   Скрытие: visibility (или брошенное `*NotFoundException`) отвечает
   **not found**, неотличимо от несуществующей capability — клиент,
   угадавший скрытое имя prompt или URI, не узнаёт ничего, а вызов не
@@ -1702,6 +1751,7 @@ public function refresh(): string { /* … */ }
 | `Exception\SessionOwnershipException` | capability call пришёл с client identity, отличной от неизменяемого владельца session (fail-closed) |
 | `Exception\DuplicateCapabilityException` | две регистрации capability разрешились в одну identity — build падает вместо тихого last-write-wins SDK |
 | `SharedSecretMiddleware` | fail-closed `hash_equals()` guard; пустой secret отклоняет все requests с поясняющим 503; client id резолвится через `Identity\SecretResolverInterface` |
+| `OAuth\BearerTokenMiddleware` | guard OAuth 2.1 resource server поверх `AuthorizationMiddleware` SDK: проверяются токен, audience, issuer и скоупы, идентичность токена (principal / client_id / subject) становится client id; токен без этого claim получает 401 |
 | `Identity\SecretResolverInterface` / `Identity\StaticSecretResolver` | несколько клиентов на endpoint + ротация секретов (несколько активных секретов на client id); constant-time сравнение, сырой секрет не уходит дальше middleware |
 | `Interceptor\ToolCallLimiterInterface` / `Interceptor\RateLimitInterceptor` | порт + адаптер, делегирующие per-client/per-tool лимиты rate limiter'у приложения; fail-closed при аварии limiter'а |
 | `McpServeCommand` | `mcp:serve`, stdio transport для локальных MCP clients |
@@ -1737,18 +1787,105 @@ public function refresh(): string { /* … */ }
 | `Apps\McpAppsConfigurator` | анонсирует extension MCP Apps и регистрирует декларативные `ui://` app-ресурсы (params `apps`) |
 | `Apps\AppDefinition` | одно декларативное приложение: `ui://` URI, имя, HTML (строка или `Closure(): string`) и его `UiResourceContentMeta` |
 
+## OAuth 2.1 resource server
+
+Альтернатива shared secrets: MCP endpoint принимает access tokens, которые
+authorization server выпустил для него (MCP authorization spec, метаданные
+RFC 9728, challenges RFC 6750). Проверку, challenges `WWW-Authenticate` и
+скоупы по методу и по tool делает собственный `AuthorizationMiddleware` SDK;
+`OAuth\BearerTokenMiddleware` оборачивает его и превращает идентичность
+токена в **client id**, поэтому владение сессией, visibility, tool-call
+budget, ключ result cache и мосты audit/RBAC/telemetry работают ровно как с
+`client_secrets`.
+
+```bash
+composer require firebase/php-jwt   # проверка JWT; не нужен со своим validator
+```
+
+```php
+// config/params.php
+'rasuvaeff/yii3-mcp' => [
+    'oauth' => [
+        // канонический URI endpoint; '' = OAuth не настроен
+        'resource' => 'https://mcp.example.com/mcp',
+        // issuers, чьи токены принимаются (хотя бы один)
+        'authorization_servers' => ['https://auth.example.com'],
+        'issuer' => '',              // ожидаемый `iss`; '' = первый authorization server
+        'audience' => [],            // принимаемые `aud`; [] = resource
+        'algorithms' => ['RS256'],
+        'token_type' => '',          // обязательный `typ`, например 'at+jwt' (RFC 9068); '' — без проверки
+        'leeway' => 0,               // допустимый сдвиг часов, секунды
+        'scope_claim' => 'scope',
+        'scopes_supported' => ['mcp'],   // объявляются в метаданных и в challenge 401
+        'scopes' => [
+            'default' => ['mcp'],                         // каждый запрос
+            'methods' => ['tools/call' => ['mcp:tools']], // по JSON-RPC методу
+            'tools' => ['order.cancel' => ['orders:write']], // по имени tool
+            'implies' => ['orders:admin' => ['orders:write']], // выданный ключ даёт свой список
+        ],
+        // что становится client id: 'principal' (issuer + client + subject),
+        // 'client_id' (client_id, иначе azp) или 'subject' (sub)
+        'identity' => 'principal',
+        'validator' => '',   // service id своего AuthorizationTokenValidatorInterface
+        'cache' => '',       // service id PSR-6 pool; '' = Psr\Cache\CacheItemPoolInterface
+        'resource_name' => 'Orders',
+        'resource_documentation' => 'https://example.com/docs/mcp',
+    ],
+],
+```
+
+```php
+// config/routes.php
+use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
+use Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware;
+
+Route::methods(['POST', 'GET', 'DELETE', 'OPTIONS'], '/mcp')
+    ->middleware(BearerTokenMiddleware::class)
+    ->action(McpAction::class),
+// RFC 9728: путь, который выводится из resource — /.well-known/oauth-protected-resource + путь endpoint
+Route::get('/.well-known/oauth-protected-resource/mcp')
+    ->action(ProtectedResourceMetadataHandler::class),
+```
+
+- **Проверка.** Без `oauth.validator` токен — это JWT, проверяемый ключами
+  issuer: SDK читает discovery-документ issuer
+  (`/.well-known/oauth-authorization-server`, затем `openid-configuration`),
+  забирает его JWKS и кеширует оба в PSR-6 pool (обновление ключей с лимитом
+  частоты). Использует PSR-18 `ClientInterface` и `RequestFactoryInterface`
+  контейнера, если они привязаны. Opaque tokens или introspection:
+  привяжите свой `Mcp\Server\Transport\Http\OAuth\AuthorizationTokenValidatorInterface`
+  и назовите его в `oauth.validator`.
+- **Ответы.** Нет токена или другая схема → 401 с `resource_metadata="…"`;
+  невалидный, просроченный, с чужим audience или issuer токен → 401
+  `invalid_token`; не хватает скоупа → 403 `insufficient_scope` с нужными
+  скоупами; ключи не получить → 503 с `Retry-After`.
+- **Идентичность.** Токен без claim, который называет `identity` (например,
+  без `sub` при `'subject'`), отклоняется 401 `invalid_token` — никогда не
+  обслуживается анонимно. При `'principal'` client id — непрозрачная строка
+  из issuer, client и subject; выберите `'client_id'` или `'subject'`, если
+  роли RBAC или записи аудита должны называть его читаемо.
+- **Сессии** привязываются к principal токена самим SDK и к client id
+  пакетом; проверенный `AccessToken` доступен handler'у через
+  `RequestContext::getAccessToken()` (скоупы, claims).
+- **Ошибка конфигурации падает при сборке** с именем параметра: нет
+  `resource`, нет authorization server, неизвестный ключ `scopes`, validator
+  или cache не того типа, нет `firebase/php-jwt`. Пакет поставляет OAuth
+  ненастроенным; разрешение `BearerTokenMiddleware` из умолчаний бросает
+  исключение, а не пропускает запросы.
+
 ## Безопасность
 
 - **Endpoint только для доверенных клиентов.** MCP tools исполняют application
   code; относитесь к endpoint как к admin API. Поставляйте его за
-  `SharedSecretMiddleware` (пустой secret отклоняет каждый request поясняющим
-  503) или за явным network ACL.
+  `SharedSecretMiddleware` или `OAuth\BearerTokenMiddleware` (пустой secret
+  отклоняет каждый request поясняющим 503) или за явным network ACL.
 - SDK возвращает tool errors как MCP error envelopes, поэтому internals не
   раскрываются в 500 traces.
 - Core по умолчанию **не регистрирует tools**: каждая опубликованная operation
   является явной записью `params['rasuvaeff/yii3-mcp']['tools']`.
 - **Sessions привязаны к создавшему их клиенту** (неизменяемый владелец
-  ставится при `initialize` и проверяется перед каждым POST/DELETE):
+  ставится при `initialize` и проверяется перед каждым POST/DELETE, а за ним —
+  собственная привязка SDK к principal):
   утёкший `Mcp-Session-Id` сам по себе не даёт другому аутентифицированному
   клиенту действовать в чужой session или уничтожить её. Session files —
   owner-only (`0700` dir, `0600` files) в application-specific directory.
@@ -1763,8 +1900,12 @@ public function refresh(): string { /* … */ }
   чтение), подставленные prompts (`limits.prompt_result_bytes`,
   арифметическая пре-проверка), spec documents (10 MiB + бюджет
   глубины/узлов `$ref`) и tool results (`limits.tool_result_bytes`).
-- OAuth из MCP authorization spec намеренно вне scope до стабилизации
-  спецификации; используйте только shared-secret/ACL.
+- **OAuth 2.1** через `OAuth\BearerTokenMiddleware` (части resource server
+  из SDK): токен, audience, issuer и скоупы проверяются до запуска
+  transport; см. [OAuth 2.1 resource server](#oauth-21-resource-server).
+- Вложенные аргументы tools маскируются на любой глубине, включая объекты
+  (`ArgumentMasker`), а `requestState` многораундового вызова привязан к
+  своему запросу и клиенту.
 
 ## Примеры
 
@@ -1802,6 +1943,13 @@ $tester->listPrompts();               // все prompt definitions
 $tester->readResource('app://x');     // resource contents
 $tester->request('custom/method');     // любой raw JSON-RPC method
 ```
+
+Без ревизии tester говорит на самой новой **handshake**-ревизии
+(`ProtocolVersion::latestHandshake()`; `MessageInterface::PROTOCOL_VERSION`
+SDK с 0.9 — stateless 2026-07-28). Он обращается к `http://localhost/mcp`,
+поэтому запрос несёт `Host`, который пропускает DNS-rebinding-защита SDK —
+запрос без него с SDK 0.9 отклоняется, — и отправляет пустые аргументы tool
+как `{}` (JSON-массив отклоняется с `-32602`).
 
 Пятый аргумент задаёт ревизию протокола, шестой — `ClientCapabilities`, чтобы
 тестировать tool, который спрашивает пользователя

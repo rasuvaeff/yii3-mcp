@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Capability\Attribute\McpPrompt;
+use Mcp\Server\Capability\Attribute\McpPrompt;
 
 final readonly class OnlyPromptTool
 {

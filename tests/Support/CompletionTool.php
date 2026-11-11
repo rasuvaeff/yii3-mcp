@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Mcp\Capability\Attribute\CompletionProvider;
-use Mcp\Capability\Attribute\McpPrompt;
-use Mcp\Capability\Attribute\McpResourceTemplate;
+use Mcp\Server\Capability\Attribute\CompletionProvider;
+use Mcp\Server\Capability\Attribute\McpPrompt;
+use Mcp\Server\Capability\Attribute\McpResourceTemplate;
 
 /**
  * Argument autocompletion (completion/complete): a prompt argument and a

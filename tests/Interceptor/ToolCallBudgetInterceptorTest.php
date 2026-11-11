@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
 use InvalidArgumentException;
-use Mcp\Exception\ToolCallException;
 use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Enum\ProtocolVersion;
-use Mcp\Server;
+use Mcp\Schema\RequestMeta;
+use Mcp\Server\Exception\ToolCallException;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
-use Mcp\Server\Stateless\RequestMeta;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;

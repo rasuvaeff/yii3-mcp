@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
-use Mcp\Exception\ToolCallException;
 use Mcp\Server\ClientGateway;
+use Mcp\Server\Exception\ToolCallException;
 use Mcp\Server\Handler\ToolHandlerInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidToolArgumentException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;

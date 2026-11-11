@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Doctor;
 
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Session\FileSessionStore;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionStoreInterface;
@@ -758,6 +758,14 @@ final class McpDoctorTest
 
         Assert::same($check->status, CheckStatus::Fail);
         Assert::string($check->details)->contains('Stateless tool-call budget, Notification bus');
+    }
+
+    public function aPsr6BusRequiresACachePool(): void
+    {
+        $check = $this->check($this->doctor(notificationBus: 'psr6')->diagnose(), 'service_cache_cacheitempoolinterface');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('Notification bus');
     }
 
     private function doctor(

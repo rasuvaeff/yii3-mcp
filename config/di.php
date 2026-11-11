@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 use Mcp\Schema\Enum\ProtocolVersion;
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
 use Mcp\Server\Subscription\NotificationBusInterface;
 use Mcp\Server\Subscription\Psr16NotificationBus;
+use Mcp\Server\Subscription\Psr6NotificationBus;
+use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -21,6 +24,8 @@ use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerAssembler;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware;
+use Rasuvaeff\Yii3Mcp\OAuth\OAuthComponentFactory;
 use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Yii3Mcp\Session\SessionDirectory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
@@ -43,7 +48,7 @@ $protocolVersion = $protocolVersionParam === ''
 
 // Same fail-early contract for the result-JSON knob: a typo like "compct"
 // would otherwise silently serve pretty-printed results forever.
-$resultJson = (string) ($params['rasuvaeff/yii3-mcp']['result_json'] ?? McpServerFactory::RESULT_JSON_PRETTY);
+$resultJson = (string) ($params['rasuvaeff/yii3-mcp']['result_json'] ?? McpServerFactory::RESULT_JSON_COMPACT);
 $compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETTY, McpServerFactory::RESULT_JSON_COMPACT], true)
     ? $resultJson === McpServerFactory::RESULT_JSON_COMPACT
     : throw new InvalidArgumentException(sprintf(
@@ -57,8 +62,8 @@ $compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETT
 // stateless listen streams silently empty.
 $notificationBus = (string) ($params['rasuvaeff/yii3-mcp']['notifications']['bus'] ?? '');
 
-if (!in_array($notificationBus, ['', 'psr16', 'memory'], true)) {
-    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, memory', $notificationBus));
+if (!in_array($notificationBus, ['', 'psr16', 'psr6', 'memory'], true)) {
+    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, psr6, memory', $notificationBus));
 }
 
 // Bound only when configured: McpServerFactory and ResourceUpdateNotifier take
@@ -71,6 +76,13 @@ $notificationBusDefinition = match ($notificationBus) {
         NotificationBusInterface::class => static fn(CacheInterface $cache): NotificationBusInterface => new Psr16NotificationBus(
             cache: $cache,
             // per application, short: PSR-16 guarantees 64-character keys
+            prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
+        ),
+    ],
+    'psr6' => [
+        NotificationBusInterface::class => static fn(CacheItemPoolInterface $cache): NotificationBusInterface => new Psr6NotificationBus(
+            cache: $cache,
+            // PSR-6 reserves the same characters and guarantees the same 64
             prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
         ),
     ],
@@ -120,6 +132,8 @@ return [
             'cachePolicy' => $cachePolicy,
             'requestStateKey' => (string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? ''),
             'requestStateTtl' => (int) ($params['rasuvaeff/yii3-mcp']['request_state']['ttl'] ?? 600),
+            'previousRequestStateKeys' => array_values(array_map(strval(...), (array) ($params['rasuvaeff/yii3-mcp']['request_state']['previous_keys'] ?? []))),
+            'bindRequestState' => (bool) ($params['rasuvaeff/yii3-mcp']['request_state']['bind'] ?? true),
             'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
         ],
     ],
@@ -170,6 +184,19 @@ return [
                 resolver: $clientSecrets === [] ? null : new StaticSecretResolver($clientSecrets),
             );
         },
+    ],
+    // resolved only when routed: an application without OAuth never builds them
+    BearerTokenMiddleware::class => [
+        'definition' => static fn (ContainerInterface $container): BearerTokenMiddleware => (new OAuthComponentFactory(
+            params: $params['rasuvaeff/yii3-mcp']['oauth'] ?? [],
+            container: $container,
+        ))->bearerTokenMiddleware(),
+    ],
+    ProtectedResourceMetadataHandler::class => [
+        'definition' => static fn (ContainerInterface $container): ProtectedResourceMetadataHandler => (new OAuthComponentFactory(
+            params: $params['rasuvaeff/yii3-mcp']['oauth'] ?? [],
+            container: $container,
+        ))->metadataHandler(),
     ],
     McpDoctor::class => [
         'definition' => static function (ContainerInterface $container) use ($params, $notificationBus): McpDoctor {

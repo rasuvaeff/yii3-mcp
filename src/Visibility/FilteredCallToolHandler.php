@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Visibility;
 
-use Mcp\Capability\RegistryInterface;
-use Mcp\Exception\ToolNotFoundException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
 use Mcp\Schema\JsonRpc\Response;
 use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Result\InputRequiredResult;
+use Mcp\Server\Capability\RegistryInterface;
+use Mcp\Server\Exception\ToolNotFoundException;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
 use Mcp\Server\Session\SessionInterface;
 

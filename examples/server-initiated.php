@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use Mcp\Capability\Attribute\McpTool;
 use Mcp\Schema\Elicitation\BooleanSchemaDefinition;
 use Mcp\Schema\Elicitation\ElicitationSchema;
 use Mcp\Schema\ToolAnnotations;
+use Mcp\Server\Capability\Attribute\McpTool;
 use Mcp\Server\RequestContext;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;

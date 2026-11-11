@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Benchmarks;
 
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;

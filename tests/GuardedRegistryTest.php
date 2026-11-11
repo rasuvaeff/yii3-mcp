@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
-use Mcp\Capability\Registry;
-use Mcp\Capability\Registry\ResourceTemplateReference;
-use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Schema\Prompt;
 use Mcp\Schema\ResourceDefinition;
 use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\Tool;
 use Mcp\Server\Builder;
+use Mcp\Server\Capability\Registry;
+use Mcp\Server\Capability\Registry\ResourceTemplateReference;
+use Mcp\Server\Exception\ResourceNotFoundException;
 use Mcp\Server\Session\InMemorySessionStore;
 use Psr\Log\NullLogger;
 use Rasuvaeff\Understudy\Arg;

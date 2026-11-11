@@ -10,10 +10,10 @@ namespace Rasuvaeff\Yii3Mcp\Interceptor;
  * Implementations run in configured order (first = outermost) and decide
  * whether to call $next: auditing, tracing, ACL.
  *
- * Throw {@see \Mcp\Exception\ResourceReadException} to reject the call with
+ * Throw {@see \Mcp\Server\Exception\ResourceReadException} to reject the call with
  * a client-visible message; any other exception becomes an opaque internal
  * error. To pretend the resource does not exist, throw
- * {@see \Mcp\Exception\ResourceNotFoundException}.
+ * {@see \Mcp\Server\Exception\ResourceNotFoundException}.
  *
  * @api
  */

@@ -258,6 +258,12 @@ jobs:
             echo "No previous tag - skipping BC check"
             exit 0
           fi
+          # 4.x pins mcp/sdk 0.8.x (GHSA-f4rf-6ghj-mhr6), which Composer's
+          # security blocking refuses to install: without this the baseline
+          # never installs, roave exits 1 and the major-bump branch below
+          # would pass without comparing anything. The baseline is only
+          # analysed, never run.
+          composer config --global --json policy.advisories.ignore-id '["PKSA-s52d-n7sx-trsg"]'
           CODE=0
           composer bc-check -- --from="$LATEST" || CODE=$?
           if [ "$CODE" -eq 0 ]; then

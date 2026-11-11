@@ -6,8 +6,8 @@ namespace Rasuvaeff\Yii3Mcp\Tests\Prompts;
 
 use Mcp\Schema\Content\PromptMessage;
 use Mcp\Schema\PromptArgument;
-use Mcp\Server;
 use Mcp\Server\ClientGateway;
+use Mcp\Server\Server;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;

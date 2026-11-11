@@ -108,6 +108,6 @@ Different entry points need different PSR services present in the container:
 
 `ServerRequestFactoryInterface` and `RequestFactoryInterface` are distinct
 PSR-17 contracts — binding one does not satisfy the other. Keep these bound
-in **every** config group that builds `Mcp\Server`, including the console
+in **every** config group that builds `Mcp\Server\Server`, including the console
 group used by `mcp:list`/`mcp:doctor`/`mcp:serve` — `mcp:doctor` reports a
 missing service by its exact interface name.

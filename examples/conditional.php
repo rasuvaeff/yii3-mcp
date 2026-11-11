@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Rasuvaeff\Yii3Mcp\ConditionalToolInterface;

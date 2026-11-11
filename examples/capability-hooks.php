@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use Mcp\Capability\Attribute\McpPrompt;
-use Mcp\Capability\Attribute\McpResource;
-use Mcp\Capability\Attribute\McpResourceTemplate;
-use Mcp\Exception\ResourceReadException;
 use Mcp\Schema\Prompt;
+use Mcp\Server\Capability\Attribute\McpPrompt;
+use Mcp\Server\Capability\Attribute\McpResource;
+use Mcp\Server\Capability\Attribute\McpResourceTemplate;
+use Mcp\Server\Exception\ResourceReadException;
 use Mcp\Server\Session\InMemorySessionStore;
 use Mcp\Server\Session\SessionInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;

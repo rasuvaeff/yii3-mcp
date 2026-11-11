@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Interceptor;
 
 use Mcp\Schema\ClientCapabilities;
+use Mcp\Schema\RequestMeta;
 use Mcp\Server\Stateless\InputContext;
-use Mcp\Server\Stateless\RequestMeta;
 use Rasuvaeff\Yii3Mcp\Interceptor\RequestEra;
 use Rasuvaeff\Yii3Mcp\Tests\Support\FakeSession;
 use Testo\Assert;

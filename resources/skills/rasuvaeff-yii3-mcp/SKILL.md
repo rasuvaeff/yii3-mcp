@@ -3,7 +3,8 @@ name: rasuvaeff-yii3-mcp
 description: >-
   Expose Yii3 application services as MCP tools/resources over the official
   mcp/sdk — McpServerFactory, McpAction (PSR-15 Streamable HTTP),
-  SharedSecretMiddleware, tool-call interceptors (ToolCallBudgetInterceptor,
+  SharedSecretMiddleware, OAuth\BearerTokenMiddleware (OAuth 2.1 resource
+  server), tool-call interceptors (ToolCallBudgetInterceptor,
   RateLimitInterceptor, ResponseSizeLimitInterceptor,
   CachingToolCallInterceptor, ArgumentMasker), tool-result decorators
   (ToolResultDecoratorInterface), tool visibility (name and
@@ -18,7 +19,10 @@ description: >-
 MCP server integration for Yii3: tool classes are listed in params, resolved
 through the DI container, served over PSR-15 Streamable HTTP or stdio.
 Namespace `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
-sessions) come from `mcp/sdk` (`~0.8.1`; minor = breaking) — never invent them.
+sessions, OAuth validation) come from `mcp/sdk` (`~0.10.0`; minor = breaking) —
+never invent them. SDK classes live under `Mcp\Server\*` (`Mcp\Server\Server`,
+`Mcp\Server\Capability\Attribute\McpTool`, `Mcp\Server\Exception\ToolCallException`)
+and `Mcp\Schema\*`.
 
 One endpoint serves two protocol eras (`modern_era`, default on): the
 handshake era (`initialize`, `Mcp-Session-Id`, state in the session) and the
@@ -29,10 +33,14 @@ stateless era: read the era with care, never assume a session persists.
 
 ## Safety rules — verify these on every change
 
-1. **The endpoint is trusted-only; `endpoint_secret` is mandatory.** Route
-   `McpAction` behind `SharedSecretMiddleware`. An empty secret means every
-   request gets an explanatory 503 (fail-closed) — never "fix" that into a
-   pass-through, and never put the raw secret in logs or responses.
+1. **The endpoint is trusted-only.** Route `McpAction` behind
+   `SharedSecretMiddleware` (`endpoint_secret`/`client_secrets`) or
+   `OAuth\BearerTokenMiddleware` (`oauth` params). An empty secret means
+   every request gets an explanatory 503 (fail-closed) — never "fix" that into
+   a pass-through, and never put the raw secret in logs or responses. With
+   OAuth, validation, challenges and scopes are the SDK's
+   `AuthorizationMiddleware` — don't re-implement them; a token without the
+   configured identity claim is refused (401), never served anonymously.
 
 2. **Tool visibility is fail-closed on both paths, and hidden ≡ missing.** A
    hidden tool is omitted from `tools/list` AND answered on `tools/call`
@@ -55,15 +63,18 @@ stateless era: read the era with care, never assume a session persists.
 4. **Mask arguments before logging/tracing/auditing.** Never log
    `ToolCallContext::$arguments` raw — pass them through `ArgumentMasker`
    (`password`, `secret`, `token`, `api_key`, `credit_card` by default; every
-   nesting level).
+   nesting level, arrays and the `\stdClass` objects SDK 0.10 passes for
+   nested JSON objects).
 
 5. **OpenAPI bridge rejects unsafe operations at build time.** Operations are
    an explicit allow-list of operationIds (empty = nothing exposed);
    `safeMethodsOnly: true` throws `UnsafeOperationException` for non-GET.
    Don't widen either default to "expose everything".
 
-6. **Sessions must stay FPM-safe.** The shipped default is `FileSessionStore`;
-   the SDK's in-memory store silently loses sessions between FPM workers.
+6. **Sessions must stay FPM-safe.** The shipped default is
+   `Session\PrivateFileSessionStore`; the SDK's in-memory store silently loses
+   sessions between FPM workers. Sessions are bound to their client (owner
+   stamp + the SDK's principal binding) — keep both.
 
 7. **Caching must never bypass RBAC/audit.** The interceptor chain order is
    fixed: tool-call budget → configured `interceptors` (RBAC, audit, …) →
@@ -91,12 +102,15 @@ stateless era: read the era with care, never assume a session persists.
    (`ToolResultDecoratorInterface::decorate(CallToolResult, ToolCallContext)`)
    get the formatted result after the whole chain — cache hits included,
    never an `input_required` ask, never a `ToolCallException`. Keep
-   `structuredContent` unless the tool's `outputSchema` still describes it.
+   `structuredContent` unless the tool's `outputSchema` still describes it;
+   when building a new `CallToolResult` pass
+   `$result->hasStructuredContent() ? $result->structuredContent : StructuredContent::Absent`
+   (an explicit `null` is sent).
 
 ## Canonical usage
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 use Rasuvaeff\Yii3Mcp\{McpServerFactory, McpAction, SharedSecretMiddleware};
 
 final readonly class OrderTools
@@ -116,13 +130,15 @@ $server = $factory->create([OrderTools::class]);
 Asking the user mid-call (`ClientGateway::elicit()`): on the stateless era
 the request ends with `input_required` and the handler RUNS AGAIN FROM THE TOP
 on the retry — keep side effects after the last ask. Two or more asks per call
-need `request_state.key` (>= 32 bytes, from env). Each round is a tools/call:
+need `request_state.key` (>= 32 bytes, from env); rotate by moving the old key
+to `request_state.previous_keys`; keep `request_state.bind` on (a state is tied
+to its request and client). Each round is a tools/call:
 interceptors and the budget count every round. `sample()`/`listRoots()` throw
 on 2026-07-28.
 
 Resource updates: `ResourceUpdateNotifier::notify($uri, ?$context)` publishes
-to the notification bus (`notifications.bus`: `psr16` under PHP-FPM, `memory`
-for one process) for stateless listen streams, and notifies the calling
+to the notification bus (`notifications.bus`: `psr16` or `psr6` under PHP-FPM,
+`memory` for one process) for stateless listen streams, and notifies the calling
 handshake session if subscribed. Without a bus stateless subscribers get
 nothing.
 
@@ -134,7 +150,9 @@ trace with `getTraceContext()`. Caching hints (`cache_policy`) stay `private`
 for anything a visibility filter makes per caller — the build enforces it.
 
 Testing without HTTP: `Testing\McpTester` (`callTool`, `listTools`, ...);
-a fifth argument picks the revision — `ProtocolVersion::V2026_07_28` drives
+without one it speaks the newest handshake revision
+(`ProtocolVersion::latestHandshake()`); a fifth argument picks the revision —
+`ProtocolVersion::V2026_07_28` drives
 the stateless era (test both eras for anything session- or identity-related);
 JSON-RPC errors throw `Testing\McpErrorException` (`errorCode`,
 `errorMessage`, `errorData`). Interceptor contexts expose

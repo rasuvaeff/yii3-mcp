@@ -122,6 +122,39 @@ final class CachingToolCallInterceptorTest
         Assert::same($calls, 1);
     }
 
+    public function nestedObjectKeyOrderIsCanonicalizedToo(): void
+    {
+        $interceptor = new CachingToolCallInterceptor($this->keyedCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        $interceptor->intercept($this->context('cachedTool', ['filter' => (object) ['a' => 1, 'b' => (object) ['x' => 1, 'y' => 2]]]), $handler);
+        $interceptor->intercept($this->context('cachedTool', ['filter' => (object) ['b' => (object) ['y' => 2, 'x' => 1], 'a' => 1]]), $handler);
+        $interceptor->intercept($this->context('cachedTool', ['filter' => (object) ['a' => 2, 'b' => (object) ['x' => 1, 'y' => 2]]]), $handler);
+
+        Assert::same($calls, 2);
+    }
+
+    public function anEmptyObjectAndAnEmptyListAreDifferentArguments(): void
+    {
+        $interceptor = new CachingToolCallInterceptor($this->keyedCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');
+        $calls = 0;
+        $handler = static function () use (&$calls): int {
+            ++$calls;
+
+            return $calls;
+        };
+
+        $interceptor->intercept($this->context('cachedTool', ['filter' => new \stdClass()]), $handler);
+        $interceptor->intercept($this->context('cachedTool', ['filter' => []]), $handler);
+
+        Assert::same($calls, 2);
+    }
+
     public function differentArgumentsGetDifferentCacheEntries(): void
     {
         $interceptor = new CachingToolCallInterceptor($this->keyedCache(), ttlSeconds: ['cachedTool' => 60], namespace: 'test-app');

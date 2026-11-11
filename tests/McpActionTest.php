@@ -369,7 +369,7 @@ final class McpActionTest
                 'jsonrpc' => '2.0',
                 'id' => 4,
                 'method' => 'tools/call',
-                'params' => ['name' => 'explode', 'arguments' => []],
+                'params' => ['name' => 'explode', 'arguments' => new \stdClass()],
             ],
             sessionId: $sessionId,
         ));
@@ -469,7 +469,7 @@ final class McpActionTest
     {
         $request = new ServerRequest(
             method: 'POST',
-            uri: '/mcp',
+            uri: 'http://localhost/mcp',
             headers: [
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json, text/event-stream',

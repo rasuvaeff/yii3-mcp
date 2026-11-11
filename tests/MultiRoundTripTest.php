@@ -8,6 +8,7 @@ use Mcp\Schema\ClientCapabilities;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server\Session\InMemorySessionStore;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Rasuvaeff\Yii3Mcp\Identity\ClientIdentityContext;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
@@ -20,6 +21,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingInterceptor;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
@@ -32,6 +34,7 @@ use Yiisoft\Test\Support\Container\SimpleContainer;
 #[Test]
 #[Covers(McpServerFactory::class)]
 #[Covers(McpTester::class)]
+#[Covers(\Rasuvaeff\Yii3Mcp\ClientBoundRequestStateBinder::class)]
 #[Covers(\Rasuvaeff\Yii3Mcp\Interceptor\InterceptingReferenceHandler::class)]
 final class MultiRoundTripTest
 {
@@ -108,6 +111,73 @@ final class MultiRoundTripTest
     }
 
     /**
+     * The state is bound to the client it was minted for (and to the tool and
+     * its arguments): another client replaying it gets it refused, and the
+     * call cannot go on with the first client's earlier answers.
+     */
+    public function aStateReplayedByAnotherClientDoesNotVerify(): void
+    {
+        foreach (['client-a' => true, 'client-b' => false] as $replayingClient => $verifies) {
+            $state = $this->secondRoundState('client-a', $this->tester(requestStateKey: self::KEY));
+
+            Assert::same($this->thirdRoundSucceeds($replayingClient, $this->tester(requestStateKey: self::KEY), $state), $verifies);
+        }
+
+        // without the binding a replay verifies — the 4.x behaviour
+        $state = $this->secondRoundState('client-a', $this->tester(requestStateKey: self::KEY, bind: false));
+        Assert::true($this->thirdRoundSucceeds('client-b', $this->tester(requestStateKey: self::KEY, bind: false), $state));
+    }
+
+    /**
+     * Key rotation: a state signed with the old key still verifies while that
+     * key is listed as a previous one, and stops verifying once it is dropped.
+     */
+    public function aStateSignedWithAPreviousKeyVerifiesUntilTheKeyIsDropped(): void
+    {
+        $newKey = 'the-next-request-state-signing-key-32-bytes+';
+        $state = $this->secondRoundState('client-a', $this->tester(requestStateKey: self::KEY));
+
+        Assert::true($this->thirdRoundSucceeds('client-a', $this->tester(requestStateKey: $newKey, previousKeys: [self::KEY]), $state));
+        Assert::false($this->thirdRoundSucceeds('client-a', $this->tester(requestStateKey: $newKey), $state));
+    }
+
+    public function previousKeysWithoutACurrentOneFailTheBuild(): void
+    {
+        Expect::exception(\InvalidArgumentException::class)->withMessage('Previous request state keys need a current one: set the signing key first');
+
+        $this->tester(previousKeys: [self::KEY]);
+    }
+
+    private function secondRoundState(string $clientId, McpTester $tester): string
+    {
+        ClientIdentityContext::arm($clientId);
+
+        try {
+            $tester->callTool('order.rename', ['orderId' => '42']);
+            $second = $this->answer($tester, 'order.rename', ['name' => ['action' => 'accept', 'content' => ['name' => 'urgent']]]);
+        } finally {
+            ClientIdentityContext::disarm();
+        }
+
+        return (string) $second['requestState'];
+    }
+
+    private function thirdRoundSucceeds(string $clientId, McpTester $tester, string $state): bool
+    {
+        ClientIdentityContext::arm($clientId);
+
+        try {
+            $third = $this->answer($tester, 'order.rename', ['confirm' => ['action' => 'accept', 'content' => ['confirm' => true]]], $state);
+
+            return ($third['content'][0]['text'] ?? null) === '42 renamed to urgent';
+        } catch (McpErrorException) {
+            return false;
+        } finally {
+            ClientIdentityContext::disarm();
+        }
+    }
+
+    /**
      * Every round is a tools/call and is counted: the answers are not signed,
      * so a budget that skipped "retries" could be bypassed by any client
      * attaching made-up inputResponses. One ask costs two units.
@@ -181,8 +251,13 @@ final class MultiRoundTripTest
     /**
      * @param list<ToolCallInterceptorInterface> $interceptors
      */
-    private function tester(?ElicitingTool $tool = null, string $requestStateKey = '', array $interceptors = []): McpTester
-    {
+    private function tester(
+        ?ElicitingTool $tool = null,
+        string $requestStateKey = '',
+        array $interceptors = [],
+        array $previousKeys = [],
+        bool $bind = true,
+    ): McpTester {
         $factory = new Psr17Factory();
         $server = (new McpServerFactory(
             container: new SimpleContainer([
@@ -191,6 +266,8 @@ final class MultiRoundTripTest
             ]),
             sessionStore: new InMemorySessionStore(),
             requestStateKey: $requestStateKey,
+            previousRequestStateKeys: $previousKeys,
+            bindRequestState: $bind,
         ))->create([ElicitingTool::class, GreetingTool::class], [], $interceptors);
 
         return new McpTester(

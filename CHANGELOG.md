@@ -5,7 +5,83 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 5.0.0 — 2026-11-11
+
+Moves to `mcp/sdk` `~0.10.0`: 0.8.x is affected by
+[GHSA-f4rf-6ghj-mhr6](https://github.com/modelcontextprotocol/php-sdk/security/advisories/GHSA-f4rf-6ghj-mhr6)
+(the SDK's OAuth middleware endpoints bypassed request body limits), and 0.9
+and 0.10 are breaking minors (#81). Composer's security blocking already
+refuses to install 0.8.x, so 4.x no longer installs without ignoring the
+advisory. Upgrade steps: `UPGRADE.md`.
+
+### Breaking
+
+- Requires `mcp/sdk` `~0.10.0`. The SDK moved its classes, so applications
+  update their imports: `Mcp\Server` → `Mcp\Server\Server`,
+  `Mcp\Capability\*` → `Mcp\Server\Capability\*` (`#[McpTool]`,
+  `#[McpResource]`, …), `Mcp\Exception\*` → `Mcp\Server\Exception\*`
+  (`ToolCallException`, `PromptGetException`, `ResourceReadException`, …),
+  `Mcp\Server\Stateless\RequestMeta` → `Mcp\Schema\RequestMeta`.
+- `result_json` defaults to `'compact'`. Since 0.10 the SDK itself encodes
+  array/object tool results without indentation, so `compact` is the SDK's
+  own output and `pretty` is now the package's: `CompactToolResultFormatter`
+  (@internal) became `ToolResultTextFormatter` and mirrors the SDK's
+  `CallToolHandler` again (a null or scalar structured value is carried as its
+  JSON text, SEP-2106). Set `'result_json' => 'pretty'` to keep the 4.x text.
+- `McpServerFactory`'s `compactToolResults` defaults to `true`; it gained the
+  optional `previousRequestStateKeys`, `bindRequestState` and `fiberContext`
+  arguments.
+- A result decorator that builds a new `CallToolResult` must pass
+  `StructuredContent::Absent` for a result without structured content: since
+  0.10 an explicit `null` is sent as `"structuredContent": null`.
+- `Testing\McpTester` speaks `ProtocolVersion::latestHandshake()` by default
+  (the SDK's `MessageInterface::PROTOCOL_VERSION` is the stateless 2026-07-28
+  since 0.9) and addresses `http://localhost/mcp`: the SDK now refuses a
+  request without an allowed `Host`.
+- The resolved client id is handed to the SDK as the session principal
+  (`StreamableHttpTransport::PRINCIPAL_ATTRIBUTE`); the SDK answers 404 to a
+  session opened before the upgrade, once.
+- `request_state.bind` is on by default: a `requestState` minted before the
+  upgrade does not verify (a multi round-trip call in flight restarts).
+- Psalm 7 (`vimeo/psalm` `^7.0`, dev only).
+
+### Added
+
+- OAuth 2.1 resource server: `OAuth\BearerTokenMiddleware` over the SDK's
+  `AuthorizationMiddleware`. Route `[BearerTokenMiddleware, McpAction]` and
+  serve the SDK's `ProtectedResourceMetadataHandler` at
+  `/.well-known/oauth-protected-resource/<path>`; configured by the new
+  `oauth` params block (resource, authorization servers, issuer, audience,
+  algorithms, token type, leeway, scope claim, scopes per request / method /
+  tool with a hierarchy, identity, own validator, PSR-6 cache). JWT tokens are
+  validated through the issuer's discovery document and JWKS
+  (`firebase/php-jwt`, suggested); the token's principal, `client_id` or
+  `subject` becomes the client id, so session ownership, visibility, the
+  budget and the result cache work unchanged. A token without that claim gets
+  401 `invalid_token`. `psr/cache` is now required.
+- `request_state.previous_keys`: keys that still verify a `requestState` but
+  no longer sign one — the signing key rotates without failing calls in
+  flight.
+- `request_state.bind` (default `true`): a state is tied to its originating
+  request (the SDK's `OriginatingRequestBinder`: method, tool, argument
+  digest, OAuth principal) and to the resolved client id, which the SDK binder
+  does not know behind `SharedSecretMiddleware`; a state replayed by another
+  client or for other arguments does not verify.
+- `notifications.bus` `'psr6'`: the SDK's `Psr6NotificationBus` over the
+  container's `CacheItemPoolInterface`; `mcp:doctor` requires the pool then.
+- A container binding of `Mcp\Server\Fiber\FiberContextInterface` is
+  autowired into `McpServerFactory` and handed to `Builder::setFiberContext()`
+  (e.g. the OpenTelemetry context inside handler fibers).
+
+### Fixed
+
+- `ArgumentMasker` masks inside `\stdClass`: SDK 0.10 keeps nested JSON
+  objects of tool arguments as objects, and a secret one level down an object
+  would have reached a log unmasked. The result-cache key orders object keys
+  too, so `{"a":1,"b":2}` and `{"b":2,"a":1}` share an entry.
+- `GuardedRegistry` forwards the SDK's new `publishesListChanges()`.
+
+### Internal
 
 - Mutation testing (`composer mutation`) now counts code that no test is
   attributed to (`--with-uncovered`; Infection runs the `Unit` suite only).

@@ -41,6 +41,6 @@ access immediately requires also invalidating the affected sessions.
 ### handle()
 
 ```php
-handle(Mcp\Capability\Registry\ElementReference $reference, array $arguments): mixed
+handle(Mcp\Server\Capability\Registry\ElementReference $reference, array $arguments): mixed
 ```
 

@@ -18,6 +18,9 @@ use Mcp\Schema\Result\CallToolResult;
  * mode and `structuredContent` by the rules of the request's protocol
  * revision. Keep `structuredContent` as it is unless the tool's
  * `outputSchema` still describes the new value — clients validate it.
+ * When building a new result, pass `$result->hasStructuredContent()
+ * ? $result->structuredContent : StructuredContent::Absent`: since SDK 0.10
+ * an explicit `null` is sent as a `null` structuredContent, not omitted.
  *
  * - Decorators run on every answer, cache hits included: the result cache
  *   stores the raw handler result.
@@ -25,7 +28,7 @@ use Mcp\Schema\Result\CallToolResult;
  *   measures the raw result inside the chain.
  * - A multi round-trip ask (`input_required`) is never decorated; the final
  *   round's result is.
- * - A {@see \Mcp\Exception\ToolCallException} never reaches a decorator: the
+ * - A {@see \Mcp\Server\Exception\ToolCallException} never reaches a decorator: the
  *   SDK turns it into an error envelope after the handler. A handler that
  *   returns `CallToolResult::error()` itself does — check
  *   `$result->isError`.
