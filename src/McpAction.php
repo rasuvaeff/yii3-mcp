@@ -87,6 +87,14 @@ final readonly class McpAction implements RequestHandlerInterface
         // sessionless/unstamped paths.
         ClientIdentityContext::arm($clientId);
 
+        // the SDK (0.10) binds a handshake-era session to the principal that
+        // opened it and answers 404 to any other: the resolved client id IS
+        // that principal, unless a front middleware (OAuth) already set one.
+        // The own ownership check above stays as the first line.
+        if ($clientId !== null && $request->getAttribute(StreamableHttpTransport::PRINCIPAL_ATTRIBUTE) === null) {
+            $request = $request->withAttribute(StreamableHttpTransport::PRINCIPAL_ATTRIBUTE, $clientId);
+        }
+
         try {
             $response = $this->server->run(new StreamableHttpTransport(
                 request: $request,
