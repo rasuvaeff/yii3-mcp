@@ -50,7 +50,7 @@
         "roave/backward-compatibility-check": "^8.0",
         "testo/bridge-infection": "^0.1.6",
         "testo/testo": "^0.10.25",
-        "vimeo/psalm": "^6.16",
+        "vimeo/psalm": "^7.0",
         "yiisoft/test-support": "^3.0"
     },
     "suggest": {
