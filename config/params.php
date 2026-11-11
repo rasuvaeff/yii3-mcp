@@ -97,6 +97,49 @@ return [
             'key' => '',
             'ttl' => 600,
         ],
+        // OAuth 2.1 resource server (the alternative to endpoint_secret):
+        // route [BearerTokenMiddleware, McpAction] and serve
+        // ProtectedResourceMetadataHandler at the well-known path the
+        // resource derives (/.well-known/oauth-protected-resource/<path>).
+        // Validation, challenges and scopes are the SDK's own.
+        'oauth' => [
+            // canonical URI of the endpoint, e.g. https://mcp.example.com/mcp
+            // ('' = OAuth not configured; the guard then fails to build)
+            'resource' => '',
+            // issuers whose tokens this server accepts (at least one)
+            'authorization_servers' => [],
+            // expected `iss`; '' = the first authorization server
+            'issuer' => '',
+            // accepted `aud` values; [] = the resource
+            'audience' => [],
+            'algorithms' => ['RS256'],
+            // required `typ` header, e.g. 'at+jwt' (RFC 9068); '' skips it
+            'token_type' => '',
+            // tolerated clock skew, seconds
+            'leeway' => 0,
+            'scope_claim' => 'scope',
+            // advertised in the metadata and the 401 challenge
+            'scopes_supported' => [],
+            // required scopes: on every request, per JSON-RPC method, per
+            // tool name; implies is a hierarchy (a granted key grants its list)
+            'scopes' => [
+                'default' => [],
+                'methods' => [],
+                'tools' => [],
+                'implies' => [],
+            ],
+            // what becomes the client id: 'principal' (issuer + client +
+            // subject), 'client_id' or 'subject'
+            'identity' => 'principal',
+            // service id of an AuthorizationTokenValidatorInterface ('' = JWT
+            // through the issuer's discovery document; needs firebase/php-jwt)
+            'validator' => '',
+            // service id of the PSR-6 pool for issuer metadata and signing
+            // keys ('' = Psr\Cache\CacheItemPoolInterface)
+            'cache' => '',
+            'resource_name' => '',
+            'resource_documentation' => '',
+        ],
         'notifications' => [
             'bus' => '',
             // seconds a listen stream is held open (0 = until the client or

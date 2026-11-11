@@ -1877,6 +1877,51 @@ final class ConfigWiringTest
         return (new McpTester($server, $psr17, $psr17, $psr17))->callTool('weather', ['city' => 'Rome']);
     }
 
+    /**
+     * OAuth is opt-in: the package ships it unconfigured, and building the
+     * guard from those defaults fails naming the param instead of serving
+     * requests without a token check.
+     */
+    public function oauthGuardIsDefinedButUnconfiguredByDefault(): void
+    {
+        $params = $this->params();
+        $psr17 = new \Nyholm\Psr7\Factory\Psr17Factory();
+
+        Assert::same($params['rasuvaeff/yii3-mcp']['oauth']['resource'], '');
+        Assert::same($params['rasuvaeff/yii3-mcp']['oauth']['identity'], 'principal');
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[\Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware::class]['definition'];
+        $container = new SimpleContainer([
+            \Psr\Http\Message\ResponseFactoryInterface::class => $psr17,
+            \Psr\Http\Message\StreamFactoryInterface::class => $psr17,
+        ]);
+
+        Expect::exception(\InvalidArgumentException::class)->withMessage('OAuth is not configured: set rasuvaeff/yii3-mcp oauth.resource to the canonical URI of the MCP endpoint (e.g. https://mcp.example.com/mcp)');
+
+        $definition($container);
+    }
+
+    public function oauthMetadataHandlerIsBuiltFromParams(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['oauth']['resource'] = 'https://mcp.example.com/mcp';
+        $params['rasuvaeff/yii3-mcp']['oauth']['authorization_servers'] = ['https://auth.example.com'];
+        $psr17 = new \Nyholm\Psr7\Factory\Psr17Factory();
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[\Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler::class]['definition'];
+        $handler = $definition(new SimpleContainer([
+            \Psr\Http\Message\ResponseFactoryInterface::class => $psr17,
+            \Psr\Http\Message\StreamFactoryInterface::class => $psr17,
+        ]));
+        \assert($handler instanceof \Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler);
+
+        $body = (string) $handler->handle(new \Nyholm\Psr7\ServerRequest('GET', 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp'))->getBody();
+
+        Assert::string($body)->contains('"resource":"https://mcp.example.com/mcp"');
+    }
+
     private function params(): array
     {
         return require __DIR__ . '/../config/params.php';

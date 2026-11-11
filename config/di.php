@@ -10,6 +10,7 @@ use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
 use Mcp\Server\Subscription\NotificationBusInterface;
 use Mcp\Server\Subscription\Psr16NotificationBus;
+use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
 use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -21,6 +22,8 @@ use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpServerAssembler;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware;
+use Rasuvaeff\Yii3Mcp\OAuth\OAuthComponentFactory;
 use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Yii3Mcp\Session\SessionDirectory;
 use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
@@ -170,6 +173,19 @@ return [
                 resolver: $clientSecrets === [] ? null : new StaticSecretResolver($clientSecrets),
             );
         },
+    ],
+    // resolved only when routed: an application without OAuth never builds them
+    BearerTokenMiddleware::class => [
+        'definition' => static fn (ContainerInterface $container): BearerTokenMiddleware => (new OAuthComponentFactory(
+            params: $params['rasuvaeff/yii3-mcp']['oauth'] ?? [],
+            container: $container,
+        ))->bearerTokenMiddleware(),
+    ],
+    ProtectedResourceMetadataHandler::class => [
+        'definition' => static fn (ContainerInterface $container): ProtectedResourceMetadataHandler => (new OAuthComponentFactory(
+            params: $params['rasuvaeff/yii3-mcp']['oauth'] ?? [],
+            container: $container,
+        ))->metadataHandler(),
     ],
     McpDoctor::class => [
         'definition' => static function (ContainerInterface $container) use ($params, $notificationBus): McpDoctor {

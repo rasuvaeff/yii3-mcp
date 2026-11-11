@@ -25,6 +25,7 @@
     "require": {
         "php": "8.3 - 8.5",
         "mcp/sdk": "~0.10.0",
+        "psr/cache": "^2.0 || ^3.0",
         "psr/container": "^2.0",
         "psr/http-client": "^1.0",
         "psr/http-factory": "^1.1",
@@ -39,6 +40,7 @@
     },
     "require-dev": {
         "ergebnis/composer-normalize": "^2.51",
+        "firebase/php-jwt": "^7.0",
         "friendsofphp/php-cs-fixer": "^3.95",
         "infection/infection": "^0.35",
         "maglnet/composer-require-checker": "^4.17",
@@ -54,6 +56,7 @@
         "yiisoft/test-support": "^3.0"
     },
     "suggest": {
+        "firebase/php-jwt": "JWT access-token validation for the OAuth resource server (BearerTokenMiddleware)",
         "guzzlehttp/guzzle": "PSR-18 HTTP client for the OpenAPI bridge executor and spec loader"
     },
     "autoload": {
