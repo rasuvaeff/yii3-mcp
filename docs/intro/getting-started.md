@@ -26,7 +26,7 @@ Tools are ordinary Yii3 services. Capability methods are annotated with the
 SDK's own attributes — this package invents no protocol structures:
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
 {

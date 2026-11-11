@@ -12,7 +12,7 @@ protocol structures on top of `mcp/sdk`.
 ## Tools
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
 {
@@ -238,7 +238,7 @@ Declare the source with the SDK's `#[CompletionProvider]` — no yii3-mcp API
 is involved:
 
 ```php
-use Mcp\Capability\Attribute\CompletionProvider;
+use Mcp\Server\Capability\Attribute\CompletionProvider;
 
 #[McpPrompt(name: 'review')]
 public function review(
@@ -256,7 +256,7 @@ public function report(
 |---|---|
 | `values: [...]` | A fixed list, prefix-matched. |
 | `enum: BackedEnum::class` | The enum's cases. |
-| `provider: Foo::class` | A `Mcp\Capability\Completion\ProviderInterface`, **resolved through the DI container** — it may query a repository or a feature-flag service. |
+| `provider: Foo::class` | A `Mcp\Server\Capability\Completion\ProviderInterface`, **resolved through the DI container** — it may query a repository or a feature-flag service. |
 
 Exactly one of the three per argument. Completions obey
 `prompt_visibility` / `resource_visibility` — see

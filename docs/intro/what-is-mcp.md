@@ -58,7 +58,7 @@ SharedSecretMiddleware  (fail-closed shared-secret guard)
       ▼
 McpAction / McpServeCommand  (PSR-15 handler / stdio command)
       ▼
-Mcp\Server  (built by McpServerFactory)
+Mcp\Server\Server  (built by McpServerFactory)
       │
       ├─ your tool classes (#[McpTool] methods, DI-resolved)
       ├─ OpenAPI-bridged operations (OpenApiServerConfigurator)

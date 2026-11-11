@@ -12,7 +12,7 @@ connects.
 ## 1. Write and register a tool
 
 ```php
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
 {

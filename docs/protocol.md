@@ -12,7 +12,7 @@ description: "The MCP protocol in yii3-mcp: Streamable HTTP and stdio transports
 | Streamable HTTP | `McpAction` (PSR-15) | Production: an MCP client connects over the network with a shared-secret header. |
 | stdio | `McpServeCommand` (`mcp:serve`) | Local development: the client spawns the command as a subprocess and speaks JSON-RPC over stdin/stdout. |
 
-Both are served from the same `Mcp\Server` instance built by
+Both are served from the same `Mcp\Server\Server` instance built by
 `McpServerFactory` — a tool class registers identically for either
 transport.
 

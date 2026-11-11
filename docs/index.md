@@ -52,7 +52,7 @@ SharedSecretMiddleware  ── fail-closed shared-secret guard
       ▼
 McpAction / McpServeCommand
       ▼
-Mcp\Server  ── built by McpServerFactory
+Mcp\Server\Server  ── built by McpServerFactory
       │
       ├─ your tool classes             (#[McpTool] methods, DI-resolved)
       ├─ OpenAPI-bridged operations    (OpenApiServerConfigurator)
@@ -70,7 +70,7 @@ special-cased in the core; each is an ordinary
 :::code-group
 
 ```php [core]
-use Mcp\Capability\Attribute\McpTool;
+use Mcp\Server\Capability\Attribute\McpTool;
 
 final readonly class OrderTools
 {
