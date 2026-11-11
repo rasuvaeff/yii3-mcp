@@ -418,6 +418,43 @@ final class McpServerFactoryTest
     }
 
     /**
+     * A bound fiber context wraps every handler fiber: what the caller had
+     * active (an OpenTelemetry context, a correlation id) is visible inside.
+     */
+    public function aFiberContextWrapsTheToolHandler(): void
+    {
+        $context = new class implements \Mcp\Server\Fiber\FiberContextInterface {
+            public int $wrapped = 0;
+
+            public ?string $insideFiber = null;
+
+            #[\Override]
+            public function wrap(\Closure $handler): \Closure
+            {
+                ++$this->wrapped;
+
+                return function () use ($handler): mixed {
+                    $this->insideFiber = \Fiber::getCurrent() === null ? 'no fiber' : 'fiber';
+
+                    return $handler();
+                };
+            }
+        };
+        $server = (new McpServerFactory(
+            container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hello')]),
+            sessionStore: new InMemorySessionStore(),
+            fiberContext: $context,
+        ))->create([GreetingTool::class]);
+        $psr17 = new Psr17Factory();
+
+        $result = (new McpTester($server, $psr17, $psr17, $psr17))->callTool('greet', ['name' => 'Yii']);
+
+        Assert::same($result['content'][0]['text'] ?? null, 'Hello, Yii!');
+        Assert::true($context->wrapped >= 1);
+        Assert::same($context->insideFiber, 'fiber');
+    }
+
+    /**
      * The configured bus is what a stateless subscriptions/listen stream
      * reads: the stream asks it for a cursor before waiting for updates.
      */

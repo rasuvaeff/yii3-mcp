@@ -12,6 +12,7 @@ use Mcp\Server\Capability\Attribute\McpResourceTemplate;
 use Mcp\Server\Capability\Attribute\McpTool;
 use Mcp\Server\Capability\Registry;
 use Mcp\Server\Capability\Registry\ReferenceHandler;
+use Mcp\Server\Fiber\FiberContextInterface;
 use Mcp\Server\Handler\Request\CallToolHandler;
 use Mcp\Server\Handler\Request\CompletionCompleteHandler;
 use Mcp\Server\Handler\Request\RequestHandlerInterface;
@@ -83,6 +84,9 @@ final readonly class McpServerFactory
      * @param int $requestStateTtl seconds a minted requestState stays valid
      * @param list<string> $previousRequestStateKeys keys that still VERIFY a state but no longer sign one —
      *                                               rotate by moving the old key here, calls in flight keep working
+     * @param FiberContextInterface|null $fiberContext carries execution context (e.g. the active OpenTelemetry
+     *                                               context) into the fibers handlers run in; autowired when the
+     *                                               container binds one
      * @param bool $bindRequestState tie each state to the request it was minted for (method, tool, argument
      *                               digest, OAuth principal) and to the resolved client id; a state replayed
      *                               elsewhere does not verify
@@ -112,6 +116,7 @@ final readonly class McpServerFactory
         #[\SensitiveParameter]
         private array $previousRequestStateKeys = [],
         private bool $bindRequestState = true,
+        private ?FiberContextInterface $fiberContext = null,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -180,6 +185,10 @@ final readonly class McpServerFactory
             );
         } elseif ($this->previousRequestStateKeys !== []) {
             throw new \InvalidArgumentException('Previous request state keys need a current one: set the signing key first');
+        }
+
+        if ($this->fiberContext instanceof FiberContextInterface) {
+            $builder->setFiberContext($this->fiberContext);
         }
 
         if ($this->cachePolicy instanceof CachePolicy) {
