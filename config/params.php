@@ -96,6 +96,12 @@ return [
         'request_state' => [
             'key' => '',
             'ttl' => 600,
+            // rotation: old keys that still verify a state but no longer
+            // sign one (move the old key here when setting a new 'key')
+            'previous_keys' => [],
+            // tie a state to its originating request and client id; a
+            // replayed state does not verify
+            'bind' => true,
         ],
         // OAuth 2.1 resource server (the alternative to endpoint_secret):
         // route [BearerTokenMiddleware, McpAction] and serve

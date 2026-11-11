@@ -81,6 +81,11 @@ final readonly class McpServerFactory
      * @param string $requestStateKey signs the `requestState` a multi round-trip call carries between rounds
      *                                (at least 32 bytes; '' = none: a handler asking more than once per call fails)
      * @param int $requestStateTtl seconds a minted requestState stays valid
+     * @param list<string> $previousRequestStateKeys keys that still VERIFY a state but no longer sign one —
+     *                                               rotate by moving the old key here, calls in flight keep working
+     * @param bool $bindRequestState tie each state to the request it was minted for (method, tool, argument
+     *                               digest, OAuth principal) and to the resolved client id; a state replayed
+     *                               elsewhere does not verify
      * @param CachePolicy|null $cachePolicy SEP-2549 caching hints on stateless-era answers; null = the SDK
      *                                      default (nothing fresh, nothing shared). A `public` hint on a list
      *                                      or read a visibility filter makes per-caller fails the build.
@@ -104,6 +109,9 @@ final readonly class McpServerFactory
         private string $requestStateKey = '',
         private int $requestStateTtl = 600,
         private ?CachePolicy $cachePolicy = null,
+        #[\SensitiveParameter]
+        private array $previousRequestStateKeys = [],
+        private bool $bindRequestState = true,
     ) {
         if ($paginationLimit < 1) {
             throw new \InvalidArgumentException(sprintf('Pagination limit must be at least 1, %d given', $paginationLimit));
@@ -165,7 +173,13 @@ final readonly class McpServerFactory
         }
 
         if ($this->requestStateKey !== '') {
-            $builder->setRequestState($this->requestStateKey, $this->requestStateTtl);
+            $builder->setRequestState(
+                [$this->requestStateKey, ...$this->previousRequestStateKeys],
+                $this->requestStateTtl,
+                $this->bindRequestState ? new ClientBoundRequestStateBinder() : null,
+            );
+        } elseif ($this->previousRequestStateKeys !== []) {
+            throw new \InvalidArgumentException('Previous request state keys need a current one: set the signing key first');
         }
 
         if ($this->cachePolicy instanceof CachePolicy) {

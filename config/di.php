@@ -123,6 +123,8 @@ return [
             'cachePolicy' => $cachePolicy,
             'requestStateKey' => (string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? ''),
             'requestStateTtl' => (int) ($params['rasuvaeff/yii3-mcp']['request_state']['ttl'] ?? 600),
+            'previousRequestStateKeys' => array_values(array_map(strval(...), (array) ($params['rasuvaeff/yii3-mcp']['request_state']['previous_keys'] ?? []))),
+            'bindRequestState' => (bool) ($params['rasuvaeff/yii3-mcp']['request_state']['bind'] ?? true),
             'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
         ],
     ],
