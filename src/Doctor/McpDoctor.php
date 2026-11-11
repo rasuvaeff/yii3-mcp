@@ -8,6 +8,7 @@ use Mcp\Schema\Extension\Apps\McpApps;
 use Mcp\Server\Server;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Stateless\RequestStateCodec;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -54,7 +55,7 @@ final readonly class McpDoctor
      * @param list<string> $clientSecretIds ids (NOT secrets) from the `client_secrets` param
      * @param list<array<string, mixed>> $appDefinitions raw `apps.definitions` entries, parsed here so a
      *                                                   malformed one is reported even when the server build check skips
-     * @param string $notificationBus the `notifications.bus` kind ('' | psr16 | memory)
+     * @param string $notificationBus the `notifications.bus` kind ('' | psr16 | psr6 | memory)
      * @param int $requestStateKeyBytes length of `request_state.key` — the key itself is never passed here
      */
     public function __construct(
@@ -197,6 +198,10 @@ final readonly class McpDoctor
 
         if ($this->notificationBus === 'psr16') {
             $requirements[CacheInterface::class][] = 'Notification bus';
+        }
+
+        if ($this->notificationBus === 'psr6') {
+            $requirements[CacheItemPoolInterface::class][] = 'Notification bus';
         }
 
         $checks = [];

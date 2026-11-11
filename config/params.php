@@ -147,6 +147,10 @@ return [
             'resource_documentation' => '',
         ],
         'notifications' => [
+            // what carries resource updates to stateless listen streams:
+            // '' (none), 'memory' (one long-running process), 'psr16' or
+            // 'psr6' (the container's cache — publisher and listener are
+            // different PHP-FPM workers)
             'bus' => '',
             // seconds a listen stream is held open (0 = until the client or
             // the runtime ends it); under PHP-FPM a stream holds a worker for

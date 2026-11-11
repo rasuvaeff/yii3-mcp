@@ -760,6 +760,14 @@ final class McpDoctorTest
         Assert::string($check->details)->contains('Stateless tool-call budget, Notification bus');
     }
 
+    public function aPsr6BusRequiresACachePool(): void
+    {
+        $check = $this->check($this->doctor(notificationBus: 'psr6')->diagnose(), 'service_cache_cacheitempoolinterface');
+
+        Assert::same($check->status, CheckStatus::Fail);
+        Assert::string($check->details)->contains('Notification bus');
+    }
+
     private function doctor(
         string $secret = 'test-secret',
         ?string $sessionDir = null,

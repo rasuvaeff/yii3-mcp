@@ -10,7 +10,9 @@ use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
 use Mcp\Server\Subscription\NotificationBusInterface;
 use Mcp\Server\Subscription\Psr16NotificationBus;
+use Mcp\Server\Subscription\Psr6NotificationBus;
 use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -60,8 +62,8 @@ $compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETT
 // stateless listen streams silently empty.
 $notificationBus = (string) ($params['rasuvaeff/yii3-mcp']['notifications']['bus'] ?? '');
 
-if (!in_array($notificationBus, ['', 'psr16', 'memory'], true)) {
-    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, memory', $notificationBus));
+if (!in_array($notificationBus, ['', 'psr16', 'psr6', 'memory'], true)) {
+    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, psr6, memory', $notificationBus));
 }
 
 // Bound only when configured: McpServerFactory and ResourceUpdateNotifier take
@@ -74,6 +76,13 @@ $notificationBusDefinition = match ($notificationBus) {
         NotificationBusInterface::class => static fn(CacheInterface $cache): NotificationBusInterface => new Psr16NotificationBus(
             cache: $cache,
             // per application, short: PSR-16 guarantees 64-character keys
+            prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
+        ),
+    ],
+    'psr6' => [
+        NotificationBusInterface::class => static fn(CacheItemPoolInterface $cache): NotificationBusInterface => new Psr6NotificationBus(
+            cache: $cache,
+            // PSR-6 reserves the same characters and guarantees the same 64
             prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
         ),
     ],

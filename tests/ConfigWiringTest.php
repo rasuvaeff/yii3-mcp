@@ -776,6 +776,23 @@ final class ConfigWiringTest
         }
     }
 
+    public function psr6BusStoresInTheContainersPool(): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp']['notifications']['bus'] = 'psr6';
+        $pool = new \Rasuvaeff\Yii3Mcp\Tests\Support\ArrayCachePool();
+
+        /** @var Closure $definition */
+        $definition = $this->di($params)[NotificationBusInterface::class];
+        $bus = $definition($pool);
+
+        Assert::instanceOf($bus, \Mcp\Server\Subscription\Psr6NotificationBus::class);
+        $cursor = $bus->cursor();
+        $bus->publish(new ResourceUpdatedNotification('app://x'));
+        [$notifications] = $bus->since($cursor);
+        Assert::same(count($notifications), 1);
+    }
+
     public function unknownNotificationBusFailsAtConfigLoad(): void
     {
         $params = $this->params();
