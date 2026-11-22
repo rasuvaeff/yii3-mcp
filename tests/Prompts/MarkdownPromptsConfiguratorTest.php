@@ -22,6 +22,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\WarningsAsErrors;
 use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\ErrorHandler\WithoutErrorHandler;
 use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
@@ -219,6 +220,9 @@ final class MarkdownPromptsConfiguratorTest
         Assert::same($output, '');
     }
 
+    // this test asserts on the handler stack itself: the plugin's capturing
+    // handler must not be installed around it (testo >= 0.10.60)
+    #[WithoutErrorHandler]
     public function parseAlwaysRestoresTheErrorHandlerAfterwards(): void
     {
         PromptFile::parse(__DIR__ . '/../Support/prompts/plain-note.md');
@@ -232,6 +236,7 @@ final class MarkdownPromptsConfiguratorTest
         Assert::null($leaked);
     }
 
+    #[WithoutErrorHandler]
     public function theErrorHandlerIsRestoredEvenWhenReadingThrows(): void
     {
         stream_wrapper_register('yii3mcp-test-throw', ThrowingStreamWrapper::class);

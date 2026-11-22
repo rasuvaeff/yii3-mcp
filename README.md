@@ -30,7 +30,7 @@ container.
 
 | Requirement | Version |
 |-------------|---------|
-| PHP | 8.3 – 8.5 |
+| PHP | 8.3 – 8.6 |
 | `mcp/sdk` | `~0.10.0` (experimental until 1.0 — hence the tilde pin) |
 | `firebase/php-jwt` | optional, `^7.0`: JWT validation for the OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
