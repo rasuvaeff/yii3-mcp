@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
 use InvalidArgumentException;
+use Rasuvaeff\Mcp\Identity\ExecutionIdentityProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidToolArgumentException;
 
 /**

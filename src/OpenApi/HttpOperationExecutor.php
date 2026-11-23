@@ -7,6 +7,7 @@ namespace Rasuvaeff\Yii3Mcp\OpenApi;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Rasuvaeff\Mcp\Identity\ExecutionIdentityProviderInterface;
 
 /**
  * Executes a bridged operation as a real HTTP call against the upstream

@@ -8,122 +8,36 @@
         "summary": "build/infection-summary.log"
     },
     "testFramework": "testo",
-    // `composer mutation` counts uncovered code (--with-uncovered): 2299
-    // mutants, 42 of them dropped by the signature-default regex below.
-    // Everything that can be observed is killed (see tests/); what is left
-    // is listed here, each entry with the reasoning that makes it
+    // `composer mutation` counts uncovered code (--with-uncovered). What is
+    // left is listed here, each entry with the reasoning that makes it
     // unkillable. No ignores: Infection still generates and runs every one
-    // of them, this is a record, not a suppression. The 4 Not Covered
-    // entries are in the same class (no behaviour to observe, or no safe way
-    // to reach the line).
+    // of them, this is a record, not a suppression.
     //
-    // A. Output-neutral rewrites of an array/list:
-    //    - Doctor/McpDoctor.php:205 UnwrapArrayValues (`array_values(
-    //      array_unique($features))` -> `array_unique($features)`): the only
-    //      consumer is `implode(', ', $features)`, which ignores keys. The
-    //      sibling UnwrapArrayUnique IS killed (a feature required twice for
-    //      one service is listed once).
-    //    - Identity/StaticSecretResolver.php:52 UnwrapArrayValues: $list is
-    //      only iterated, never indexed, and nothing exposes it.
-    //    - OpenApi/OperationRequestBuilder.php:307 UnwrapArrayValues: the
-    //      values are counted and iterated into a fresh list; keys never read.
-    //    - Session/PrivateFileSessionStore.php:78 UnwrapArrayValues (Not
-    //      Covered): the SDK's FileSessionStore::gc() already returns a list.
+    // Output-neutral rewrites:
+    //    - Doctor/McpDoctor.php UnwrapArrayValues: the only consumer is
+    //      implode(), which ignores keys.
+    //    - Doctor/McpDoctor.php IncrementInteger (`explode(':', $h, 2)[0]` ->
+    //      limit 3): index [0] is the same for any limit >= 2.
+    //    - OpenApi/OperationRequestBuilder.php UnwrapArrayValues: the values
+    //      are counted and iterated into a fresh list; keys never read.
+    //    - OpenApi/OperationRequestBuilder.php CastString x2: PHP turns a
+    //      numeric-string key into the int key anyway.
+    //    - McpServerComponentResolver.php DecrementInteger x2 (`?? 0` -> `-1`,
+    //      budget calls and tool_result_bytes): read by a `> 0` guard.
+    //    - OpenApi/SpecIndex.php Concat x2, ConcatOperandRemoval
+    //      (`$in . ':' . $name`): $in is one of four values with distinct
+    //      first characters, so no separator choice can collide.
+    //    - OpenApi/SpecIndex.php ReturnRemoval (extractRequestBodySchema):
+    //      every following `?? null` converges on null.
     //
-    // B. Array-key coercion: OpenApi/OperationRequestBuilder.php:122
-    //    CastString x2 (`$styleOverrides[(string) $operationId]
-    //    [(string) $parameterName]`): PHP turns a numeric-string key into the
-    //    int key anyway, so the cast changes nothing a lookup can see.
+    // Unreachable by constructor/factory invariants:
+    //    - OpenApi/OperationRequestBuilder.php LogicalAnd: the constructor
+    //      rejects configuring exactly one of identity and delegated.
+    //    - OpenApi/OpenApiBridgeFactory.php Throw_ x2: twins of the guards in
+    //      create(), which rejects first.
     //
-    // C. Parameter of a call that cannot influence the result:
-    //    - Doctor/McpDoctor.php:121 IncrementInteger (`explode(':', $h, 2)[0]`
-    //      -> limit 3): index [0] is the text before the FIRST separator for
-    //      any limit >= 2.
-    //    - Utf8.php:55 DecrementInteger (`default => 1` -> 0): reached only
-    //      for an ASCII lead byte, where `strlen($cut) - $index` is >= 1, so
-    //      `>= 0` and `>= 1` are both always true.
-    //    - Interceptor/ResponseSizeLimitInterceptor.php:63 LessThanOrEqualTo:
-    //      at $size === $maxBytes Utf8::cut() returns its input untouched
-    //      (its own first line is `strlen <= max`), so $kept is the same.
-    //    - McpServerFactory.php:377 PlusEqual (`$registered += n` -> `-=`):
-    //      every term is >= 0, so only `=== 0` is read, and it is the same
-    //      for the negated sum.
-    //
-    // D. `?? 0` fallback read by a `> 0` guard, mutated to `?? -1`: the
-    //    fallback only fires when the params key is absent, and the next
-    //    statement tells 0 from -1 not at all (both disable the feature).
-    //    The `?? 1` siblings and `cache_ttl ?? -1` ARE killed:
-    //    - McpServerComponentResolver.php:196 DecrementInteger (budget calls)
-    //    - McpServerComponentResolver.php:234 DecrementInteger (tool_result_bytes)
-    //
-    // E. Guards whose removal leaves the same value behind a PHP warning are
-    //    killed by tests that turn warnings into exceptions (WarningsAsErrors):
-    //    McpAction ownedBy/stampOwner, SpecIndex tags/required,
-    //    SpecLoader::readCache, PromptFile::parseArguments,
-    //    DeclarativeToolVisibility::tagsOf and compile. What remains is the
-    //    warning-free form of the same shape (a chain of `?? null` over an
-    //    empty array, or an early `return` in front of code that degrades to
-    //    the same result):
-    //    - OpenApi/SpecIndex.php:298 ReturnRemoval (extractRequestBodySchema:
-    //      `$body === []` -> null; every following `?? null` converges on null)
-    //    - McpListCommand.php:178 ReturnRemoval (arguments(): a non-array
-    //      schema renders '' with or without the early return)
-    //    - CompactToolResultFormatter.php:68 ReturnRemoval (an empty array
-    //      falls through to json_encode([]) === '[]', the same TextContent)
-    //
-    // F. Branches the constructor/factory invariants make unreachable:
-    //    - OpenApi/OperationRequestBuilder.php:246 LogicalAnd (`identity &&
-    //      delegated` -> `||`): the constructor rejects configuring exactly
-    //      one of the two, so only "both" and "neither" exist.
-    //    - OpenApi/OpenApiBridgeFactory.php:185, :186 Throw_ (the twins of the
-    //      guards in create(), which rejects a URL spec without a client or a
-    //      request factory before index() is reached).
-    //    - McpServerFactory.php:251 LogicalOrAllSubExprNegation: installing the
-    //      pass-through reference handler with nothing configured is
-    //      behaviourally identical to not installing it.
-    //
-    // G. Text built from a closed set / regex shape:
-    //    - OpenApi/SpecIndex.php:275 Concat x2, ConcatOperandRemoval
-    //      (`$in . ':' . $name`): $in is one of path/query/header/cookie, four
-    //      DISTINCT first characters in the fixed prefix position, so no
-    //      separator choice can make two different parameters collide.
-    //    - Prompts/PromptFile.php:53 PregMatchRemoveDollar: the trailing `$`
-    //      follows a greedy `(.*)` under /s, which reaches the end anyway.
-    //    - Prompts/PromptFile.php:65 Throw_ (Not Covered): needs an empty
-    //      basename for a readable file, which no portable path produces.
-    //
-    // H. Testing/McpTester.php: it speaks to a real SDK server, and several
-    //    mutants touch what that server never reacts to:
-    //    - :168 TrueValue (`$seenCursors[$cursor] = true` -> false): only
-    //      isset() reads the map, and isset() is true for a stored false.
-    //    - :235 ArrayItemRemoval (`jsonrpc` dropped from the initialized
-    //      notification): the SDK accepts the notification without it. The
-    //      call itself IS killed (the server records the notification).
-    //    - :295 LogicalAnd (`isset($decoded['error']) && is_array(...)`):
-    //      differs only for a non-array `error`, which no SDK handler can
-    //      produce (Error always serializes to an object).
-    //    - :289 ReturnRemoval (Not Covered): an empty body answers a request
-    //      only for a notification, and request() always sends an id.
-    //
-    // I. OutputBufferReleasingStream.php:136 ReturnRemoval (Not Covered):
-    //    `return` when a buffer refuses to be removed. The mutant spins
-    //    forever, and the test would have to leave a non-removable output
-    //    buffer in the shared test process.
-    //
-    // J. 5.0 (SDK 0.10, OAuth):
-    //    - OAuth/OAuthComponentFactory.php:141 Throw_ (`firebase/php-jwt`
-    //      missing): the library is a dev dependency, so the class always
-    //      exists in the test process; without it the SDK would fail later
-    //      with a class-not-found error, the message is the only difference.
-    //    - ToolResultTextFormatter.php:77 ReturnRemoval (`[]` -> `'[]'`
-    //      text): the general path ends in `json_encode([])`, which is the
-    //      same `'[]'`. Kept as a branch only to mirror the SDK's
-    //      ToolResultFormatter::format() line for line.
-    //
-    // Mutants that are only ever "Timed Out" are infinite loops/recursion by
-    // construction (Utf8 backing-over loop, McpTester::listAll() do-while,
-    // JsonPointerResolver depth/node budget, the bounded stream readers fed an
-    // endless body): the original code is what stops them, nothing else can.
+    // Mutants that are only ever "Timed Out" are infinite loops by
+    // construction (JsonPointerResolver budgets, bounded stream readers): the original code is what stops them.
     // Unit only: every package declares a Benchmarks suite (testo.php), and Infection's initial
     // test run would execute it. A timing-sensitive benchmark fails under host load and aborts
     // the whole mutation run (result, 2026-11-03). Benchmarks mutate nothing and kill nothing.

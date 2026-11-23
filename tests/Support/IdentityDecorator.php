@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
 use Mcp\Schema\Result\CallToolResult;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolResultDecoratorInterface;
 
 /**
  * Returns the result untouched: its presence alone must not change a byte

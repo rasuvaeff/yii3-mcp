@@ -12,26 +12,27 @@ use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\SimpleCache\CacheInterface;
-use Rasuvaeff\Yii3Mcp\Apps\AppParamParser;
-use Rasuvaeff\Yii3Mcp\Apps\McpAppsConfigurator;
-use Rasuvaeff\Yii3Mcp\Interceptor\CachingToolCallInterceptor;
-use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\Interceptor\ResponseSizeLimitInterceptor;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallBudgetInterceptor;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
+use Rasuvaeff\Mcp\Apps\AppParamParser;
+use Rasuvaeff\Mcp\Apps\McpAppsConfigurator;
+use Rasuvaeff\Mcp\Identity\ExecutionIdentityProviderInterface;
+use Rasuvaeff\Mcp\Interceptor\CachingToolCallInterceptor;
+use Rasuvaeff\Mcp\Interceptor\PromptGetInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ResourceReadInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ResponseSizeLimitInterceptor;
+use Rasuvaeff\Mcp\Interceptor\ToolCallBudgetInterceptor;
+use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolResultDecoratorInterface;
+use Rasuvaeff\Mcp\McpServerComponents;
+use Rasuvaeff\Mcp\ServerConfiguratorInterface;
+use Rasuvaeff\Mcp\Visibility\DeclarativeToolVisibility;
+use Rasuvaeff\Mcp\Visibility\PromptVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\ResourceVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\ToolVisibilityInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentityProviderInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionRequestAttributesInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\InProcessScopeInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
-use Rasuvaeff\Yii3Mcp\Prompts\MarkdownPromptsConfigurator;
-use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
-use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
 
 /**
  * @internal
@@ -48,6 +49,10 @@ final readonly class McpServerComponentResolver
 
     public function resolve(): McpServerComponents
     {
+        if (($this->params['prompts_path'] ?? '') !== '') {
+            throw new LogicException('"prompts_path" was removed in 6.0 together with Markdown prompts; register prompts with #[McpPrompt] or a ServerConfiguratorInterface');
+        }
+
         /** @var list<class-string> $tools */
         $tools = $this->params['tools'];
         /** @var array{spec_path: string, base_url: string, operations: list<string>, headers: array<string, string>, spec_headers?: array<string, string>, cache_ttl?: int, max_response_bytes?: int, opaque_errors?: bool, identity_provider?: class-string<ExecutionIdentityProviderInterface>|'', delegated_header_provider?: class-string<DelegatedHeaderProviderInterface>|'', safe_methods_only?: bool, tool_names?: array<string, string>, operation_modifier?: class-string<OperationModifierInterface>|'', dry_run?: list<string>, multi_segment_path_params?: array<array-key, mixed>, executor?: string, handler?: class-string<RequestHandlerInterface>|'', request_attributes?: class-string<ExecutionRequestAttributesInterface>|'', in_process_scope?: class-string<InProcessScopeInterface>|'', array_query_style?: string, array_query_params?: array<string, array<string, string>>} $openapi */
@@ -66,15 +71,6 @@ final readonly class McpServerComponentResolver
         $identityProvider = $identityProviderClass === '' || !$identityProviderNeeded
             ? null
             : $this->getService($identityProviderClass);
-
-        /** @var string $promptsPath */
-        $promptsPath = $this->params['prompts_path'] ?? '';
-
-        if ($promptsPath !== '') {
-            /** @var int $promptResultBytes */
-            $promptResultBytes = $this->params['limits']['prompt_result_bytes'] ?? MarkdownPromptsConfigurator::DEFAULT_MAX_RESULT_BYTES;
-            $configurators[] = new MarkdownPromptsConfigurator($promptsPath, maxResultBytes: $promptResultBytes);
-        }
 
         if ($openapi['spec_path'] !== '' && $openapi['operations'] !== []) {
             $cacheTtl = $openapi['cache_ttl'] ?? 0;

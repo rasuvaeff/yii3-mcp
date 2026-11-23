@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
+use Rasuvaeff\Mcp\Identity\ExecutionIdentity;
+
 /**
  * A bridged operation call reduced to transport-neutral parts: everything
  * {@see HttpOperationExecutor} and {@see Psr15OperationExecutor} need to

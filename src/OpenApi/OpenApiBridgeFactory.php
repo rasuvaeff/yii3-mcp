@@ -11,6 +11,8 @@ use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Mcp\Identity\ExecutionIdentity;
+use Rasuvaeff\Mcp\Identity\ExecutionIdentityProviderInterface;
 
 /**
  * Builds a configured {@see OpenApiServerConfigurator} from what a consumer
@@ -22,7 +24,7 @@ use Psr\SimpleCache\CacheInterface;
  * outside `Rasuvaeff\` cannot construct them without a Psalm `InternalClass`
  * error it has no legal way to silence; this factory constructs both itself
  * and hands back the `@api` configurator, which is all
- * {@see \Rasuvaeff\Yii3Mcp\McpServerFactory::create()} needs. Their
+ * {@see \Rasuvaeff\Mcp\McpServerFactory::create()} needs. Their
  * constructors stay free to move.
  *
  * `McpServerComponentResolver` calls this too, so the config-plugin path and a

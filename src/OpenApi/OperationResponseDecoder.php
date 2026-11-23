@@ -7,8 +7,8 @@ namespace Rasuvaeff\Yii3Mcp\OpenApi;
 use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
+use Rasuvaeff\Mcp\Utf8;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
-use Rasuvaeff\Yii3Mcp\Utf8;
 
 /**
  * Decodes an upstream PSR-7 response into a tool result: status-to-error

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
 use Mcp\Server\Builder;
-use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
+use Rasuvaeff\Mcp\ServerConfiguratorInterface;
 
 final class RecordingConfigurator implements ServerConfiguratorInterface
 {

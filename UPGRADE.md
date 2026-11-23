@@ -1,5 +1,15 @@
 # Upgrade guide
 
+## 5.x → 6.0.0
+
+### Required: Markdown prompts are gone
+
+A non-empty `prompts_path` fails the server build, so the prompts cannot vanish
+silently; a leftover `limits.prompt_result_bytes` is ignored. Remove both and
+register each prompt with `#[McpPrompt]` on a tool class or with
+`$builder->addPrompt()` in a `ServerConfiguratorInterface`. If the application
+itself parses YAML, require `symfony/yaml` explicitly.
+
 ## 4.x → 5.0.0
 
 5.0 moves to `mcp/sdk` `~0.10.0` (0.8.x is affected by GHSA-f4rf-6ghj-mhr6).

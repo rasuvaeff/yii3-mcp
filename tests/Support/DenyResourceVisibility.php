@@ -7,7 +7,7 @@ namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 use Mcp\Schema\ResourceDefinition;
 use Mcp\Schema\ResourceTemplate;
 use Mcp\Server\Session\SessionInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\ResourceVisibilityInterface;
 
 final readonly class DenyResourceVisibility implements ResourceVisibilityInterface
 {

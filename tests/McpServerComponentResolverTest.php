@@ -4,17 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests;
 
-use Mcp\Server\Server;
-use Mcp\Server\Session\InMemorySessionStore;
-use Nyholm\Psr7\Factory\Psr17Factory;
-use Rasuvaeff\Understudy\Arg;
-use Rasuvaeff\Understudy\Understudy;
-use Rasuvaeff\Yii3Mcp\McpServerAssembler;
+use Rasuvaeff\Mcp\Visibility\DeclarativeToolVisibility;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
-use Rasuvaeff\Yii3Mcp\McpServerComponents;
-use Rasuvaeff\Yii3Mcp\McpServerFactory;
-use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
-use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyPromptVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyResourceVisibility;
 use Rasuvaeff\Yii3Mcp\Tests\Support\GreetingTool;
@@ -23,59 +14,15 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\LinkingDecorator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingConfigurator;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingPromptInterceptor;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingResourceInterceptor;
-use Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
-use function Rasuvaeff\Understudy\verify;
-
 #[Test]
-#[Covers(McpServerAssembler::class)]
 #[Covers(McpServerComponentResolver::class)]
-#[Covers(McpServerComponents::class)]
-final class McpServerAssemblerTest
+final class McpServerComponentResolverTest
 {
-    public function assemblerBuildsFromResolvedComponentsWithoutAContainerDependency(): void
-    {
-        $configurator = Understudy::for(ServerConfiguratorInterface::class);
-        $components = new McpServerComponents(
-            tools: [GreetingTool::class],
-            configurators: [$configurator],
-            interceptors: [],
-            visibility: null,
-            promptInterceptors: [],
-            resourceInterceptors: [],
-            promptVisibility: null,
-            resourceVisibility: null,
-        );
-        $assembler = new McpServerAssembler(
-            factory: new McpServerFactory(
-                container: new SimpleContainer([]),
-                sessionStore: new InMemorySessionStore(),
-            ),
-            components: $components,
-        );
-
-        $server = $assembler->create();
-
-        Assert::instanceOf($server, Server::class);
-        verify(fn() => $configurator->configure(Arg::any()));
-
-        $psr17 = new Psr17Factory();
-        $tester = new McpTester(
-            server: $server,
-            requestFactory: $psr17,
-            responseFactory: $psr17,
-            streamFactory: $psr17,
-        );
-        $names = array_column($tester->listTools(), 'name');
-        sort($names);
-
-        Assert::same($names, ['explode', 'greet']);
-    }
-
     public function resolverPassesAUserConfiguredVisibilityAsAReadyComponent(): void
     {
         $visibility = new DenyPromptVisibility(hidden: ['private']);
@@ -158,34 +105,35 @@ final class McpServerAssemblerTest
         }
 
         Assert::instanceOf($error, \LogicException::class);
-        Assert::string($error->getMessage())->contains('must implement Rasuvaeff\\Yii3Mcp\\Interceptor\\ToolResultDecoratorInterface');
+        Assert::string($error->getMessage())->contains('must implement Rasuvaeff\\Mcp\\Interceptor\\ToolResultDecoratorInterface');
     }
 
-    public function assemblerHandsResultDecoratorsToTheServer(): void
+    public function aLeftoverPromptsPathFailsTheBuild(): void
     {
-        $components = new McpServerComponents(
-            tools: [GreetingTool::class],
-            configurators: [],
-            interceptors: [],
-            visibility: null,
-            promptInterceptors: [],
-            resourceInterceptors: [],
-            promptVisibility: null,
-            resourceVisibility: null,
-            resultDecorators: [new LinkingDecorator()],
+        $resolver = new McpServerComponentResolver(
+            container: new SimpleContainer([]),
+            params: ['prompts_path' => '/app/prompts'] + $this->params(),
         );
-        $server = (new McpServerAssembler(
-            factory: new McpServerFactory(
-                container: new SimpleContainer([GreetingTool::class => new GreetingTool(prefix: 'Hi')]),
-                sessionStore: new InMemorySessionStore(),
-            ),
-            components: $components,
-        ))->create();
-        $psr17 = new Psr17Factory();
 
-        $result = (new McpTester(server: $server, requestFactory: $psr17, responseFactory: $psr17, streamFactory: $psr17))->callTool('greet', ['name' => 'Yii']);
+        $caught = null;
 
-        Assert::same($result['content'][1]['uri'] ?? null, 'app://link');
+        try {
+            $resolver->resolve();
+        } catch (\LogicException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('"prompts_path" was removed in 6.0');
+    }
+
+    public function anEmptyLeftoverPromptsPathIsIgnored(): void
+    {
+        $resolver = new McpServerComponentResolver(
+            container: new SimpleContainer([]),
+            params: ['prompts_path' => ''] + $this->params(),
+        );
+
+        Assert::same($resolver->resolve()->configurators, []);
     }
 
     public function anAllowListAloneStillBuildsDeclarativeToolVisibility(): void

@@ -9,11 +9,11 @@ use Nyholm\Psr7\Response;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
-use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Mcp\McpServerFactory;
+use Rasuvaeff\Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
-use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Yiisoft\Test\Support\Container\SimpleContainer;
 
 require dirname(__DIR__) . '/vendor/autoload.php';

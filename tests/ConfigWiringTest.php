@@ -27,21 +27,21 @@ use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\SimpleCache\CacheInterface;
+use Rasuvaeff\Mcp\Identity\ExecutionIdentity;
+use Rasuvaeff\Mcp\McpAction;
+use Rasuvaeff\Mcp\McpListCommand;
+use Rasuvaeff\Mcp\McpServeCommand;
+use Rasuvaeff\Mcp\McpServerFactory;
+use Rasuvaeff\Mcp\Session\PrivateFileSessionStore;
+use Rasuvaeff\Mcp\SharedSecretMiddleware;
+use Rasuvaeff\Mcp\Testing\McpTester;
 use Rasuvaeff\Understudy\Arg;
 use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
-use Rasuvaeff\Yii3Mcp\McpAction;
 use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
-use Rasuvaeff\Yii3Mcp\McpListCommand;
-use Rasuvaeff\Yii3Mcp\McpServeCommand;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
-use Rasuvaeff\Yii3Mcp\McpServerFactory;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
-use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity;
 use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
-use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
-use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
-use Rasuvaeff\Yii3Mcp\Testing\McpTester;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
@@ -57,7 +57,6 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingRequestHandler;
 use Rasuvaeff\Yii3Mcp\Tests\Support\RecordingScope;
 use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\SubjectRequestAttributes;
-use RuntimeException;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -319,31 +318,6 @@ final class ConfigWiringTest
         // two servers, one cache backend: the configured namespace reaches the
         // interceptor, so "beta" never reads what "alpha" wrote
         Assert::same($tool->calls, 2);
-    }
-
-    public function serverDefinitionWiresTheConfiguredPromptResultLimit(): void
-    {
-        $params = $this->params();
-        $params['rasuvaeff/yii3-mcp']['prompts_path'] = __DIR__ . '/Support/prompts-amplify';
-        $params['rasuvaeff/yii3-mcp']['limits']['prompt_result_bytes'] = 200;
-
-        /** @var Closure $definition */
-        $definition = $this->di($params)[Server::class]['definition'];
-        $container = new SimpleContainer([]);
-
-        /** @var Server $server */
-        $server = $definition(
-            new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()),
-            $container,
-        );
-        $psr17 = new Psr17Factory();
-        $tester = new McpTester($server, $psr17, $psr17, $psr17);
-
-        // ten {{payload}} occurrences amplify 50 bytes to 510 — over the
-        // configured 200-byte budget, well under the 1 MiB default
-        Expect::exception(RuntimeException::class);
-
-        $tester->request('prompts/get', ['name' => 'amplify', 'arguments' => ['payload' => str_repeat('A', 50)]]);
     }
 
     public function serverDefinitionPartitionsTheToolCacheByExecutionIdentity(): void
@@ -938,28 +912,6 @@ final class ConfigWiringTest
         $second = $tester->callTool('greet', ['name' => 'Yii']);
 
         Assert::string($second['content'][0]['text'] ?? '')->contains('budget of 1 per 120 seconds is exhausted');
-    }
-
-    public function promptsPathWiresTheMarkdownPromptsConfigurator(): void
-    {
-        $params = $this->params();
-        $params['rasuvaeff/yii3-mcp']['prompts_path'] = __DIR__ . '/Support/prompts';
-
-        /** @var Closure $definition */
-        $definition = $this->di($params)[Server::class]['definition'];
-        $container = new SimpleContainer([]);
-
-        /** @var Server $server */
-        $server = $definition(
-            new McpServerFactory(container: $container, sessionStore: new InMemorySessionStore()),
-            $container,
-        );
-        $psr17 = new Psr17Factory();
-        $names = array_column((new McpTester($server, $psr17, $psr17, $psr17))->listPrompts(), 'name');
-
-        sort($names);
-
-        Assert::same($names, ['code-review', 'plain-note']);
     }
 
     public function serverDefinitionWiresToolVisibility(): void
@@ -1908,7 +1860,7 @@ final class ConfigWiringTest
         Assert::same($params['rasuvaeff/yii3-mcp']['oauth']['identity'], 'principal');
 
         /** @var Closure $definition */
-        $definition = $this->di($params)[\Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware::class]['definition'];
+        $definition = $this->di($params)[\Rasuvaeff\Mcp\OAuth\BearerTokenMiddleware::class]['definition'];
         $container = new SimpleContainer([
             \Psr\Http\Message\ResponseFactoryInterface::class => $psr17,
             \Psr\Http\Message\StreamFactoryInterface::class => $psr17,

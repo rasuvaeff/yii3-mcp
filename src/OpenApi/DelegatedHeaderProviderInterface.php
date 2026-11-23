@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
+use Rasuvaeff\Mcp\Identity\ExecutionIdentity;
+
 /**
  * Exchanges an application identity for upstream headers on every bridged
  * operation call. Implementations must not forward the inbound MCP

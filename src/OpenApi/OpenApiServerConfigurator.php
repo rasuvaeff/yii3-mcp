@@ -8,10 +8,10 @@ use InvalidArgumentException;
 use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Builder;
+use Rasuvaeff\Mcp\ReservedToolNamesAwareInterface;
+use Rasuvaeff\Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
-use Rasuvaeff\Yii3Mcp\ReservedToolNamesAwareInterface;
-use Rasuvaeff\Yii3Mcp\ServerConfiguratorInterface;
 
 /**
  * Bridges allow-listed OpenAPI operations onto the MCP server: each

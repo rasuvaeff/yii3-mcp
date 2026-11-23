@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\OpenApi;
 
+use Rasuvaeff\Mcp\Identity\ExecutionIdentity;
+
 /**
  * Maps the resolved {@see ExecutionIdentity} to request attributes on the
  * nested in-process request ({@see Psr15OperationExecutor}), so the

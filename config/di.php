@@ -17,18 +17,18 @@ use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
-use Rasuvaeff\Yii3Mcp\CachePolicyParams;
+use Rasuvaeff\Mcp\CachePolicyParams;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
-use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
-use Rasuvaeff\Yii3Mcp\McpAction;
-use Rasuvaeff\Yii3Mcp\McpServerAssembler;
+use Rasuvaeff\Mcp\Identity\StaticSecretResolver;
+use Rasuvaeff\Mcp\McpAction;
+use Rasuvaeff\Mcp\McpServerAssembler;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
-use Rasuvaeff\Yii3Mcp\McpServerFactory;
-use Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware;
-use Rasuvaeff\Yii3Mcp\OAuth\OAuthComponentFactory;
-use Rasuvaeff\Yii3Mcp\Session\PrivateFileSessionStore;
-use Rasuvaeff\Yii3Mcp\Session\SessionDirectory;
-use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
+use Rasuvaeff\Mcp\McpServerFactory;
+use Rasuvaeff\Mcp\OAuth\BearerTokenMiddleware;
+use Rasuvaeff\Mcp\OAuth\OAuthComponentFactory;
+use Rasuvaeff\Mcp\Session\PrivateFileSessionStore;
+use Rasuvaeff\Mcp\Session\SessionDirectory;
+use Rasuvaeff\Mcp\SharedSecretMiddleware;
 
 /** @var array $params */
 
