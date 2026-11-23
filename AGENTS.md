@@ -44,8 +44,6 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 ## Invariants & gotchas
 
-- **Local 6.0 work before `rasuvaeff/mcp` and `mcp-openapi` are published** uses
-  `COMPOSER=composer.local.json` (untracked, path repositories).
 - **A non-empty `prompts_path` fails the build** (Markdown prompts were removed
   in 6.0): ignoring it would drop prompts silently.
 - **`mcp:serve`/`mcp:list`/`mcp:doctor` are registered through the package's
