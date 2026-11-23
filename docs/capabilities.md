@@ -1,6 +1,6 @@
 ---
 title: "Capabilities"
-description: "Declaring MCP tools, resources, prompts and argument autocompletion in Yii3 with the mcp/sdk attributes — structured output, behavior hints, and Markdown prompts."
+description: "Declaring MCP tools, resources, prompts and argument autocompletion in Yii3 with the mcp/sdk attributes — structured output and behavior hints."
 ---
 
 # Capabilities
@@ -187,50 +187,6 @@ appear on the wire. **Only the calling session is reached** — reaching other
 subscribers would need a connection this process does not hold, and under
 PHP-FPM nothing outlives the request. Clients that need to observe changes
 they did not cause must poll.
-
-## Prompts from Markdown files
-
-Prompts are content, not code. Point `prompts_path` at a directory and every
-`*.md` file becomes an MCP prompt:
-
-```php
-'rasuvaeff/yii3-mcp' => [
-    'prompts_path' => __DIR__ . '/../resources/prompts',
-],
-```
-
-```markdown
----
-name: code-review          # defaults to the file name
-title: Code review assistant
-description: Reviews a diff with a given focus
-arguments:
-  - name: diff
-    description: The diff to review
-    required: true
-  - focus                  # simple form: optional argument
----
-Review the following diff focusing on {{focus}}:
-
-{{diff}}
-```
-
-Declared `{{argument}}` placeholders are substituted from the request
-(missing ones become empty strings); undeclared placeholders are left
-intact. Malformed frontmatter, an unreadable file, or a duplicate prompt name
-fail the server build with `Prompts\Exception\InvalidPromptFileException` —
-never a silently missing prompt.
-
-Substitution amplifies caller input — one argument is inserted at every
-occurrence of its placeholder — so the expanded prompt is bounded by
-`limits.prompt_result_bytes` (default 1 MiB, `0` = unlimited), checked
-**arithmetically before** the substituted string is built: an over-budget
-`prompts/get` fails without performing the allocation it refuses.
-
-> The file format is intentionally compatible with —  and inspired by —
-> [vjik/my-prompts-mcp](https://github.com/vjik/my-prompts-mcp): the same
-> prompt file works in a personal stdio prompt manager and on an application
-> server.
 
 ## Argument autocompletion (`completion/complete`)
 

@@ -104,8 +104,7 @@ For multi-host setups, rebind the interface to a shared PSR-16-backed store.
 Capability names (tool, resource, resource-template, prompt) must be unique
 across the **whole** server. The SDK's own registry is last-write-wins with
 no duplicate check — a collision between any two registration paths
-(attribute tools, `ServerConfiguratorInterface`s, the OpenAPI bridge,
-Markdown prompts) would silently drop one handler while name-keyed rules
+(attribute tools, `ServerConfiguratorInterface`s, the OpenAPI bridge) would silently drop one handler while name-keyed rules
 (visibility, cache, RBAC, audit) kept matching a vanished target.
 `GuardedRegistry` (wrapping the SDK registry) makes this a build-time
 `Exception\DuplicateCapabilityException` instead — see
@@ -119,7 +118,6 @@ the bytes are materialized, not truncated after the fact:
 | Output | Bound |
 |---|---|
 | Upstream HTTP response bodies (OpenAPI bridge) | `openapi.max_response_bytes`, enforced by an incremental read — a `Content-Length` already over the cap is rejected without reading at all. |
-| Substituted Markdown prompts | `limits.prompt_result_bytes`, checked arithmetically before the substituted string is built. |
 | OpenAPI spec documents | 10 MiB cap plus an explicit `$ref` depth/node budget during inlining, for URL and file sources alike. |
 | Tool results | `limits.tool_result_bytes` — see [Interceptors: result size limit](/interceptors#result-size-limit-and-caching). |
 | Internal failure detail in bridged calls | Only `OperationFailedException` and `OpenApi\Exception\InvalidToolArgumentException` become a caller-visible tool error. A PSR-17/PSR-18 `InvalidArgumentException` — unparseable request URI, non-RFC-7230 delegated header name — quotes the base URL or the header and stays behind the SDK's generic internal error. |

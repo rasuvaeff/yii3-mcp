@@ -20,6 +20,11 @@ tools/resources for AI agents (Claude Code, Claude Desktop, …) through a
 PSR-15 Streamable HTTP endpoint, with tools resolved through the Yii3 DI
 container.
 
+The runtime itself lives in [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) and knows nothing about
+Yii. This package adds the Yii3 side: `config-plugin` wiring, params,
+`mcp:doctor` and the OpenAPI bridge. Upgrading from 5.x:
+[UPGRADE.md](UPGRADE.md).
+
 > **Using an AI coding assistant?** [llms.txt](llms.txt) contains a compact
 > API reference you can share with the model. Contributors: see [AGENTS.md](AGENTS.md).
 > Projects using the [llm/skills](https://github.com/roxblnfk/skills) Composer
@@ -32,6 +37,7 @@ container.
 |-------------|---------|
 | PHP | 8.3 – 8.6 |
 | `mcp/sdk` | `~0.10.0` (experimental until 1.0 — hence the tilde pin) |
+| `rasuvaeff/mcp` | `^0.1` (installed automatically) |
 | `firebase/php-jwt` | optional, `^7.0`: JWT validation for the OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
 | `ext-fileinfo` | required by the SDK |
@@ -357,7 +363,8 @@ way previous versions documented it.
 `mcp:list` prints every registered tool, resource, resource template and
 prompt — with argument summaries (`name*` = required) — without an MCP client.
 It goes through the same in-process JSON-RPC path a real client uses, so
-attribute tools, OpenAPI-bridged operations and Markdown prompts all show up:
+attribute tools, OpenAPI-bridged operations and configurator-registered
+prompts all show up:
 
 ```bash
 ./yii mcp:list
@@ -466,52 +473,6 @@ such as `BearerTokenMiddleware` already set one), so a foreign client is
 refused even where the package's own guard is inert (no session store passed
 to `McpAction`). A session opened before the upgrade carries no principal and
 is answered 404 once; the client simply initializes again.
-
-### Prompts from Markdown files
-
-Prompts are content, not code — keep them in a directory and every `*.md`
-file becomes an MCP prompt (edited without a deployment, versioned like any
-other file):
-
-```php
-'rasuvaeff/yii3-mcp' => [
-    'prompts_path' => __DIR__ . '/../resources/prompts',
-],
-```
-
-```markdown
----
-name: code-review          # defaults to the file name
-title: Code review assistant
-description: Reviews a diff with a given focus
-arguments:
-  - name: diff
-    description: The diff to review
-    required: true
-  - focus                  # simple form: optional argument
----
-Review the following diff focusing on {{focus}}:
-
-{{diff}}
-```
-
-Declared `{{argument}}` placeholders are substituted from the request
-(missing ones become empty strings); undeclared placeholders are left
-intact. Malformed frontmatter, an unreadable file or a duplicate prompt
-name fail the server build with `Prompts\Exception\InvalidPromptFileException`
-— never a silently missing prompt.
-
-Substitution amplifies caller input — one argument value is inserted at
-every occurrence of its placeholder — so the expanded prompt is bounded by
-the `limits.prompt_result_bytes` param (default 1 MiB, `0` = unlimited).
-The size is computed arithmetically and checked **before** the substituted
-string is built: an over-budget `prompts/get` fails without performing the
-allocation it refuses.
-
-> The file format is intentionally compatible with — and inspired by —
-> [vjik/my-prompts-mcp](https://github.com/vjik/my-prompts-mcp) by Sergei
-> Predvoditelev: the same prompt file works in a personal stdio prompt
-> manager and on an application server.
 
 ### Argument autocompletion (`completion/complete`)
 
@@ -653,19 +614,16 @@ scope fails at config load instead of being ignored.
 
 ## Framework-agnostic usage
 
-Despite the package name, the code has no `yiisoft/*` runtime dependency —
-`composer.json`'s `require` is PSR interfaces (`psr/container`,
-`psr/http-message`, `psr/http-server-middleware`, `psr/http-factory`,
-`psr/simple-cache`, `psr/log`) plus `mcp/sdk` and `symfony/console`/`yaml`.
-`McpServerFactory` takes a plain `Psr\Container\ContainerInterface`;
-`McpAction` and `SharedSecretMiddleware` are plain PSR-15. `config/di.php` +
-`config/params.php` are only the `yiisoft/config-plugin` convenience layer —
-outside Yii3, wire the same classes by hand with whatever PSR-11 container
-and router the application already uses (Laravel, Symfony, Mezzio, Slim, …):
+Outside Yii3 install [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) instead of this package: the
+runtime has no framework dependency. `McpServerFactory` takes a plain
+`Psr\Container\ContainerInterface`; `McpAction` and `SharedSecretMiddleware`
+are plain PSR-15. Wire them with whatever PSR-11 container and router the
+application already uses (Laravel, Symfony, Mezzio, Slim, …). The OpenAPI
+bridge is still shipped here and also needs no Yii3 application:
 
 ```php
 use Mcp\Server\Session\FileSessionStore;
-use Rasuvaeff\Yii3Mcp\{McpAction, McpServerFactory, SharedSecretMiddleware};
+use Rasuvaeff\Mcp\{McpAction, McpServerFactory, SharedSecretMiddleware};
 
 // any PSR-11 container — Yii3's, PHP-DI, Laravel's, a hand-rolled one
 $container = /* ... */;
@@ -701,8 +659,8 @@ handlers — so tracing, rate limiting or ACL live in one place, without
 touching the tools:
 
 ```php
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
 
 final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 {
@@ -756,7 +714,7 @@ replaces the values of sensitive keys (`password`/`pass`/`pwd`, `secret`,
 `***`:
 
 ```php
-use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
+use Rasuvaeff\Mcp\Interceptor\ArgumentMasker;
 
 $masker = new ArgumentMasker();                       // or: new ArgumentMasker(['ssn', 'password'])
 $safe = $masker->mask($context->arguments);
@@ -919,8 +877,8 @@ per item of a search result, an image, a note.
 use Mcp\Schema\Content\ResourceLink;
 use Mcp\Schema\Enum\StructuredContent;
 use Mcp\Schema\Result\CallToolResult;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolResultDecoratorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolResultDecoratorInterface;
 
 final readonly class CreatorLinks implements ToolResultDecoratorInterface
 {
@@ -1049,8 +1007,8 @@ are idempotent, and to transient failure types only, using
 
 ```php
 use Rasuvaeff\Retry\Retry;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
 
 final readonly class RetryInterceptor implements ToolCallInterceptorInterface
@@ -1115,7 +1073,7 @@ instead — the decision runs per session, against the handshake data:
 ```php
 use Mcp\Schema\Tool;
 use Mcp\Server\Session\SessionInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\ToolVisibilityInterface;
 
 final readonly class PlanBasedVisibility implements ToolVisibilityInterface
 {
@@ -1188,7 +1146,7 @@ classified `rejected` and never pollutes error-rate metrics.
 
 ### Server configurators
 
-Beyond the built-in Markdown-prompts and OpenAPI bridge, register your own
+Beyond the built-in OpenAPI bridge, register your own
 `ServerConfiguratorInterface` implementations (or a companion package's) to
 contribute capabilities to the SDK server builder before it is built. The
 core resolves the FQCNs through the container (after its own configurators)
@@ -1756,6 +1714,9 @@ build (the SDK rejects a duplicate extension id).
 
 ## Components
 
+`McpServerComponentResolver`, `McpDoctorCommand`, `Doctor\*` and `OpenApi\*` are in
+`Rasuvaeff\Yii3Mcp`; every other class below is in `Rasuvaeff\Mcp`.
+
 | Class | Role |
 |---|---|
 | `McpServerFactory` | list of tool FQCNs → configured SDK `Server` (reads `#[McpTool]`/`#[McpResource]` attributes, wires the DI container and session store) |
@@ -1776,7 +1737,6 @@ build (the SDK rejects a duplicate extension id).
 | `Testing\McpTester` | in-process test client: initialize/list all paginated capabilities/callTool/readResource |
 | `Testing\McpErrorException` | a JSON-RPC error answered to `McpTester`: `errorCode`, `errorMessage`, `errorData` |
 | `Testing\SchemaSnapshot` | contract canary: committed JSON snapshot of all served capability schemas; drift fails the build |
-| `Prompts\MarkdownPromptsConfigurator` | a directory of `*.md` files as MCP prompts (vjik/my-prompts-mcp-compatible format) |
 | `ServerConfiguratorInterface` | generic extension point for contributing capabilities to the builder; register your own via the `configurators` params list |
 | `Interceptor\ToolCallInterceptorInterface` | wraps every tools/call (tracing, ACL, rate limits); configured via `interceptors` params |
 | `Interceptor\ToolCallContext` | what an interceptor sees: tool name, arguments, session, `clientInfo()` (`?Mcp\Schema\Implementation`, both protocol eras) |
@@ -1850,7 +1810,7 @@ composer require firebase/php-jwt   # JWT validation; not needed with your own v
 ```php
 // config/routes.php
 use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
-use Rasuvaeff\Yii3Mcp\OAuth\BearerTokenMiddleware;
+use Rasuvaeff\Mcp\OAuth\BearerTokenMiddleware;
 
 Route::methods(['POST', 'GET', 'DELETE', 'OPTIONS'], '/mcp')
     ->middleware(BearerTokenMiddleware::class)
@@ -1903,13 +1863,12 @@ Route::get('/.well-known/oauth-protected-resource/mcp')
   `0600` files) in an application-specific directory.
 - **Capability names are unique across the whole server, enforced.** A
   collision between any registration paths (attribute tools, configurators,
-  the OpenAPI bridge, Markdown prompts) fails the build with
+  the OpenAPI bridge) fails the build with
   `DuplicateCapabilityException` — never the SDK's silent last-write-wins,
   which would leave visibility/cache/RBAC/audit rules describing a vanished
   handler.
 - All caller-influenced output is size-bounded **before** allocation:
   upstream response bodies (`openapi.max_response_bytes`, incremental read),
-  substituted prompts (`limits.prompt_result_bytes`, arithmetic pre-check),
   spec documents (10 MiB + `$ref` depth/node budget) and tool results
   (`limits.tool_result_bytes`).
 - **OAuth 2.1** through `OAuth\BearerTokenMiddleware` (the SDK's resource
@@ -1925,17 +1884,10 @@ See [examples/](examples/) — every script runs offline.
 
 | Script | Shows | Needs server? |
 |--------|-------|:-------------:|
-| [`http-handshake.php`](examples/http-handshake.php) | Full in-process MCP cycle: initialize + tools/call | no |
-| [`stdio-serve.php`](examples/stdio-serve.php) | The stdio transport `mcp:serve` runs, over in-memory streams | no |
-| [`conditional.php`](examples/conditional.php) | `ConditionalToolInterface` registration gating | no |
-| [`prompts.php`](examples/prompts.php) | Markdown files served as MCP prompts | no |
 | [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools, with `tool_names` and `OperationModifierInterface` | no |
-| [`interceptors.php`](examples/interceptors.php) | Tracing interceptor (with `ArgumentMasker`) + tool-call budget guard + result size limit | no |
-| [`visibility.php`](examples/visibility.php) | Tool visibility: per-session interface + declarative deny patterns, fail-closed call | no |
-| [`structured-output.php`](examples/structured-output.php) | `outputSchema` + `structuredContent` on a tool | no |
-| [`server-initiated.php`](examples/server-initiated.php) | Official `ToolAnnotations` and a schema-safe `RequestContext` parameter for progress/elicitation | no |
-| [`completions.php`](examples/completions.php) | `completion/complete`: value list / enum / container-resolved provider, and visibility applied to completions | no |
-| [`mcp-apps.php`](examples/mcp-apps.php) | MCP Apps: declarative and attribute-based `ui://` apps, `_meta.ui` placement, CSP/permissions, a tool linked to an app | no |
+
+The runtime examples (handshake, stdio, interceptors, visibility, MCP Apps, …)
+are in [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp).
 
 ## Testing your tools
 

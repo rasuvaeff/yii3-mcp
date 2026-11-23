@@ -11,6 +11,11 @@ composer require rasuvaeff/yii3-mcp
 
 ## Rules
 
+- The runtime is `rasuvaeff/mcp` (namespace `Rasuvaeff\Mcp`); only
+  `McpServerComponentResolver`, `McpDoctorCommand`, `Doctor\*` and `OpenApi\*`
+  are in `Rasuvaeff\Yii3Mcp`. A short class name below is in `Rasuvaeff\Mcp`
+  unless it is one of those.
+- A non-empty `prompts_path` param (removed in 6.0) fails the build.
 - The MCP endpoint is trusted-only: route it behind `SharedSecretMiddleware`
   (empty or wrong secret => explanatory JSON 401/503 — fail-closed),
   `OAuth\BearerTokenMiddleware` (OAuth 2.1 bearer tokens) or an explicit network ACL.
@@ -34,7 +39,7 @@ composer require rasuvaeff/yii3-mcp
   (`StreamableHttpTransport::PRINCIPAL_ATTRIBUTE`), which refuses a foreign
   client by itself (SDK 0.10).
 - Capability names are unique across the whole server, enforced: any
-  collision (attribute tools, configurators, OpenAPI bridge, prompts) fails
+  collision (attribute tools, configurators, OpenAPI bridge) fails
   the build with Exception\DuplicateCapabilityException.
 - Two protocol eras on one endpoint. Handshake (2024-11-05 … 2025-11-25):
   `initialize` NEGOTIATES (client's revision when supported, else 2025-11-25;
@@ -64,8 +69,7 @@ composer require rasuvaeff/yii3-mcp
   `yiisoft/yii-console` params — available right after `composer require`;
   the application layer can override any command by re-declaring its name.
 - Caller-influenced output is bounded BEFORE allocation: upstream bodies
-  (`openapi.max_response_bytes`, incremental read), substituted prompts
-  (`limits.prompt_result_bytes`, arithmetic pre-check), spec documents
+  (`openapi.max_response_bytes`, incremental read), spec documents
   (10 MiB + $ref depth/node budget), tool results (`limits.tool_result_bytes`).
 
 ## API reference
@@ -104,21 +108,12 @@ final readonly class OrderTools
     public function styleGuide(): string { ... }
 }
 
-// Markdown prompts, via Prompts\MarkdownPromptsConfigurator (format
-// compatible with / inspired by vjik/my-prompts-mcp):
-// params 'prompts_path' => '/path/to/prompts' — every *.md file becomes a prompt.
-// Frontmatter: name (default: file name), title, description,
-// arguments: [{name, description, required} | plain-string-name].
-// Body: prompt text with {{argument}} placeholders (missing arg => '',
-// undeclared placeholder stays intact). Broken file/duplicate name =>
-// Prompts\Exception\InvalidPromptFileException at build time.
-
-// Conditional registration: implement Rasuvaeff\Yii3Mcp\ConditionalToolInterface;
+// Conditional registration: implement Rasuvaeff\Mcp\ConditionalToolInterface;
 // shouldRegister() false at build time => the whole class is skipped
 // (resolve FeatureFlags etc. through the constructor).
 
 // Testing (in-process, no HTTP):
-use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Mcp\Testing\McpTester;
 $tester = new McpTester($server, $psr17RequestFactory, $psr17ResponseFactory, $psr17StreamFactory);
 // default revision = ProtocolVersion::latestHandshake() (MessageInterface::PROTOCOL_VERSION
 // is 2026-07-28 since SDK 0.9); requests go to http://localhost/mcp (the SDK refuses a
@@ -136,7 +131,7 @@ $tester->readResource('app://x'); $tester->request('custom/method');
 //   ->errorCode (int), ->errorMessage, ->errorData
 
 // Schema contract canary (drift in served schemas fails the build):
-use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
+use Rasuvaeff\Mcp\Testing\SchemaSnapshot;
 SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
 // verify(): missing file OR mismatch => RuntimeException with per-section
 // drift summary ("tools: changed [greet]") — use in CI.
@@ -211,7 +206,7 @@ For destructive operations, check capability support and fail closed.
 ### McpServerFactory
 
 ```php
-use Rasuvaeff\Yii3Mcp\McpServerFactory;
+use Rasuvaeff\Mcp\McpServerFactory;
 
 $factory = new McpServerFactory(
     container: $psr11Container,        // resolves tool instances lazily
@@ -221,14 +216,14 @@ $factory = new McpServerFactory(
     logger: null,                      // ?LoggerInterface
 );
 $server = $factory->create([OrderTools::class]);  // Mcp\Server
-// throws Rasuvaeff\Yii3Mcp\Server\Exception\InvalidToolClassException on unknown
+// throws Rasuvaeff\Mcp\Exception\InvalidToolClassException on unknown
 // class or class without capability attributes
 ```
 
 ### McpAction (PSR-15)
 
 ```php
-use Rasuvaeff\Yii3Mcp\McpAction;
+use Rasuvaeff\Mcp\McpAction;
 
 new McpAction(server: $server, responseFactory: $psr17, streamFactory: $psr17);
 // handle(ServerRequestInterface): ResponseInterface — Streamable HTTP transport
@@ -238,7 +233,7 @@ new McpAction(server: $server, responseFactory: $psr17, streamFactory: $psr17);
 ### SharedSecretMiddleware
 
 ```php
-use Rasuvaeff\Yii3Mcp\SharedSecretMiddleware;
+use Rasuvaeff\Mcp\SharedSecretMiddleware;
 
 new SharedSecretMiddleware(
     secret: 's3cret',                  // '' => every request gets 503 + explanation (fail-closed)
@@ -249,7 +244,7 @@ new SharedSecretMiddleware(
 // wrong/missing header => 401, никогда не пропускает без секрета
 
 // Several clients + secret rotation (params 'client_secrets' builds this):
-use Rasuvaeff\Yii3Mcp\Identity\StaticSecretResolver;
+use Rasuvaeff\Mcp\Identity\StaticSecretResolver;
 new StaticSecretResolver([
     'ci' => 'ci-secret',
     'claude' => ['old-secret', 'new-secret'],  // both ACTIVE during rotation
@@ -510,7 +505,7 @@ public function report(
 ### Resource update notifications
 
 ```php
-use Rasuvaeff\Yii3Mcp\Resource\ResourceUpdateNotifier;
+use Rasuvaeff\Mcp\Resource\ResourceUpdateNotifier;
 
 public function __construct(private ResourceUpdateNotifier $notifier) {}
 
@@ -566,8 +561,8 @@ without it a `ui://` resource is just text to the client.
 ],
 
 // programmatic equivalent
-use Rasuvaeff\Yii3Mcp\Apps\AppDefinition;
-use Rasuvaeff\Yii3Mcp\Apps\McpAppsConfigurator;
+use Rasuvaeff\Mcp\Apps\AppDefinition;
+use Rasuvaeff\Mcp\Apps\McpAppsConfigurator;
 
 new McpAppsConfigurator([
     AppDefinition::create(
@@ -617,8 +612,8 @@ Returning a plain string works but cannot carry `_meta.ui`.
 ### Tool-call interceptors
 
 ```php
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
 
 final readonly class MyInterceptor implements ToolCallInterceptorInterface
 {
@@ -692,8 +687,8 @@ final readonly class MyInterceptor implements ToolCallInterceptorInterface
 
 // Per-client/per-tool limits — delegate to YOUR rate limiter (package ships
 // no limiter storage):
-use Rasuvaeff\Yii3Mcp\Interceptor\RateLimitInterceptor;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
+use Rasuvaeff\Mcp\Interceptor\RateLimitInterceptor;
+use Rasuvaeff\Mcp\Interceptor\ToolCallLimiterInterface;
 // implement ToolCallLimiterInterface::allow(?string $clientId, string $toolName): bool
 // over yiisoft/rate-limiter / Redis; bind it in DI; add RateLimitInterceptor
 // to 'interceptors'. Keys: resolved client id + tool; a transport without
@@ -711,7 +706,7 @@ use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallLimiterInterface;
 // retry loop instead of re-triggering per attempt.
 
 // Masking sensitive arguments before logging/tracing/auditing:
-use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
+use Rasuvaeff\Mcp\Interceptor\ArgumentMasker;
 $masker = new ArgumentMasker();               // or new ArgumentMasker(['ssn', ...])
 $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
 // defaults: password, secret, token, api_key, apikey, api-key, x-api-key,
@@ -733,12 +728,12 @@ $safe = $masker->mask($context->arguments);   // sensitive keys => '***'
 // with no tags never matches a 'tag:' pattern. Tags come from the OpenAPI
 // document, so over a URL spec a 'tag:' DENY rule can be disarmed upstream by
 // dropping the tag — deny by name there, keep 'tag:' for allow-lists.
-// Manual: new Rasuvaeff\Yii3Mcp\Visibility\DeclarativeToolVisibility(deny: [...], allow: [...])
+// Manual: new Rasuvaeff\Mcp\Visibility\DeclarativeToolVisibility(deny: [...], allow: [...])
 
 // Per-session (admin vs public client, tenant plans) — implement the interface:
 use Mcp\Schema\Tool;
 use Mcp\Server\Session\SessionInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\ToolVisibilityInterface;
 
 final readonly class MyVisibility implements ToolVisibilityInterface
 {
@@ -764,12 +759,12 @@ final readonly class MyVisibility implements ToolVisibilityInterface
 
 ```php
 // Same seams for the other capabilities — SEPARATE interfaces and params:
-use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->clientInfo()
-use Rasuvaeff\Yii3Mcp\Interceptor\PromptGetInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadContext;     // ->uri, ->variables (RFC 6570), ->uriTemplate (null = static), ->session, ->clientId
-use Rasuvaeff\Yii3Mcp\Interceptor\ResourceReadInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;    // isVisible(Prompt, ?Session)
-use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;  // isVisible(ResourceDefinition, ?Session) + isTemplateVisible(ResourceTemplate, ?Session)
+use Rasuvaeff\Mcp\Interceptor\PromptGetContext;        // ->promptName, ->arguments, ->session, ->clientId, ->clientInfo()
+use Rasuvaeff\Mcp\Interceptor\PromptGetInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ResourceReadContext;     // ->uri, ->variables (RFC 6570), ->uriTemplate (null = static), ->session, ->clientId
+use Rasuvaeff\Mcp\Interceptor\ResourceReadInterceptorInterface;
+use Rasuvaeff\Mcp\Visibility\PromptVisibilityInterface;    // isVisible(Prompt, ?Session)
+use Rasuvaeff\Mcp\Visibility\ResourceVisibilityInterface;  // isVisible(ResourceDefinition, ?Session) + isTemplateVisible(ResourceTemplate, ?Session)
 
 // params (all DI-resolved; interceptor lists first = outermost):
 // 'prompt_interceptors' => [...], 'resource_interceptors' => [...],
@@ -785,7 +780,7 @@ use Rasuvaeff\Yii3Mcp\Visibility\ResourceVisibilityInterface;  // isVisible(Reso
 //   $promptVisibility, $resourceVisibility).
 
 // Shared outcome vocabulary for audit/telemetry bridges:
-use Rasuvaeff\Yii3Mcp\Interceptor\CallOutcome;   // Success|Rejected|Error ('success'/'rejected'/'error')
+use Rasuvaeff\Mcp\Interceptor\CallOutcome;   // Success|Rejected|Error ('success'/'rejected'/'error')
 CallOutcome::fromThrowable($e);   // ToolCallException/PromptGetException/ResourceReadException
                                   // => Rejected; anything else => Error
 ```
@@ -810,12 +805,12 @@ Params key `rasuvaeff/yii3-mcp`: `server_name`, `server_version`, `tools`,
 secrets; mutually exclusive with endpoint_secret; a secret shared by two
 client ids is rejected), `secret_header`,
 `allowed_hosts`, `session.dir`, `session.ttl`,
-`tool_call_budget.calls`, `tool_call_budget.window`, `modern_era`, `limits.tool_result_bytes`, `limits.prompt_result_bytes`,
+`tool_call_budget.calls`, `tool_call_budget.window`, `modern_era`, `limits.tool_result_bytes`,
 `cache.tools`, `cache.namespace`, `interceptors`,
 `prompt_interceptors`,
 `resource_interceptors`, `configurators`, `tool_visibility`,
 `prompt_visibility`, `resource_visibility`,
-`visibility.deny`, `visibility.allow`, `prompts_path`,
+`visibility.deny`, `visibility.allow`,
 `openapi.spec_path`, `openapi.base_url`, `openapi.operations`,
 `openapi.tool_names`, `openapi.operation_modifier`, `openapi.headers`,
 `openapi.spec_headers`, `openapi.max_response_bytes`, `openapi.opaque_errors`,

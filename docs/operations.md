@@ -18,7 +18,7 @@ configuration healthy" without needing a real MCP client.
 `mcp:list` prints every registered tool, resource, resource template, and
 prompt, with argument summaries (`name*` = required). It goes through the
 **same in-process JSON-RPC path** a real client uses, so attribute tools,
-OpenAPI-bridged operations, and Markdown prompts all show up identically —
+OpenAPI-bridged operations, and configurator-registered prompts all show up identically —
 this is not a static reflection dump.
 
 `--json` prints complete capability definitions (input/output schemas

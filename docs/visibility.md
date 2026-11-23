@@ -47,7 +47,7 @@ runs per session, against the handshake data:
 ```php
 use Mcp\Schema\Tool;
 use Mcp\Server\Session\SessionInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\ToolVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\ToolVisibilityInterface;
 
 final readonly class PlanBasedVisibility implements ToolVisibilityInterface
 {

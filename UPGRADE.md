@@ -2,6 +2,22 @@
 
 ## 5.x → 6.0.0
 
+### Required: the runtime moved to `rasuvaeff/mcp`
+
+`composer require` pulls it in; there are no class aliases. Replace imports in
+application code, config and tests:
+
+| 5.x | 6.0 |
+|---|---|
+| `Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity`, `…\ExecutionIdentityProviderInterface` | `Rasuvaeff\Mcp\Identity\…` |
+| `Rasuvaeff\Yii3Mcp\OpenApi\*` (everything else) | unchanged |
+| `Rasuvaeff\Yii3Mcp\Doctor\*`, `McpDoctorCommand` | unchanged |
+| any other `Rasuvaeff\Yii3Mcp\X` | `Rasuvaeff\Mcp\X` |
+
+Except for the prompt params below, params keys, DI behaviour, session keys, cache keys and `_meta` keys are
+unchanged: open sessions survive the upgrade. The audit-log, RBAC and telemetry
+bridges need the releases that support 6.0.
+
 ### Required: Markdown prompts are gone
 
 A non-empty `prompts_path` fails the server build, so the prompts cannot vanish

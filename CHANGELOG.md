@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- **Changed (breaking):** the runtime moved to `rasuvaeff/mcp`
+  (`Rasuvaeff\Mcp`); `OpenApi\*`, `Doctor\*` and `McpDoctorCommand` stay here.
+  No aliases — see `UPGRADE.md`.
 - **Removed (breaking):** Markdown prompts — `Prompts\*`
   (`MarkdownPromptsConfigurator`, `InvalidPromptFileException`), the
   `prompts_path` and `limits.prompt_result_bytes` params, and the

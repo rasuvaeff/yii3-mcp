@@ -68,7 +68,7 @@ human-readable table.
 ## 4. Write a test with `McpTester`
 
 ```php
-use Rasuvaeff\Yii3Mcp\Testing\McpTester;
+use Rasuvaeff\Mcp\Testing\McpTester;
 
 $tester = new McpTester($server, $psr17, $psr17, $psr17);
 
@@ -88,7 +88,7 @@ and can break an agent mid-flight without any test noticing, unless the
 schema itself is under test:
 
 ```php
-use Rasuvaeff\Yii3Mcp\Testing\SchemaSnapshot;
+use Rasuvaeff\Mcp\Testing\SchemaSnapshot;
 
 SchemaSnapshot::verify($tester, __DIR__ . '/mcp-schema.json');
 ```

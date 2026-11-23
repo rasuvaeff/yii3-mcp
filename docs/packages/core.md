@@ -5,7 +5,7 @@ description: "rasuvaeff/yii3-mcp — MCP server integration for Yii3 over the of
 
 # rasuvaeff/yii3-mcp
 
-The core package: MCP server integration for Yii3 over the official
+The Yii3 package over the framework-neutral [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) runtime and the official
 [`mcp/sdk`](https://packagist.org/packages/mcp/sdk) — a PSR-15 Streamable
 HTTP endpoint, a stdio transport, and a DI-resolved tool registry.
 
@@ -15,9 +15,9 @@ composer require rasuvaeff/yii3-mcp
 
 | | |
 |---|---|
-| Namespace | `Rasuvaeff\Yii3Mcp` |
+| Namespace | `Rasuvaeff\Yii3Mcp` (runtime classes: `Rasuvaeff\Mcp`) |
 | Repository | [github.com/rasuvaeff/yii3-mcp](https://github.com/rasuvaeff/yii3-mcp) |
-| Requirements | PHP 8.3 – 8.5, `mcp/sdk ~0.7.0`, `ext-fileinfo` |
+| Requirements | PHP 8.3 – 8.6, `mcp/sdk ~0.10.0`, `ext-fileinfo` |
 
 ## Where to start
 

@@ -1,24 +1,18 @@
 ---
 title: "Framework-agnostic usage"
-description: "yii3-mcp has no yiisoft/* runtime dependency — wire McpServerFactory, McpAction and SharedSecretMiddleware into Laravel, Symfony, Mezzio or Slim."
+description: "rasuvaeff/mcp has no framework dependency — wire McpServerFactory, McpAction and SharedSecretMiddleware into Laravel, Symfony, Mezzio or Slim."
 ---
 
 # Framework-agnostic usage
 
-Despite the package name, the code has no `yiisoft/*` **runtime**
-dependency. `composer.json`'s `require` is PSR interfaces
-(`psr/container`, `psr/http-message`, `psr/http-server-middleware`,
-`psr/http-factory`, `psr/simple-cache`, `psr/log`) plus `mcp/sdk` and
-`symfony/console`/`yaml`. `McpServerFactory` takes a plain
-`Psr\Container\ContainerInterface`; `McpAction` and `SharedSecretMiddleware`
-are plain PSR-15. `config/di.php` + `config/params.php` are only the
-`yiisoft/config-plugin` convenience layer — outside Yii3, wire the same
-classes by hand with whatever PSR-11 container and router the application
-already uses (Laravel, Symfony, Mezzio, Slim, …):
+The runtime is the separate [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) package: PSR contracts,
+`mcp/sdk` and `symfony/console`, no framework. Outside Yii3 install it directly
+and wire the classes by hand; `config/di.php` and `config/params.php` of
+`yii3-mcp` are only the `yiisoft/config` convenience layer:
 
 ```php
 use Mcp\Server\Session\FileSessionStore;
-use Rasuvaeff\Yii3Mcp\{McpAction, McpServerFactory, SharedSecretMiddleware};
+use Rasuvaeff\Mcp\{McpAction, McpServerFactory, SharedSecretMiddleware};
 
 // any PSR-11 container — Yii3's, PHP-DI, Laravel's, a hand-rolled one
 $container = /* ... */;
@@ -52,7 +46,7 @@ config-plugin assembling them automatically:
 $server = $factory->create(
     toolClasses: [OrderTools::class],
     configurators: [$openApiServerConfigurator],
-    interceptors: [new SessionBudgetInterceptor(50), $tracingInterceptor],
+    interceptors: [new ToolCallBudgetInterceptor(50), $tracingInterceptor],
     toolVisibility: $planBasedVisibility,
 );
 ```

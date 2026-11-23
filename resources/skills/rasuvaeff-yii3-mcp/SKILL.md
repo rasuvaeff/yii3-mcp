@@ -18,7 +18,8 @@ description: >-
 
 MCP server integration for Yii3: tool classes are listed in params, resolved
 through the DI container, served over PSR-15 Streamable HTTP or stdio.
-Namespace `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
+Runtime classes are in `Rasuvaeff\Mcp\` (package `rasuvaeff/mcp`);
+`OpenApi\*`, `Doctor\*` and `McpDoctorCommand` are in `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
 sessions, OAuth validation) come from `mcp/sdk` (`~0.10.0`; minor = breaking) —
 never invent them. SDK classes live under `Mcp\Server\*` (`Mcp\Server\Server`,
 `Mcp\Server\Capability\Attribute\McpTool`, `Mcp\Server\Exception\ToolCallException`)
@@ -111,7 +112,7 @@ stateless era: read the era with care, never assume a session persists.
 
 ```php
 use Mcp\Server\Capability\Attribute\McpTool;
-use Rasuvaeff\Yii3Mcp\{McpServerFactory, McpAction, SharedSecretMiddleware};
+use Rasuvaeff\Mcp\{McpServerFactory, McpAction, SharedSecretMiddleware};
 
 final readonly class OrderTools
 {
