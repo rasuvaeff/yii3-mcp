@@ -1296,8 +1296,8 @@ DI wiring требует PSR-18/PSR-17 services (`ClientInterface`,
 передаётся единым tool argument `body`; отсутствующий в document `operationId`
 вызывает `UnknownOperationException` при server build. Не-GET operation при
 `safe_methods_only` вызывает `UnsafeOperationException` (fail-fast). Локальные
-`#/components/...` `$ref` разрешаются inline до 32 chained hops; external
-(URL/file) `$ref` остаются неразрешёнными для request-body schemas. URL
+`#/components/...` `$ref` разрешаются inline, рекурсивная схема остаётся
+ссылкой с записью в `$defs`; внешние (URL/file) `$ref` отклоняются. URL
 parameters намеренно ограничены scalar schemas `string`, `integer`, `number`
 и `boolean` со стандартной OpenAPI serialization (`simple` для path, `form`
 для query). Header/cookie parameters, external или non-scalar parameter

@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Rasuvaeff\Mcp`) and the OpenAPI bridge to `rasuvaeff/mcp-openapi`
   (`Rasuvaeff\Mcp\OpenApi`); `Doctor\*` and `McpDoctorCommand` stay here.
   No aliases — see `UPGRADE.md`.
+- **Changed (breaking):** OpenAPI documents are compiled by
+  `rasuvaeff/openapi-contract`; what is bridged and refused differently is listed in
+  the `rasuvaeff/mcp-openapi` changelog.
 - **Fixed:** interleaved requests of one process (Fibers, Swoole) no longer lose
   or exchange client ids on calls without a session owner.
 - **Removed (breaking):** Markdown prompts — `Prompts\*`

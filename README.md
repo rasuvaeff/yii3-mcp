@@ -1302,8 +1302,8 @@ Request bodies are passed as a single `body` tool argument; an operationId
 missing from the document throws `UnknownOperationException` at server build
 time, a non-GET operation under `safe_methods_only` throws
 `UnsafeOperationException` (fail-fast). Local `#/components/...` `$ref`s are
-resolved inline (up to 32 chained hops); external (URL/file) `$ref`s pass
-through unresolved for request-body schemas. URL parameters are deliberately
+resolved inline, a recursive schema keeps its reference with a `$defs` entry;
+external (URL/file) `$ref`s are refused. URL parameters are deliberately
 limited to scalar `string`, `integer`, `number` and `boolean` schemas with the
 OpenAPI defaults (`simple` path, `form` query). Header/cookie parameters,
 external or non-scalar parameter schemas, custom serialization, non-default

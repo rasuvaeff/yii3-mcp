@@ -347,8 +347,8 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   served name changes; interceptors/visibility must reference the RENAMED
   name. description = summary/description, inputSchema
   from path/query parameters (+ `body` argument for application/json
-  requestBody). Local `#/components/...` $refs are resolved inline (chains
-  of up to 32 hops); external (URL/file) $refs pass through unresolved.
+  requestBody). Local `#/components/...` $refs are resolved inline, a
+  recursive schema keeps its $ref with a $defs entry; external $refs are refused.
 - outputSchema is advertised in tools/list when the operation's lowest
   concrete 2xx response has an application/json schema of type "object"
   (OpenAPI 3.1's `type: ["object", "null"]` accepted the same way; $refs
