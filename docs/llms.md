@@ -258,8 +258,8 @@ new StaticSecretResolver([
 ]);
 // hash_equals per candidate; resolve(presented) => client id | null.
 // Resolved id => request attribute SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE,
-// carried per-request by internal Identity\ClientIdentityContext (the SDK hands
-// handlers the JSON-RPC request, not the PSR-7 one), exposed as
+// carried by the request itself in the SDK AccessToken (no static state, safe with
+// interleaved Fibers; getAccessToken() is then a token without scopes), exposed as
 // ToolCallContext::$clientId and mirrored into the session
 // (InterceptingReferenceHandler::CLIENT_ID_SESSION_KEY). Raw secret never
 // travels past the middleware. Single secret = client id "default".

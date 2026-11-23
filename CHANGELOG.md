@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Changed (breaking):** the runtime moved to `rasuvaeff/mcp`
   (`Rasuvaeff\Mcp`); `OpenApi\*`, `Doctor\*` and `McpDoctorCommand` stay here.
   No aliases — see `UPGRADE.md`.
+- **Fixed:** interleaved requests of one process (Fibers, Swoole) no longer lose
+  or exchange client ids on calls without a session owner.
 - **Removed (breaking):** Markdown prompts — `Prompts\*`
   (`MarkdownPromptsConfigurator`, `InvalidPromptFileException`), the
   `prompts_path` and `limits.prompt_result_bytes` params, and the
