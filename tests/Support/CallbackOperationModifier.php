@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
 use Mcp\Schema\Tool;
-use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
-use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
+use Rasuvaeff\Mcp\OpenApi\Operation;
+use Rasuvaeff\Mcp\OpenApi\OperationModifierInterface;
 
 final readonly class CallbackOperationModifier implements OperationModifierInterface
 {

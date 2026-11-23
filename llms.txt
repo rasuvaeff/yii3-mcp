@@ -11,8 +11,9 @@ composer require rasuvaeff/yii3-mcp
 
 ## Rules
 
-- The runtime is `rasuvaeff/mcp` (namespace `Rasuvaeff\Mcp`); only
-  `McpServerComponentResolver`, `McpDoctorCommand`, `Doctor\*` and `OpenApi\*`
+- The runtime is `rasuvaeff/mcp` (namespace `Rasuvaeff\Mcp`); `OpenApi\*`
+  is `rasuvaeff/mcp-openapi` (`Rasuvaeff\Mcp\OpenApi`); only
+  `McpServerComponentResolver`, `McpDoctorCommand` and `Doctor\*`
   are in `Rasuvaeff\Yii3Mcp`. A short class name below is in `Rasuvaeff\Mcp`
   unless it is one of those.
 - A non-empty `prompts_path` param (removed in 6.0) fails the build.
@@ -320,9 +321,9 @@ DI: Doctor\McpDoctor is bound in config/di.php from the package params.
 ### OpenAPI bridge (expose an existing REST API)
 
 ```php
-use Rasuvaeff\Yii3Mcp\OpenApi\HttpOperationExecutor;
-use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiServerConfigurator;
-use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
+use Rasuvaeff\Mcp\OpenApi\HttpOperationExecutor;
+use Rasuvaeff\Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Mcp\OpenApi\SpecIndex;
 
 $configurator = new OpenApiServerConfigurator(
     spec: SpecIndex::fromFile('/path/openapi.json'),   // or fromJson()/new SpecIndex(array)

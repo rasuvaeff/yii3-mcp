@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Rasuvaeff\Yii3Mcp\OpenApi\InProcessScopeInterface;
+use Rasuvaeff\Mcp\OpenApi\InProcessScopeInterface;
 
 /**
  * Scope double: records the enter/handle/leave interleaving so tests can

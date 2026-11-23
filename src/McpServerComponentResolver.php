@@ -23,16 +23,16 @@ use Rasuvaeff\Mcp\Interceptor\ToolCallBudgetInterceptor;
 use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
 use Rasuvaeff\Mcp\Interceptor\ToolResultDecoratorInterface;
 use Rasuvaeff\Mcp\McpServerComponents;
+use Rasuvaeff\Mcp\OpenApi\DelegatedHeaderProviderInterface;
+use Rasuvaeff\Mcp\OpenApi\ExecutionRequestAttributesInterface;
+use Rasuvaeff\Mcp\OpenApi\InProcessScopeInterface;
+use Rasuvaeff\Mcp\OpenApi\OpenApiBridgeFactory;
+use Rasuvaeff\Mcp\OpenApi\OperationModifierInterface;
 use Rasuvaeff\Mcp\ServerConfiguratorInterface;
 use Rasuvaeff\Mcp\Visibility\DeclarativeToolVisibility;
 use Rasuvaeff\Mcp\Visibility\PromptVisibilityInterface;
 use Rasuvaeff\Mcp\Visibility\ResourceVisibilityInterface;
 use Rasuvaeff\Mcp\Visibility\ToolVisibilityInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\ExecutionRequestAttributesInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\InProcessScopeInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
-use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
 
 /**
  * @internal

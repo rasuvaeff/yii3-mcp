@@ -18,26 +18,9 @@
     //      implode(), which ignores keys.
     //    - Doctor/McpDoctor.php IncrementInteger (`explode(':', $h, 2)[0]` ->
     //      limit 3): index [0] is the same for any limit >= 2.
-    //    - OpenApi/OperationRequestBuilder.php UnwrapArrayValues: the values
-    //      are counted and iterated into a fresh list; keys never read.
-    //    - OpenApi/OperationRequestBuilder.php CastString x2: PHP turns a
-    //      numeric-string key into the int key anyway.
     //    - McpServerComponentResolver.php DecrementInteger x2 (`?? 0` -> `-1`,
     //      budget calls and tool_result_bytes): read by a `> 0` guard.
-    //    - OpenApi/SpecIndex.php Concat x2, ConcatOperandRemoval
-    //      (`$in . ':' . $name`): $in is one of four values with distinct
-    //      first characters, so no separator choice can collide.
-    //    - OpenApi/SpecIndex.php ReturnRemoval (extractRequestBodySchema):
-    //      every following `?? null` converges on null.
     //
-    // Unreachable by constructor/factory invariants:
-    //    - OpenApi/OperationRequestBuilder.php LogicalAnd: the constructor
-    //      rejects configuring exactly one of identity and delegated.
-    //    - OpenApi/OpenApiBridgeFactory.php Throw_ x2: twins of the guards in
-    //      create(), which rejects first.
-    //
-    // Mutants that are only ever "Timed Out" are infinite loops by
-    // construction (JsonPointerResolver budgets, bounded stream readers): the original code is what stops them.
     // Unit only: every package declares a Benchmarks suite (testo.php), and Infection's initial
     // test run would execute it. A timing-sensitive benchmark fails under host load and aborts
     // the whole mutation run (result, 2026-11-03). Benchmarks mutate nothing and kill nothing.

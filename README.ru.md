@@ -20,9 +20,9 @@ Yii3 поверх **официального** [`mcp/sdk`](https://packagist.org
 и других) через PSR-15 Streamable HTTP endpoint; инструменты разрешаются через
 Yii3 DI-контейнер.
 
-Сам runtime находится в [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) и ничего не знает о Yii. Этот
-пакет добавляет сторону Yii3: подключение через `config-plugin`, params,
-`mcp:doctor` и OpenAPI bridge. Обновление с 5.x: [UPGRADE.md](UPGRADE.md).
+Сам runtime находится в [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) и ничего не знает о Yii;
+OpenAPI bridge — в [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi). Этот пакет добавляет
+сторону Yii3: подключение через `config-plugin`, params и `mcp:doctor`. Обновление с 5.x: [UPGRADE.md](UPGRADE.md).
 
 > Пользуетесь AI coding assistant? [llms.txt](llms.txt) содержит компактную
 > API-справку, которую можно передать модели. Для контрибьюторов: [AGENTS.md](AGENTS.md).
@@ -36,7 +36,7 @@ Yii3 DI-контейнер.
 |------------|--------|
 | PHP | 8.3 - 8.6 |
 | `mcp/sdk` | `~0.10.0` (экспериментальный до 1.0 — отсюда tilde-пин) |
-| `rasuvaeff/mcp` | `^0.1` (ставится автоматически) |
+| `rasuvaeff/mcp`, `rasuvaeff/mcp-openapi` | `^0.1` (ставится автоматически) |
 | `firebase/php-jwt` | необязательно, `^7.0`: проверка JWT для OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 через `initialize` (согласуется), 2026-07-28 stateless |
 | `ext-fileinfo` | требуется SDK |
@@ -613,8 +613,8 @@ Stateless-ответы на `server/discover`, `tools/list`, `prompts/list`,
 от фреймворка. `McpServerFactory` принимает обычный
 `Psr\Container\ContainerInterface`; `McpAction` и `SharedSecretMiddleware` —
 обычный PSR-15. Соберите их с любым PSR-11 container и router, которые уже
-использует приложение (Laravel, Symfony, Mezzio, Slim, …). OpenAPI bridge пока
-поставляется здесь и тоже не требует приложения Yii3:
+использует приложение (Laravel, Symfony, Mezzio, Slim, …). Для OpenAPI bridge
+добавьте [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi):
 
 ```php
 use Mcp\Server\Session\FileSessionStore;
@@ -1005,7 +1005,7 @@ transient failure типами, используя
 use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+use Rasuvaeff\Mcp\OpenApi\Exception\OperationFailedException;
 
 final readonly class RetryInterceptor implements ToolCallInterceptorInterface
 {
@@ -1447,7 +1447,7 @@ configurator из того, что у потребителя уже есть, п
 `@internal`-класс трогать не нужно.
 
 ```php
-use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
+use Rasuvaeff\Mcp\OpenApi\OpenApiBridgeFactory;
 
 $server = (new McpServerFactory($container, $sessionStore))->create([], [
     OpenApiBridgeFactory::create(
@@ -1531,8 +1531,8 @@ generic extension point для `McpServerFactory::create(tools, configurators)`)
 
 ```php
 use Mcp\Schema\Tool;
-use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
-use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
+use Rasuvaeff\Mcp\OpenApi\Operation;
+use Rasuvaeff\Mcp\OpenApi\OperationModifierInterface;
 
 final readonly class MyOperationModifier implements OperationModifierInterface
 {
@@ -1698,8 +1698,9 @@ public function refresh(): string { /* … */ }
 
 ## Компоненты
 
-`McpServerComponentResolver`, `McpDoctorCommand`, `Doctor\*` и `OpenApi\*` находятся в
-`Rasuvaeff\Yii3Mcp`; остальные классы ниже — в `Rasuvaeff\Mcp`.
+`McpServerComponentResolver`, `McpDoctorCommand` и `Doctor\*` находятся в
+`Rasuvaeff\Yii3Mcp`; `OpenApi\*` — в `rasuvaeff/mcp-openapi`; остальные классы
+ниже — в `rasuvaeff/mcp`. Namespace у обоих `Rasuvaeff\Mcp`.
 
 | Class | Роль |
 |---|---|
@@ -1865,14 +1866,9 @@ Route::get('/.well-known/oauth-protected-resource/mcp')
 
 ## Примеры
 
-См. [examples/](examples/): каждый script запускается offline.
-
-| Script | Что показывает | Нужен server? |
-|--------|----------------|:-------------:|
-| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations, опубликованные как MCP tools, с `tool_names` и `OperationModifierInterface` | нет |
-
-Примеры самого runtime (handshake, stdio, interceptors, visibility, MCP Apps, …)
-находятся в [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp).
+Этот пакет содержит только подключение к Yii3. Исполняемые скрипты — в
+[`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) (runtime) и
+[`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi) (OpenAPI bridge); см. [examples/](examples/).
 
 ## Тестирование своих tools
 

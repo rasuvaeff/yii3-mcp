@@ -207,7 +207,7 @@ of verified-idempotent tools and to transient failure types only, e.g. with
 
 ```php
 use Rasuvaeff\Retry\Retry;
-use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+use Rasuvaeff\Mcp\OpenApi\Exception\OperationFailedException;
 
 final readonly class RetryInterceptor implements ToolCallInterceptorInterface
 {

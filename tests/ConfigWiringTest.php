@@ -32,6 +32,8 @@ use Rasuvaeff\Mcp\McpAction;
 use Rasuvaeff\Mcp\McpListCommand;
 use Rasuvaeff\Mcp\McpServeCommand;
 use Rasuvaeff\Mcp\McpServerFactory;
+use Rasuvaeff\Mcp\OpenApi\Exception\UnsafeOperationException;
+use Rasuvaeff\Mcp\OpenApi\Operation;
 use Rasuvaeff\Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Mcp\SharedSecretMiddleware;
 use Rasuvaeff\Mcp\Testing\McpTester;
@@ -40,8 +42,6 @@ use Rasuvaeff\Understudy\Understudy;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
 use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
-use Rasuvaeff\Yii3Mcp\OpenApi\Exception\UnsafeOperationException;
-use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CallbackOperationModifier;
 use Rasuvaeff\Yii3Mcp\Tests\Support\CountingTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\DenyListVisibility;
@@ -74,7 +74,7 @@ use function Rasuvaeff\Understudy\when;
 #[Covers(ExecutionIdentity::class)]
 #[Covers(McpServerComponentResolver::class)]
 #[Covers(McpServerFactory::class)]
-#[Covers(\Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory::class)]
+#[Covers(\Rasuvaeff\Mcp\OpenApi\OpenApiBridgeFactory::class)]
 final class ConfigWiringTest
 {
     public function sessionStoreDefaultsToFpmSafePrivateFileStore(): void

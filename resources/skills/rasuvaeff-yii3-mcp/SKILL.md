@@ -18,8 +18,8 @@ description: >-
 
 MCP server integration for Yii3: tool classes are listed in params, resolved
 through the DI container, served over PSR-15 Streamable HTTP or stdio.
-Runtime classes are in `Rasuvaeff\Mcp\` (package `rasuvaeff/mcp`);
-`OpenApi\*`, `Doctor\*` and `McpDoctorCommand` are in `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
+Runtime classes are in `Rasuvaeff\Mcp\` (package `rasuvaeff/mcp`,
+`OpenApi\*` in `rasuvaeff/mcp-openapi`); `Doctor\*` and `McpDoctorCommand` are in `Rasuvaeff\Yii3Mcp\`. Protocol structures (attributes, JSON-RPC,
 sessions, OAuth validation) come from `mcp/sdk` (`~0.10.0`; minor = breaking) —
 never invent them. SDK classes live under `Mcp\Server\*` (`Mcp\Server\Server`,
 `Mcp\Server\Capability\Attribute\McpTool`, `Mcp\Server\Exception\ToolCallException`)

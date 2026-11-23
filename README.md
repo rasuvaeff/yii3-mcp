@@ -21,8 +21,8 @@ PSR-15 Streamable HTTP endpoint, with tools resolved through the Yii3 DI
 container.
 
 The runtime itself lives in [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) and knows nothing about
-Yii. This package adds the Yii3 side: `config-plugin` wiring, params,
-`mcp:doctor` and the OpenAPI bridge. Upgrading from 5.x:
+Yii; the OpenAPI bridge is in [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi). This package
+adds the Yii3 side: `config-plugin` wiring, params and `mcp:doctor`. Upgrading from 5.x:
 [UPGRADE.md](UPGRADE.md).
 
 > **Using an AI coding assistant?** [llms.txt](llms.txt) contains a compact
@@ -37,7 +37,7 @@ Yii. This package adds the Yii3 side: `config-plugin` wiring, params,
 |-------------|---------|
 | PHP | 8.3 – 8.6 |
 | `mcp/sdk` | `~0.10.0` (experimental until 1.0 — hence the tilde pin) |
-| `rasuvaeff/mcp` | `^0.1` (installed automatically) |
+| `rasuvaeff/mcp`, `rasuvaeff/mcp-openapi` | `^0.1` (installed automatically) |
 | `firebase/php-jwt` | optional, `^7.0`: JWT validation for the OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
 | `ext-fileinfo` | required by the SDK |
@@ -618,8 +618,8 @@ Outside Yii3 install [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) instead
 runtime has no framework dependency. `McpServerFactory` takes a plain
 `Psr\Container\ContainerInterface`; `McpAction` and `SharedSecretMiddleware`
 are plain PSR-15. Wire them with whatever PSR-11 container and router the
-application already uses (Laravel, Symfony, Mezzio, Slim, …). The OpenAPI
-bridge is still shipped here and also needs no Yii3 application:
+application already uses (Laravel, Symfony, Mezzio, Slim, …). For the OpenAPI
+bridge add [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi):
 
 ```php
 use Mcp\Server\Session\FileSessionStore;
@@ -1009,7 +1009,7 @@ are idempotent, and to transient failure types only, using
 use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
 use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
-use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+use Rasuvaeff\Mcp\OpenApi\Exception\OperationFailedException;
 
 final readonly class RetryInterceptor implements ToolCallInterceptorInterface
 {
@@ -1460,7 +1460,7 @@ builds a ready configurator from what any consumer already has, so nothing
 `@internal` has to be reached for.
 
 ```php
-use Rasuvaeff\Yii3Mcp\OpenApi\OpenApiBridgeFactory;
+use Rasuvaeff\Mcp\OpenApi\OpenApiBridgeFactory;
 
 $server = (new McpServerFactory($container, $sessionStore))->create([], [
     OpenApiBridgeFactory::create(
@@ -1544,8 +1544,8 @@ renaming further, without writing a whole `ServerConfiguratorInterface`:
 
 ```php
 use Mcp\Schema\Tool;
-use Rasuvaeff\Yii3Mcp\OpenApi\Operation;
-use Rasuvaeff\Yii3Mcp\OpenApi\OperationModifierInterface;
+use Rasuvaeff\Mcp\OpenApi\Operation;
+use Rasuvaeff\Mcp\OpenApi\OperationModifierInterface;
 
 final readonly class MyOperationModifier implements OperationModifierInterface
 {
@@ -1714,8 +1714,9 @@ build (the SDK rejects a duplicate extension id).
 
 ## Components
 
-`McpServerComponentResolver`, `McpDoctorCommand`, `Doctor\*` and `OpenApi\*` are in
-`Rasuvaeff\Yii3Mcp`; every other class below is in `Rasuvaeff\Mcp`.
+`McpServerComponentResolver`, `McpDoctorCommand` and `Doctor\*` are in
+`Rasuvaeff\Yii3Mcp`; `OpenApi\*` is in `rasuvaeff/mcp-openapi`; every other class
+below is in `rasuvaeff/mcp`. Both use the `Rasuvaeff\Mcp` namespace.
 
 | Class | Role |
 |---|---|
@@ -1880,14 +1881,9 @@ Route::get('/.well-known/oauth-protected-resource/mcp')
 
 ## Examples
 
-See [examples/](examples/) — every script runs offline.
-
-| Script | Shows | Needs server? |
-|--------|-------|:-------------:|
-| [`openapi-bridge.php`](examples/openapi-bridge.php) | OpenAPI operations bridged as MCP tools, with `tool_names` and `OperationModifierInterface` | no |
-
-The runtime examples (handshake, stdio, interceptors, visibility, MCP Apps, …)
-are in [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp).
+This package ships only Yii3 wiring. Runnable scripts are in
+[`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) (runtime) and
+[`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi) (OpenAPI bridge); see [examples/](examples/).
 
 ## Testing your tools
 

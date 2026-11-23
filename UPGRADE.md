@@ -2,15 +2,15 @@
 
 ## 5.x → 6.0.0
 
-### Required: the runtime moved to `rasuvaeff/mcp`
+### Required: the runtime moved to `rasuvaeff/mcp` and `rasuvaeff/mcp-openapi`
 
-`composer require` pulls it in; there are no class aliases. Replace imports in
+`composer require` pulls them in; there are no class aliases. Replace imports in
 application code, config and tests:
 
 | 5.x | 6.0 |
 |---|---|
 | `Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity`, `…\ExecutionIdentityProviderInterface` | `Rasuvaeff\Mcp\Identity\…` |
-| `Rasuvaeff\Yii3Mcp\OpenApi\*` (everything else) | unchanged |
+| `Rasuvaeff\Yii3Mcp\OpenApi\*` (everything else) | `Rasuvaeff\Mcp\OpenApi\*` |
 | `Rasuvaeff\Yii3Mcp\Doctor\*`, `McpDoctorCommand` | unchanged |
 | any other `Rasuvaeff\Yii3Mcp\X` | `Rasuvaeff\Mcp\X` |
 

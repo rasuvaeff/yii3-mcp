@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
 use Rasuvaeff\Mcp\Identity\ExecutionIdentity;
-use Rasuvaeff\Yii3Mcp\OpenApi\DelegatedHeaderProviderInterface;
+use Rasuvaeff\Mcp\OpenApi\DelegatedHeaderProviderInterface;
 
 final readonly class IdentityDelegatedHeaderProvider implements DelegatedHeaderProviderInterface
 {
