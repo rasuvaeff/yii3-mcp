@@ -25,13 +25,11 @@ that turns application config into an `Mcp\Server\Builder`-built `Server`:
    `ReservedToolNamesAwareInterface` is handed the attribute tools' names
    first, so it can fail fast on a collision instead of silently losing a
    tool to the SDK's last-write-wins registry (see below).
-3. If any tool/prompt/resource interceptor or visibility filter is
-   configured, the builder's reference handler is swapped for
-   `Interceptor\InterceptingReferenceHandler` — a decorator wrapping the
-   SDK's own `ReferenceHandler`, so **every** registration path (attribute
-   tools, OpenAPI-bridged operations, configurator-added handlers) goes
-   through the same chain. With nothing configured, the SDK's reference
-   handler is used unmodified — zero overhead.
+3. The builder's reference handler is always
+   `Interceptor\InterceptingReferenceHandler`, a decorator wrapping the SDK's own
+   `ReferenceHandler`, so **every** registration path (attribute tools,
+   OpenAPI-bridged operations, configurator-added handlers) goes through the same
+   interceptor and visibility chain and the same client identity check.
 4. The registry is always wrapped in `GuardedRegistry` (`@internal`): the SDK
    registry is last-write-wins with no duplicate check, so a name collision
    between *any* two registration paths would otherwise silently drop one

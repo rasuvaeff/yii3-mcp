@@ -260,7 +260,7 @@ new StaticSecretResolver([
 // hash_equals per candidate; resolve(presented) => client id | null.
 // Resolved id => request attribute SharedSecretMiddleware::CLIENT_ID_ATTRIBUTE,
 // carried by the request itself in the SDK AccessToken (no static state, safe with
-// interleaved Fibers; getAccessToken() is then a token without scopes), exposed as
+// interleaved Fibers; handlers see the original token or null), exposed as
 // ToolCallContext::$clientId and mirrored into the session
 // (InterceptingReferenceHandler::CLIENT_ID_SESSION_KEY). Raw secret never
 // travels past the middleware. Single secret = client id "default".

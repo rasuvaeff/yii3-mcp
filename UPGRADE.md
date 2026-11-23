@@ -18,13 +18,6 @@ Except for the prompt params below, params keys, DI behaviour, session keys, cac
 unchanged: open sessions survive the upgrade. The audit-log, RBAC and telemetry
 bridges need the releases that support 6.0.
 
-### Required: do not read "has a token" as "OAuth"
-
-The client id now travels in the request's `AccessToken`. Behind
-`SharedSecretMiddleware`, `RequestContext::getAccessToken()` returns a token
-without scopes or subject where 5.x returned `null`. Code that checks for `null`
-must check scopes or the subject.
-
 ### Required: Markdown prompts are gone
 
 A non-empty `prompts_path` fails the server build, so the prompts cannot vanish
