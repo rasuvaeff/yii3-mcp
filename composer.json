@@ -52,6 +52,7 @@
         "testo/bridge-infection": "^0.1.6",
         "testo/testo": "^0.10.25",
         "vimeo/psalm": "^7.0",
+        "yiisoft/di": "^1.4",
         "yiisoft/test-support": "^3.0"
     },
     "suggest": {
@@ -65,6 +66,7 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "Rasuvaeff\\Yii3Mcp\\Benchmarks\\": "benchmarks/",
             "Rasuvaeff\\Yii3Mcp\\Tests\\": "tests/"
         }
     },

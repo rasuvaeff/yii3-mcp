@@ -1866,7 +1866,8 @@ Route::get('/.well-known/oauth-protected-resource/mcp')
 
 ## Примеры
 
-Этот пакет содержит только подключение к Yii3. Исполняемые скрипты — в
+[`yii3-wiring.php`](examples/yii3-wiring.php) собирает конфигурацию пакета настоящим
+контейнером `yiisoft/di`. Скрипты runtime и bridge — в
 [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) (runtime) и
 [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi) (OpenAPI bridge); см. [examples/](examples/).
 

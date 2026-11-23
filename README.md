@@ -1881,7 +1881,8 @@ Route::get('/.well-known/oauth-protected-resource/mcp')
 
 ## Examples
 
-This package ships only Yii3 wiring. Runnable scripts are in
+[`yii3-wiring.php`](examples/yii3-wiring.php) builds the package config with a real
+`yiisoft/di` container. Runtime and bridge scripts are in
 [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp) (runtime) and
 [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi) (OpenAPI bridge); see [examples/](examples/).
 
