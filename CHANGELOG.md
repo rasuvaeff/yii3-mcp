@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- **Fixed:** `mcp:doctor` passes the `endpoint_secret` check when `oauth` is configured
+  instead of a secret (#89).
+- **Added:** `external_auth` param: declares that the endpoint is protected outside the
+  package, so `mcp:doctor` skips the check instead of failing it. It guards nothing (#89).
+
 ## 6.0.0 — 2026-11-24
 
 - **Changed (breaking):** the runtime moved to `rasuvaeff/mcp`

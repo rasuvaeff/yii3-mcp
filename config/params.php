@@ -36,6 +36,10 @@ return [
         // middleware. Mutually exclusive with 'endpoint_secret'.
         'client_secrets' => [],
         'secret_header' => 'X-Mcp-Secret',
+        // read by mcp:doctor only: true declares that the endpoint is protected
+        // outside this package (network ACL, the application's own middleware),
+        // so a missing secret is not reported as a failure. Guards nothing.
+        'external_auth' => false,
         // extra hosts for the transport's DNS-rebinding protection
         // (localhost is always allowed); required when the endpoint is
         // served from a real domain, e.g. ['api.example.com']

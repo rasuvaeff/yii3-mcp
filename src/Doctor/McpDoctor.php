@@ -57,6 +57,8 @@ final readonly class McpDoctor
      *                                                   malformed one is reported even when the server build check skips
      * @param string $notificationBus the `notifications.bus` kind ('' | psr16 | psr6 | memory)
      * @param int $requestStateKeyBytes length of `request_state.key` — the key itself is never passed here
+     * @param bool $oauthConfigured `oauth.resource` and `oauth.authorization_servers` are both set
+     * @param bool $externalAuth the `external_auth` param: the endpoint is guarded outside this package
      */
     public function __construct(
         private ContainerInterface $container,
@@ -81,6 +83,8 @@ final readonly class McpDoctor
         private bool $toolCallBudgetEnabled = false,
         private string $notificationBus = '',
         private int $requestStateKeyBytes = 0,
+        private bool $oauthConfigured = false,
+        private bool $externalAuth = false,
     ) {}
 
     public function diagnose(
@@ -270,12 +274,30 @@ final readonly class McpDoctor
             );
         }
 
+        if ($this->endpointSecret === '' && $this->clientSecretIds === [] && $this->oauthConfigured) {
+            return new CheckResult(
+                name: 'endpoint_secret',
+                category: CheckCategory::Config,
+                status: CheckStatus::Pass,
+                details: 'No secret: OAuth 2.1 resource server is configured',
+            );
+        }
+
+        if ($this->endpointSecret === '' && $this->clientSecretIds === [] && $this->externalAuth) {
+            return new CheckResult(
+                name: 'endpoint_secret',
+                category: CheckCategory::Config,
+                status: CheckStatus::Skip,
+                details: 'No secret: "external_auth" declares that the endpoint is protected outside this package; not verified',
+            );
+        }
+
         if ($this->endpointSecret === '' && $this->clientSecretIds === []) {
             return new CheckResult(
                 name: 'endpoint_secret',
                 category: CheckCategory::Config,
                 status: CheckStatus::Fail,
-                details: 'No endpoint secret configured: SharedSecretMiddleware answers 503 to every request. Set the "endpoint_secret" param (env MCP_SECRET), configure "client_secrets", or protect the endpoint with a network ACL instead of the middleware',
+                details: 'No endpoint secret configured: SharedSecretMiddleware answers 503 to every request. Set the "endpoint_secret" param (env MCP_SECRET), configure "client_secrets" or "oauth", or protect the endpoint yourself and declare it with "external_auth"',
             );
         }
 

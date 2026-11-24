@@ -40,7 +40,7 @@ adds the Yii3 side: `config-plugin` wiring, params and `mcp:doctor`. Upgrading f
 | `rasuvaeff/mcp`, `rasuvaeff/mcp-openapi` | `^0.1` (installed automatically) |
 | `firebase/php-jwt` | optional, `^7.0`: JWT validation for the OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 over `initialize` (negotiated), 2026-07-28 stateless |
-| `ext-fileinfo` | required by the SDK |
+| `ext-fileinfo` | optional: MIME detection of file content |
 
 ## Installation
 
@@ -159,7 +159,7 @@ key. [Yii3: configuration](https://rasuvaeff.github.io/mcp/yii3/configuration) e
 |---|---|
 | `server_name`, `server_version`, `instructions`, `pagination_limit`, `protocol_version`, `result_json` | [server identity and server-wide knobs](https://rasuvaeff.github.io/mcp/yii3/configuration#server-wide-knobs) |
 | `tools`, `configurators` | [tool classes and your own configurators](https://rasuvaeff.github.io/mcp/capabilities) |
-| `endpoint_secret`, `client_secrets`, `secret_header` | [shared secrets, several clients, rotation](https://rasuvaeff.github.io/mcp/security) |
+| `endpoint_secret`, `client_secrets`, `secret_header`, `external_auth` | [shared secrets, several clients, rotation](https://rasuvaeff.github.io/mcp/security) |
 | `oauth` | [OAuth 2.1 resource server](https://rasuvaeff.github.io/mcp/oauth) |
 | `allowed_hosts`, `expected_http_host`, `session` | [hosts and session storage](https://rasuvaeff.github.io/mcp/security#sessions-on-disk) |
 | `modern_era`, `header_validation`, `cache_policy`, `request_state` | [stateless era](https://rasuvaeff.github.io/mcp/protocol#protocol-revisions) |

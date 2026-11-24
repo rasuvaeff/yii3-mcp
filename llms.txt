@@ -305,7 +305,8 @@ sorted object keys) for CI diffs and external automation.
 
 ### McpDoctorCommand (configuration health check)
 
-`mcp:doctor` — runs Doctor\McpDoctor: endpoint secret, optional expected HTTP
+`mcp:doctor` — runs Doctor\McpDoctor: endpoint secret (or `oauth`; `external_auth: true`
+declares protection outside the package and skips it), optional expected HTTP
 host, exact conditional PSR-17/18/16 bindings, session storage, OpenAPI spec,
 and real server build. Output never contains the secret or header values.
 Exit codes (stable): 0 healthy, 2 config, 3 storage, 4 upstream — the

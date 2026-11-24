@@ -59,6 +59,7 @@ use Rasuvaeff\Yii3Mcp\Tests\Support\StructuredWeatherTool;
 use Rasuvaeff\Yii3Mcp\Tests\Support\SubjectRequestAttributes;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Expect;
 use Testo\Test;
 use Yiisoft\Test\Support\Container\SimpleContainer;
@@ -1311,6 +1312,31 @@ final class ConfigWiringTest
         ]));
 
         Assert::instanceOf($doctor, McpDoctor::class);
+    }
+
+    #[DataProvider('doctorAuthProvider')]
+    public function doctorReadsTheAuthParams(array $overrides, string $status): void
+    {
+        $params = $this->params();
+        $params['rasuvaeff/yii3-mcp'] = array_replace_recursive($params['rasuvaeff/yii3-mcp'], $overrides);
+        /** @var Closure $definition */
+        $definition = $this->di($params)[McpDoctor::class]['definition'];
+        /** @var McpDoctor $doctor */
+        $doctor = $definition(new SimpleContainer([
+            SessionStoreInterface::class => new InMemorySessionStore(),
+        ]));
+        $checks = array_column($doctor->diagnose()->toArray()['checks'], column_key: 'status', index_key: 'name');
+
+        Assert::same($checks['endpoint_secret'], $status);
+    }
+
+    public static function doctorAuthProvider(): iterable
+    {
+        yield 'nothing' => [[], 'fail'];
+        yield 'oauth' => [['oauth' => ['resource' => 'https://mcp.test/mcp', 'authorization_servers' => ['https://id.test']]], 'pass'];
+        yield 'oauth without a server' => [['oauth' => ['resource' => 'https://mcp.test/mcp']], 'fail'];
+        yield 'oauth without a resource' => [['oauth' => ['authorization_servers' => ['https://id.test']]], 'fail'];
+        yield 'external' => [['external_auth' => true], 'skip'];
     }
 
     public function doctorDefinitionResolvesTheDefaultSessionDirectory(): void
