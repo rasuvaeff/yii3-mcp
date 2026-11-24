@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://rasuvaeff.github.io/yii3-mcp/sitemap.xml
