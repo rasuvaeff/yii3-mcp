@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
 
 final class RecordingInterceptor implements ToolCallInterceptorInterface
 {

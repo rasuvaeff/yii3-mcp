@@ -20,19 +20,16 @@ that turns application config into an `Mcp\Server\Builder`-built `Server`:
    capability attributes on any public method throws
    `InvalidToolClassException` at build time — never a silently empty
    registration.
-2. Every `ServerConfiguratorInterface` (the Markdown-prompts configurator, the
-   OpenAPI bridge, your own) runs next, each contributing capabilities to the
+2. Every `ServerConfiguratorInterface` (the OpenAPI bridge, your own) runs next, each contributing capabilities to the
    same builder. A configurator implementing
    `ReservedToolNamesAwareInterface` is handed the attribute tools' names
    first, so it can fail fast on a collision instead of silently losing a
    tool to the SDK's last-write-wins registry (see below).
-3. If any tool/prompt/resource interceptor or visibility filter is
-   configured, the builder's reference handler is swapped for
-   `Interceptor\InterceptingReferenceHandler` — a decorator wrapping the
-   SDK's own `ReferenceHandler`, so **every** registration path (attribute
-   tools, OpenAPI-bridged operations, configurator-added handlers) goes
-   through the same chain. With nothing configured, the SDK's reference
-   handler is used unmodified — zero overhead.
+3. The builder's reference handler is always
+   `Interceptor\InterceptingReferenceHandler`, a decorator wrapping the SDK's own
+   `ReferenceHandler`, so **every** registration path (attribute tools,
+   OpenAPI-bridged operations, configurator-added handlers) goes through the same
+   interceptor and visibility chain and the same client identity check.
 4. The registry is always wrapped in `GuardedRegistry` (`@internal`): the SDK
    registry is last-write-wins with no duplicate check, so a name collision
    between *any* two registration paths would otherwise silently drop one
@@ -63,8 +60,7 @@ resulting typed components and has no container dependency.
   `instructions`, `pagination_limit`, and a `protocol_version` resolved
   **at config-load time**: an unsupported value throws immediately, not on
   the first request.
-- `McpServerComponentResolver` assembles, in order: the Markdown-prompts
-  configurator (if `prompts_path` is set), the OpenAPI bridge configurator
+- `McpServerComponentResolver` assembles, in order: the OpenAPI bridge configurator
   (if `openapi.spec_path` and `openapi.operations` are both non-empty), the
   MCP Apps configurator (if `apps.enable` or `apps.definitions` is set), then
   every FQCN in `configurators`; the interceptor list (session budget →

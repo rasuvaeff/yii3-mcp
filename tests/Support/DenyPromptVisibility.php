@@ -6,7 +6,7 @@ namespace Rasuvaeff\Yii3Mcp\Tests\Support;
 
 use Mcp\Schema\Prompt;
 use Mcp\Server\Session\SessionInterface;
-use Rasuvaeff\Yii3Mcp\Visibility\PromptVisibilityInterface;
+use Rasuvaeff\Mcp\Visibility\PromptVisibilityInterface;
 
 final readonly class DenyPromptVisibility implements PromptVisibilityInterface
 {

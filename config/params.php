@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use Rasuvaeff\Yii3Mcp\McpDoctorCommand;
-use Rasuvaeff\Yii3Mcp\McpListCommand;
-use Rasuvaeff\Yii3Mcp\McpServeCommand;
+use Rasuvaeff\Mcp\McpListCommand;
+use Rasuvaeff\Mcp\McpServeCommand;
 
 return [
     // registering through params (not the application's config) makes the
@@ -169,11 +169,6 @@ return [
         // truncated JSON is invalid JSON, not a smaller valid one.
         'limits' => [
             'tool_result_bytes' => 0,
-            // cap on a substituted Markdown prompt's text: placeholder
-            // substitution multiplies a caller-supplied argument by its
-            // occurrence count, so the output is bounded BEFORE it is built
-            // (0 = unlimited)
-            'prompt_result_bytes' => 1_048_576,
         ],
         // PSR-16 cache for successful tool results: tool name => TTL in
         // seconds. Empty (default) = no caching. The cache key always
@@ -213,7 +208,7 @@ return [
         // per item) without re-implementing result formatting
         'result_decorators' => [],
         // server configurator FQCNs (resolved through the container, applied
-        // in order after the core's own prompts/openapi configurators); each
+        // in order after the core's own openapi configurator); each
         // implements ServerConfiguratorInterface. Extension point for
         // companion packages and app-specific server setup.
         'configurators' => [],
@@ -239,11 +234,6 @@ return [
             'deny' => [],
             'allow' => [],
         ],
-        // Markdown prompts directory: every *.md file becomes an MCP prompt
-        // (YAML frontmatter: name/title/description/arguments; body with
-        // {{argument}} placeholders). Format is vjik/my-prompts-mcp compatible.
-        // Empty = disabled.
-        'prompts_path' => '',
         // OpenAPI bridge: expose allow-listed REST operations as MCP tools.
         // Disabled while spec_path is empty; an empty operations list exposes nothing.
         // spec_path accepts a file path OR an http(s) URL (e.g. the app's own

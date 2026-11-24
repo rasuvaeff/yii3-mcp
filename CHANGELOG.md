@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 6.0.0 — 2026-11-24
+
+- **Changed (breaking):** the runtime moved to `rasuvaeff/mcp`
+  (`Rasuvaeff\Mcp`) and the OpenAPI bridge to `rasuvaeff/mcp-openapi`
+  (`Rasuvaeff\Mcp\OpenApi`); `Doctor\*` and `McpDoctorCommand` stay here.
+  No aliases — see `UPGRADE.md` (#86).
+- **Changed (breaking):** OpenAPI documents are compiled by
+  `rasuvaeff/openapi-contract`; what is bridged and refused differently is listed in
+  the `rasuvaeff/mcp-openapi` changelog.
+- **Fixed:** interleaved requests of one process (Fibers, Swoole) no longer lose
+  or exchange client ids on calls without a session owner.
+- **Removed (breaking):** Markdown prompts — `Prompts\*`
+  (`MarkdownPromptsConfigurator`, `InvalidPromptFileException`), the
+  `prompts_path` and `limits.prompt_result_bytes` params, and the
+  `symfony/yaml` dependency. Attribute prompts (`#[McpPrompt]`) and
+  prompts registered by a `ServerConfiguratorInterface` are unaffected. A
+  non-empty `prompts_path` now fails the server build.
+
 ## 5.0.1 — 2026-11-22
 
 - **Changed:** PHP 8.6 is supported: the `php` constraint is widened to

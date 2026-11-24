@@ -261,9 +261,8 @@ the base URL can never be a credential carrier.
 
 ## Spec parsing constraints
 
-Local `#/components/...` `$ref`s resolve inline (up to 32 chained hops);
-external (URL/file) `$ref`s pass through unresolved for request-body
-schemas. URL parameters are limited to scalar `string`/`integer`/`number`/
+Local `#/components/...` `$ref`s resolve inline; a recursive schema keeps
+its reference with a `$defs` entry; external (URL/file) `$ref`s are refused. URL parameters are limited to scalar `string`/`integer`/`number`/
 `boolean` schemas with OpenAPI's defaults (`simple` path, `form` query) —
 header/cookie parameters, external or non-scalar parameter schemas, custom
 serialization, non-default `explode`, and `allowReserved=true` throw

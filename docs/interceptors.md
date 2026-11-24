@@ -12,8 +12,8 @@ handlers — so tracing, rate limiting, ACL, or caching live in one place,
 without touching the tools themselves:
 
 ```php
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallContext;
-use Rasuvaeff\Yii3Mcp\Interceptor\ToolCallInterceptorInterface;
+use Rasuvaeff\Mcp\Interceptor\ToolCallContext;
+use Rasuvaeff\Mcp\Interceptor\ToolCallInterceptorInterface;
 
 final readonly class TracingInterceptor implements ToolCallInterceptorInterface
 {
@@ -102,7 +102,7 @@ replaces the values of sensitive keys with `***`, case-insensitively, at
 **every** nesting level:
 
 ```php
-use Rasuvaeff\Yii3Mcp\Interceptor\ArgumentMasker;
+use Rasuvaeff\Mcp\Interceptor\ArgumentMasker;
 
 $masker = new ArgumentMasker();                       // or: new ArgumentMasker(['ssn', 'password'])
 $safe = $masker->mask($context->arguments);
@@ -207,7 +207,7 @@ of verified-idempotent tools and to transient failure types only, e.g. with
 
 ```php
 use Rasuvaeff\Retry\Retry;
-use Rasuvaeff\Yii3Mcp\OpenApi\Exception\OperationFailedException;
+use Rasuvaeff\Mcp\OpenApi\Exception\OperationFailedException;
 
 final readonly class RetryInterceptor implements ToolCallInterceptorInterface
 {

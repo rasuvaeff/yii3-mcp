@@ -62,7 +62,6 @@ Mcp\Server\Server  (built by McpServerFactory)
       │
       ├─ your tool classes (#[McpTool] methods, DI-resolved)
       ├─ OpenAPI-bridged operations (OpenApiServerConfigurator)
-      ├─ Markdown-file prompts (MarkdownPromptsConfigurator)
       └─ interceptor chain (budget → your interceptors → cache → size limit)
 ```
 

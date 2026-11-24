@@ -1,5 +1,36 @@
 # Upgrade guide
 
+## 5.x → 6.0.0
+
+### Required: the runtime moved to `rasuvaeff/mcp` and `rasuvaeff/mcp-openapi`
+
+Both packages come in as dependencies of `yii3-mcp`; there are no class aliases.
+An application that names `Rasuvaeff\Mcp\*` classes should require the package
+itself (`composer require rasuvaeff/mcp:^0.1`, and `rasuvaeff/mcp-openapi:^0.1`
+for `Rasuvaeff\Mcp\OpenApi\*`), or `composer-require-checker` reports unknown
+symbols. `rasuvaeff/openapi-contract` is now a transitive dependency at `^0.19`;
+raise your own constraint if it is lower. Replace imports in application code,
+config and tests:
+
+| 5.x | 6.0 |
+|---|---|
+| `Rasuvaeff\Yii3Mcp\OpenApi\ExecutionIdentity`, `…\ExecutionIdentityProviderInterface` | `Rasuvaeff\Mcp\Identity\…` |
+| `Rasuvaeff\Yii3Mcp\OpenApi\*` (everything else) | `Rasuvaeff\Mcp\OpenApi\*` |
+| `Rasuvaeff\Yii3Mcp\Doctor\*`, `McpDoctorCommand` | unchanged |
+| any other `Rasuvaeff\Yii3Mcp\X` | `Rasuvaeff\Mcp\X` |
+
+Except for the prompt params below, params keys, DI behaviour, session keys, cache keys and `_meta` keys are
+unchanged: open sessions survive the upgrade. The audit-log, RBAC and telemetry
+bridges need the releases that support 6.0.
+
+### Required: Markdown prompts are gone
+
+A non-empty `prompts_path` fails the server build, so the prompts cannot vanish
+silently; a leftover `limits.prompt_result_bytes` is ignored. Remove both and
+register each prompt with `#[McpPrompt]` on a tool class or with
+`$builder->addPrompt()` in a `ServerConfiguratorInterface`. If the application
+itself parses YAML, require `symfony/yaml` explicitly.
+
 ## 4.x → 5.0.0
 
 5.0 moves to `mcp/sdk` `~0.10.0` (0.8.x is affected by GHSA-f4rf-6ghj-mhr6).

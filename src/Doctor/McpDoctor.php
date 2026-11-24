@@ -16,10 +16,10 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\SimpleCache\CacheInterface;
-use Rasuvaeff\Yii3Mcp\Apps\AppParamParser;
-use Rasuvaeff\Yii3Mcp\OpenApi\SpecIndex;
-use Rasuvaeff\Yii3Mcp\OpenApi\SpecLoader;
-use Rasuvaeff\Yii3Mcp\Utf8;
+use Rasuvaeff\Mcp\Apps\AppParamParser;
+use Rasuvaeff\Mcp\OpenApi\SpecIndex;
+use Rasuvaeff\Mcp\OpenApi\SpecLoader;
+use Rasuvaeff\Mcp\Utf8;
 use Symfony\Component\Uid\Uuid;
 
 /**

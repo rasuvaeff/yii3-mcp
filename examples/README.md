@@ -2,31 +2,13 @@
 
 | Script | Shows | Needs server? |
 |--------|-------|:-------------:|
-| `http-handshake.php` | Full MCP cycle in-process: `initialize` handshake + `tools/call` through `McpAction` with a container-resolved tool | no |
-| `stdio-serve.php` | The stdio transport `mcp:serve` runs — line-delimited JSON-RPC over in-memory streams | no |
-| `conditional.php` | `ConditionalToolInterface`: the same class registered or skipped depending on `shouldRegister()` | no |
-| `prompts.php` | [`prompts/`](prompts/) directory of Markdown files served as MCP prompts: `prompts/list` + rendered `prompts/get` | no |
-| `openapi-bridge.php` | Allow-listed OpenAPI operations bridged as MCP tools via `OpenApiBridgeFactory::create()` (no Yii3 application) — `tool_names` rename, `OperationModifierInterface`, `readOnlyHint`/tags in `_meta`, `dryRunOperations` preview; the call becomes a real HTTP request (stubbed PSR-18 client) | no |
-| `interceptors.php` | Tool-call interceptor chain: a tracing interceptor (arguments masked via `ArgumentMasker`), the tool-call budget guard rejecting the fourth call, and `ResponseSizeLimitInterceptor` truncating an oversized result | no |
-| `visibility.php` | Tool visibility: per-session interface AND the declarative deny/allow patterns; hidden tools fail-closed: a call answers the same `-32602` as a missing tool | no |
-| `capability-hooks.php` | prompts/get + resources/read interceptor chains (`CallOutcome`, template variables, client-visible rejection) and prompt visibility hiding a prompt as not-found | no |
-| `structured-output.php` | `outputSchema` on `#[McpTool]`: typed result served in `tools/list`, array return mirrored into `structuredContent` | no |
-| `server-initiated.php` | Official `ToolAnnotations`; `RequestContext` stays out of input schema while giving the tool progress/elicitation through `ClientGateway` | no |
-| `completions.php` | Argument autocompletion (`completion/complete`): `values` / `enum` / container-resolved provider class on a prompt argument and a template variable; a hidden prompt completes nothing and is reported like a missing one | no |
-| `mcp-apps.php` | MCP Apps (`io.modelcontextprotocol/ui`): declarative `AppDefinition` and attribute-based `ui://` resources, the `_meta.ui` marker vs `UiResourceContentMeta`, CSP/permissions, a tool linked to an app | no |
+| `yii3-wiring.php` | The package's `config/params.php` and `config/di.php` built by a real `yiisoft/di` container: the guarded endpoint, `mcp:list` and the `mcp:doctor` checks | no |
 
 Run from the package root (after `composer install`):
 
 ```bash
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/http-handshake.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/stdio-serve.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/conditional.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/prompts.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/openapi-bridge.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/interceptors.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/visibility.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/structured-output.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/server-initiated.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/completions.php
-docker run --rm -v "$PWD":/app -w /app composer:2 php examples/mcp-apps.php
+docker run --rm -v "$PWD":/app -w /app composer:2 php examples/yii3-wiring.php
 ```
+
+Runtime examples are in [`rasuvaeff/mcp`](https://github.com/rasuvaeff/mcp), the
+OpenAPI bridge example in [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp-openapi).
