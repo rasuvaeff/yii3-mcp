@@ -234,6 +234,9 @@ return [
                 toolCallBudgetEnabled: (int) ($params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] ?? 0) > 0,
                 notificationBus: $notificationBus,
                 requestStateKeyBytes: strlen((string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? '')),
+                oauthConfigured: ($params['rasuvaeff/yii3-mcp']['oauth']['resource'] ?? '') !== ''
+                    && ($params['rasuvaeff/yii3-mcp']['oauth']['authorization_servers'] ?? []) !== [],
+                externalAuth: (bool) ($params['rasuvaeff/yii3-mcp']['external_auth'] ?? false),
             );
         },
     ],

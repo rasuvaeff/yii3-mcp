@@ -39,7 +39,7 @@ OpenAPI bridge — в [`rasuvaeff/mcp-openapi`](https://github.com/rasuvaeff/mcp
 | `rasuvaeff/mcp`, `rasuvaeff/mcp-openapi` | `^0.1` (ставится автоматически) |
 | `firebase/php-jwt` | необязательно, `^7.0`: проверка JWT для OAuth resource server |
 | MCP protocol | 2024-11-05 … 2025-11-25 через `initialize` (согласуется), 2026-07-28 stateless |
-| `ext-fileinfo` | требуется SDK |
+| `ext-fileinfo` | необязательно: определение MIME-типа содержимого файлов |
 
 ## Установка
 
@@ -157,7 +157,7 @@ MCP-клиент подключается с секретом в заголов�
 |---|---|
 | `server_name`, `server_version`, `instructions`, `pagination_limit`, `protocol_version`, `result_json` | [имя сервера и общие настройки](https://rasuvaeff.github.io/mcp/yii3/configuration#server-wide-knobs) |
 | `tools`, `configurators` | [классы tools и свои configurators](https://rasuvaeff.github.io/mcp/capabilities) |
-| `endpoint_secret`, `client_secrets`, `secret_header` | [секреты, несколько клиентов, ротация](https://rasuvaeff.github.io/mcp/security) |
+| `endpoint_secret`, `client_secrets`, `secret_header`, `external_auth` | [секреты, несколько клиентов, ротация](https://rasuvaeff.github.io/mcp/security) |
 | `oauth` | [OAuth 2.1 resource server](https://rasuvaeff.github.io/mcp/oauth) |
 | `allowed_hosts`, `expected_http_host`, `session` | [хосты и хранение sessions](https://rasuvaeff.github.io/mcp/security#sessions-on-disk) |
 | `modern_era`, `header_validation`, `cache_policy`, `request_state` | [stateless-эра](https://rasuvaeff.github.io/mcp/protocol#protocol-revisions) |

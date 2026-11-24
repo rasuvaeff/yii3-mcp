@@ -122,6 +122,35 @@ final class McpDoctorTest
         Assert::same($this->check($report, 'endpoint_secret')->status, CheckStatus::Fail);
     }
 
+    public function oauthWithoutASecretPasses(): void
+    {
+        $report = $this->doctor(secret: '', oauthConfigured: true)->diagnose();
+        $check = $this->check($report, 'endpoint_secret');
+
+        Assert::same($report->exitCode(), 0);
+        Assert::same($check->status, CheckStatus::Pass);
+        Assert::string($check->details)->contains('OAuth 2.1');
+    }
+
+    public function declaredExternalAuthSkipsTheSecretCheck(): void
+    {
+        $report = $this->doctor(secret: '', externalAuth: true)->diagnose();
+        $check = $this->check($report, 'endpoint_secret');
+
+        Assert::same($report->exitCode(), 0);
+        Assert::same($check->status, CheckStatus::Skip);
+        Assert::string($check->details)->contains('external_auth');
+    }
+
+    public function aConfiguredSecretIsStillReportedBesideOtherAuth(): void
+    {
+        $oauth = $this->check($this->doctor(oauthConfigured: true, externalAuth: true)->diagnose(), 'endpoint_secret');
+        $clients = $this->check($this->doctor(secret: '', clientIds: ['ci'], oauthConfigured: true, externalAuth: true)->diagnose(), 'endpoint_secret');
+
+        Assert::same($oauth->details, 'Configured (single secret)');
+        Assert::string($clients->details)->contains('1 client(s)');
+    }
+
     public function clientSecretsSatisfyTheSecretCheck(): void
     {
         $report = $this->doctor(secret: '', clientIds: ['ci', 'claude'])->diagnose();
@@ -786,6 +815,8 @@ final class McpDoctorTest
         bool $toolCallBudget = false,
         string $notificationBus = '',
         int $requestStateKeyBytes = 0,
+        bool $oauthConfigured = false,
+        bool $externalAuth = false,
     ): McpDoctor {
         $factory = new Psr17Factory();
         $definitions = [
@@ -819,6 +850,8 @@ final class McpDoctorTest
             toolCallBudgetEnabled: $toolCallBudget,
             notificationBus: $notificationBus,
             requestStateKeyBytes: $requestStateKeyBytes,
+            oauthConfigured: $oauthConfigured,
+            externalAuth: $externalAuth,
         );
     }
 
