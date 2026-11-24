@@ -4,8 +4,13 @@
 
 ### Required: the runtime moved to `rasuvaeff/mcp` and `rasuvaeff/mcp-openapi`
 
-`composer require` pulls them in; there are no class aliases. Replace imports in
-application code, config and tests:
+Both packages come in as dependencies of `yii3-mcp`; there are no class aliases.
+An application that names `Rasuvaeff\Mcp\*` classes should require the package
+itself (`composer require rasuvaeff/mcp:^0.1`, and `rasuvaeff/mcp-openapi:^0.1`
+for `Rasuvaeff\Mcp\OpenApi\*`), or `composer-require-checker` reports unknown
+symbols. `rasuvaeff/openapi-contract` is now a transitive dependency at `^0.19`;
+raise your own constraint if it is lower. Replace imports in application code,
+config and tests:
 
 | 5.x | 6.0 |
 |---|---|
