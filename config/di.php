@@ -2,96 +2,44 @@
 
 declare(strict_types=1);
 
-use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server\Server;
 use Mcp\Server\Resource\SessionSubscriptionManager;
 use Mcp\Server\Resource\SubscriptionManagerInterface;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Subscription\InMemoryNotificationBus;
 use Mcp\Server\Subscription\NotificationBusInterface;
-use Mcp\Server\Subscription\Psr16NotificationBus;
-use Mcp\Server\Subscription\Psr6NotificationBus;
 use Mcp\Server\Transport\Http\OAuth\ProtectedResourceMetadataHandler;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\SimpleCache\CacheInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
-use Rasuvaeff\Mcp\CachePolicyParams;
 use Rasuvaeff\Yii3Mcp\Doctor\McpDoctor;
-use Rasuvaeff\Mcp\Identity\StaticSecretResolver;
+use Rasuvaeff\Mcp\Configuration\ServerOptions;
 use Rasuvaeff\Mcp\McpAction;
 use Rasuvaeff\Mcp\McpServerAssembler;
 use Rasuvaeff\Yii3Mcp\McpServerComponentResolver;
 use Rasuvaeff\Mcp\McpServerFactory;
 use Rasuvaeff\Mcp\OAuth\BearerTokenMiddleware;
 use Rasuvaeff\Mcp\OAuth\OAuthComponentFactory;
-use Rasuvaeff\Mcp\Session\PrivateFileSessionStore;
 use Rasuvaeff\Mcp\Session\SessionDirectory;
 use Rasuvaeff\Mcp\SharedSecretMiddleware;
 
 /** @var array $params */
 
-// Fail at config load, not at the first request: an unsupported revision here
-// would otherwise surface as an opaque SDK error deep in the server build.
-$protocolVersionParam = (string) ($params['rasuvaeff/yii3-mcp']['protocol_version'] ?? '');
-$handshakeVersion = ProtocolVersion::tryFrom($protocolVersionParam);
-$protocolVersion = $protocolVersionParam === ''
-    ? null
-    : ($handshakeVersion instanceof ProtocolVersion && !$handshakeVersion->isModern()
-        ? $handshakeVersion
-        : throw new InvalidArgumentException(sprintf(
-            'Unsupported MCP handshake protocol version "%s"; supported: %s (the stateless era is "modern_era")',
-            $protocolVersionParam,
-            implode(', ', array_map(static fn(ProtocolVersion $version): string => $version->value, ProtocolVersion::handshakeVersions())),
-        )));
-
-// Same fail-early contract for the result-JSON knob: a typo like "compct"
-// would otherwise silently serve pretty-printed results forever.
-$resultJson = (string) ($params['rasuvaeff/yii3-mcp']['result_json'] ?? McpServerFactory::RESULT_JSON_COMPACT);
-$compactToolResults = in_array($resultJson, [McpServerFactory::RESULT_JSON_PRETTY, McpServerFactory::RESULT_JSON_COMPACT], true)
-    ? $resultJson === McpServerFactory::RESULT_JSON_COMPACT
-    : throw new InvalidArgumentException(sprintf(
-        'Unsupported result_json "%s"; supported: %s, %s',
-        $resultJson,
-        McpServerFactory::RESULT_JSON_PRETTY,
-        McpServerFactory::RESULT_JSON_COMPACT,
-    ));
-
-// Same for the notification bus: an unknown kind would otherwise leave
-// stateless listen streams silently empty.
-$notificationBus = (string) ($params['rasuvaeff/yii3-mcp']['notifications']['bus'] ?? '');
-
-if (!in_array($notificationBus, ['', 'psr16', 'psr6', 'memory'], true)) {
-    throw new InvalidArgumentException(sprintf('Unsupported notifications.bus "%s"; supported: "" (none), psr16, psr6, memory', $notificationBus));
-}
+// Parsed at config load, not at the first request: an unsupported value here
+// would otherwise surface as an opaque error deep in the server build.
+$options = ServerOptions::fromParams($params['rasuvaeff/yii3-mcp']);
 
 // Bound only when configured: McpServerFactory and ResourceUpdateNotifier take
 // it as an optional dependency, and must share ONE instance — a memory bus the
 // notifier publishes to must be the one listen streams read.
-$notificationBusDefinition = match ($notificationBus) {
-    '' => [],
+$notificationBusDefinition = match ($options->notificationBus) {
     'memory' => [NotificationBusInterface::class => static fn(): NotificationBusInterface => new InMemoryNotificationBus()],
-    'psr16' => [
-        NotificationBusInterface::class => static fn(CacheInterface $cache): NotificationBusInterface => new Psr16NotificationBus(
-            cache: $cache,
-            // per application, short: PSR-16 guarantees 64-character keys
-            prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
-        ),
-    ],
-    'psr6' => [
-        NotificationBusInterface::class => static fn(CacheItemPoolInterface $cache): NotificationBusInterface => new Psr6NotificationBus(
-            cache: $cache,
-            // PSR-6 reserves the same characters and guarantees the same 64
-            prefix: 'mcp.n.' . substr(hash('sha256', (string) $params['rasuvaeff/yii3-mcp']['server_name']), 0, 12) . '.',
-        ),
-    ],
+    'psr16' => [NotificationBusInterface::class => static fn(CacheInterface $cache): NotificationBusInterface => $options->psr16NotificationBus($cache)],
+    'psr6' => [NotificationBusInterface::class => static fn(CacheItemPoolInterface $cache): NotificationBusInterface => $options->psr6NotificationBus($cache)],
+    default => [],
 };
-
-/** @var array<array-key, mixed> $cachePolicyParams */
-$cachePolicyParams = $params['rasuvaeff/yii3-mcp']['cache_policy'] ?? [];
-// parsed at config load: a typo in a method name would be a hint never sent
-$cachePolicy = CachePolicyParams::parse($cachePolicyParams);
 
 // Session store default is FPM-safe (file-based): the MCP Streamable HTTP
 // session spans several requests, so the SDK's in-memory default would lose
@@ -99,43 +47,14 @@ $cachePolicy = CachePolicyParams::parse($cachePolicyParams);
 
 return [
     SessionStoreInterface::class => [
-        'definition' => static function () use ($params): SessionStoreInterface {
-            /** @var array{dir?: string, ttl?: int} $session */
-            $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
-            /** @var string $serverName */
-            $serverName = $params['rasuvaeff/yii3-mcp']['server_name'];
-
-            // owner-only (0700 dir, 0600 files) and application-specific by
-            // default: session JSON carries client metadata and everything
-            // needed to replay a session id — it must not be readable by
-            // other OS users or shared between applications on one host
-            return new PrivateFileSessionStore(
-                directory: SessionDirectory::resolve($session['dir'] ?? '', $serverName),
-                ttl: $session['ttl'] ?? 3600,
-            );
-        },
+        'definition' => static fn(): SessionStoreInterface => $options->sessionStore(),
     ],
     // backs resources/subscribe AND is what Resource\ResourceUpdateNotifier
     // reads, so both sides of a subscription agree by construction
     SubscriptionManagerInterface::class => SessionSubscriptionManager::class,
     ...$notificationBusDefinition,
     McpServerFactory::class => [
-        '__construct()' => [
-            'name' => $params['rasuvaeff/yii3-mcp']['server_name'],
-            'version' => $params['rasuvaeff/yii3-mcp']['server_version'],
-            'instructions' => $params['rasuvaeff/yii3-mcp']['instructions'] ?? '',
-            'paginationLimit' => $params['rasuvaeff/yii3-mcp']['pagination_limit'] ?? McpServerFactory::DEFAULT_PAGINATION_LIMIT,
-            'protocolVersion' => $protocolVersion,
-            'compactToolResults' => $compactToolResults,
-            'modernEra' => (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
-            'headerValidation' => (bool) ($params['rasuvaeff/yii3-mcp']['header_validation'] ?? true),
-            'cachePolicy' => $cachePolicy,
-            'requestStateKey' => (string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? ''),
-            'requestStateTtl' => (int) ($params['rasuvaeff/yii3-mcp']['request_state']['ttl'] ?? 600),
-            'previousRequestStateKeys' => array_values(array_map(strval(...), (array) ($params['rasuvaeff/yii3-mcp']['request_state']['previous_keys'] ?? []))),
-            'bindRequestState' => (bool) ($params['rasuvaeff/yii3-mcp']['request_state']['bind'] ?? true),
-            'subscriptionLifetime' => (float) ($params['rasuvaeff/yii3-mcp']['notifications']['subscription_lifetime'] ?? McpServerFactory::DEFAULT_SUBSCRIPTION_LIFETIME),
-        ],
+        '__construct()' => $options->factoryArguments(),
     ],
     Server::class => [
         'definition' => static fn (
@@ -155,10 +74,7 @@ return [
             ResponseFactoryInterface $responseFactory,
             StreamFactoryInterface $streamFactory,
             SessionStoreInterface $sessionStore,
-        ) use ($params): McpAction {
-            /** @var list<string> $allowedHosts */
-            $allowedHosts = $params['rasuvaeff/yii3-mcp']['allowed_hosts'];
-
+        ) use ($options): McpAction {
             // the session store is passed so sessions are BOUND to the client
             // that created them (owner stamped at initialize, verified on
             // every POST/DELETE) — without it any authenticated client could
@@ -167,23 +83,13 @@ return [
                 server: $server,
                 responseFactory: $responseFactory,
                 streamFactory: $streamFactory,
-                allowedHosts: $allowedHosts,
+                allowedHosts: $options->allowedHosts(),
                 sessionStore: $sessionStore,
             );
         },
     ],
     SharedSecretMiddleware::class => [
-        'definition' => static function (ResponseFactoryInterface $responseFactory) use ($params): SharedSecretMiddleware {
-            /** @var array<string, string|list<string>> $clientSecrets */
-            $clientSecrets = $params['rasuvaeff/yii3-mcp']['client_secrets'] ?? [];
-
-            return new SharedSecretMiddleware(
-                secret: $params['rasuvaeff/yii3-mcp']['endpoint_secret'],
-                responseFactory: $responseFactory,
-                headerName: $params['rasuvaeff/yii3-mcp']['secret_header'],
-                resolver: $clientSecrets === [] ? null : new StaticSecretResolver($clientSecrets),
-            );
-        },
+        'definition' => static fn(ResponseFactoryInterface $responseFactory): SharedSecretMiddleware => $options->sharedSecretMiddleware($responseFactory),
     ],
     // resolved only when routed: an application without OAuth never builds them
     BearerTokenMiddleware::class => [
@@ -199,7 +105,7 @@ return [
         ))->metadataHandler(),
     ],
     McpDoctor::class => [
-        'definition' => static function (ContainerInterface $container) use ($params, $notificationBus): McpDoctor {
+        'definition' => static function (ContainerInterface $container) use ($params, $options): McpDoctor {
             /** @var array{dir?: string} $session */
             $session = $params['rasuvaeff/yii3-mcp']['session'] ?? [];
             /** @var string $serverName */
@@ -232,7 +138,7 @@ return [
                 openApiInProcessHandler: $openapi['handler'] ?? '',
                 modernEra: (bool) ($params['rasuvaeff/yii3-mcp']['modern_era'] ?? true),
                 toolCallBudgetEnabled: (int) ($params['rasuvaeff/yii3-mcp']['tool_call_budget']['calls'] ?? 0) > 0,
-                notificationBus: $notificationBus,
+                notificationBus: $options->notificationBus,
                 requestStateKeyBytes: strlen((string) ($params['rasuvaeff/yii3-mcp']['request_state']['key'] ?? '')),
                 oauthConfigured: ($params['rasuvaeff/yii3-mcp']['oauth']['resource'] ?? '') !== ''
                     && ($params['rasuvaeff/yii3-mcp']['oauth']['authorization_servers'] ?? []) !== [],
