@@ -582,8 +582,8 @@ final readonly class McpDoctor
 
     private function specLoader(): SpecLoader
     {
-        $httpClient = $this->container->get(ClientInterface::class);
-        $requestFactory = $this->container->get(RequestFactoryInterface::class);
+        $httpClient = $this->boundObject(ClientInterface::class);
+        $requestFactory = $this->boundObject(RequestFactoryInterface::class);
 
         if (!$httpClient instanceof ClientInterface || !$requestFactory instanceof RequestFactoryInterface) {
             throw new \RuntimeException('A PSR-18 client and a PSR-17 request factory must be bound in the container to fetch a URL OpenAPI spec');
@@ -594,6 +594,17 @@ final readonly class McpDoctor
             requestFactory: $requestFactory,
             headers: $this->openApiHeaders,
         );
+    }
+
+    /**
+     * Whatever the container answers: a misbound id is what doctor reports.
+     */
+    private function boundObject(string $id): ?object
+    {
+        /** @var mixed $service */
+        $service = $this->container->get($id);
+
+        return is_object($service) ? $service : null;
     }
 
     private function isUrl(string $path): bool

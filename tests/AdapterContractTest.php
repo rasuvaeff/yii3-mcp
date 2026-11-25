@@ -37,7 +37,7 @@ final class AdapterContractTest
     public function keepsTheAdapterContract(string $check): void
     {
         self::contract()->checks()[$check]();
-        Assert::true(true);
+        Assert::true(actual: true);
     }
 
     public static function checkProvider(): iterable
